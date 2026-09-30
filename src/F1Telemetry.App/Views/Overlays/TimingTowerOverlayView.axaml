@@ -1,0 +1,98 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:F1Telemetry.App.ViewModels"
+             xmlns:controls="using:F1Telemetry.App.Controls"
+             x:Class="F1Telemetry.App.Views.Overlays.TimingTowerOverlayView"
+             x:DataType="vm:TimingTowerOverlayViewModel"
+             Width="420">
+  <!-- Columns: POS 30 · team 4 · code 46 · gap * · tyre 52 · ERS 72 · penalty 44 (8 px gaps). Compact by design: 13–16 px numbers. -->
+  <Border Classes="hud" Padding="10,12,10,10">
+    <StackPanel>
+      <!-- Lap count (race) or session clock (qualifying) large, so it reads at a glance. -->
+      <Grid ColumnDefinitions="*,Auto" Margin="6,-4,6,8">
+        <StackPanel Orientation="Horizontal" Spacing="8">
+          <TextBlock Classes="label strong" Text="{Binding Title}" FontSize="12" VerticalAlignment="Bottom" Margin="0,0,0,5" />
+          <TextBlock Text="{Binding Counter}" FontFamily="{StaticResource DataFont}" FontSize="26" FontWeight="ExtraBold" VerticalAlignment="Bottom" />
+          <TextBlock Text="{Binding CounterTotal}" FontFamily="{StaticResource DataFont}" FontSize="18" FontWeight="Bold"
+                     Foreground="{StaticResource TextMidBrush}" VerticalAlignment="Bottom" Margin="0,0,0,2" />
+        </StackPanel>
+        <TextBlock Grid.Column="1" Classes="label" Text="{Binding Mode}" FontSize="12" VerticalAlignment="Bottom" Margin="0,0,0,5" />
+      </Grid>
+      <Grid ColumnDefinitions="30,4,46,*,52,72,44" ColumnSpacing="8" Margin="6,0,6,6">
+        <TextBlock Classes="label" Text="POS" FontSize="10" HorizontalAlignment="Center" />
+        <TextBlock Grid.Column="2" Classes="label" Text="DRV" FontSize="10" />
+        <TextBlock Grid.Column="3" Classes="label" Text="{Binding GapHeader}" FontSize="10" HorizontalAlignment="Right" />
+        <TextBlock Grid.Column="4" Classes="label" Text="TYRE" FontSize="10" />
+        <TextBlock Grid.Column="5" Classes="label" Text="ERS" FontSize="10" />
+        <TextBlock Grid.Column="6" Classes="label" Text="PEN" FontSize="10" HorizontalAlignment="Right" />
+      </Grid>
+
+      <ItemsControl ItemsSource="{Binding Rows}">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="vm:TowerRowViewModel">
+            <Border Background="{Binding RowBackground}" BorderBrush="{Binding RowBorder}" BorderThickness="2" CornerRadius="6"
+                    Height="32" Margin="0,0,0,3" ClipToBounds="True">
+              <Panel>
+                <Grid ColumnDefinitions="30,4,46,*,52,72,44" ColumnSpacing="8" Margin="4,0">
+                  <TextBlock Text="{Binding Position}" Foreground="{Binding PositionBrush}" FontFamily="{StaticResource DisplayFont}"
+                             FontSize="16" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                  <Border Grid.Column="1" Width="4" Height="20" CornerRadius="2" Background="{Binding TeamBrush}" VerticalAlignment="Center" />
+                  <TextBlock Grid.Column="2" Text="{Binding Code}" FontFamily="{StaticResource DisplayFont}" FontSize="16" FontWeight="Bold"
+                             LetterSpacing="1" VerticalAlignment="Center" />
+
+                  <Panel Grid.Column="3" HorizontalAlignment="Right" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding Gap}" Foreground="{Binding GapBrush}" FontFamily="{StaticResource DataFont}" FontSize="16"
+                               FontWeight="Bold" IsVisible="{Binding IsGapText}" />
+                    <Border BorderBrush="{Binding GapBrush}" BorderThickness="2" CornerRadius="4" Padding="6,0" IsVisible="{Binding IsGapChip}">
+                      <TextBlock Text="{Binding Gap}" Foreground="{Binding GapBrush}" FontFamily="{StaticResource DataFont}" FontSize="13" FontWeight="ExtraBold" />
+                    </Border>
+                  </Panel>
+
+                  <StackPanel Grid.Column="4" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                    <controls:CompoundBadge Compound="{Binding Compound}" Width="22" Height="22" />
+                    <TextBlock Text="{Binding TyreAge}" Foreground="{StaticResource TextMidBrush}" FontFamily="{StaticResource DataFont}"
+                               FontSize="13" FontWeight="Bold" VerticalAlignment="Center" />
+                  </StackPanel>
+
+                  <StackPanel Grid.Column="5" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                    <Border Width="26" Height="10" CornerRadius="2" BorderThickness="2" BorderBrush="{StaticResource LineStrongBrush}"
+                            IsVisible="{Binding HasErs}" ClipToBounds="True">
+                      <Border Width="{Binding ErsFill}" Background="{Binding ErsBrush}" HorizontalAlignment="Left" />
+                    </Border>
+                    <TextBlock Text="{Binding Ers}" Foreground="{Binding ErsBrush}" FontFamily="{StaticResource DataFont}" FontSize="13"
+                               FontWeight="Bold" MinWidth="36" TextAlignment="Right" VerticalAlignment="Center" />
+                  </StackPanel>
+
+                  <Panel Grid.Column="6" HorizontalAlignment="Right" VerticalAlignment="Center">
+                    <Border Background="{StaticResource DangerBrush}" CornerRadius="4" Padding="4,0" IsVisible="{Binding HasPenalty}">
+                      <TextBlock Text="{Binding Penalty}" Foreground="{StaticResource OnColorBrush}" FontFamily="{StaticResource DataFont}"
+                                 FontSize="12" FontWeight="ExtraBold" />
+                    </Border>
+                    <Border BorderBrush="{StaticResource SlowerBrush}" BorderThickness="2" CornerRadius="4" Padding="4,0" IsVisible="{Binding HasWarnings}">
+                      <TextBlock Text="{Binding Warnings}" Foreground="{StaticResource SlowerBrush}" FontFamily="{StaticResource DataFont}"
+                                 FontSize="12" FontWeight="ExtraBold" />
+                    </Border>
+                  </Panel>
+                </Grid>
+                <!-- Qualifying elimination line under the last car that goes through. -->
+                <Border Height="3" Background="{StaticResource DangerBrush}" VerticalAlignment="Bottom" IsVisible="{Binding IsCutoff}" />
+              </Panel>
+            </Border>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+
+      <Border Height="2" Background="{StaticResource DividerBrush}" Margin="0,3,0,6" />
+      <Grid ColumnDefinitions="*,Auto" Margin="6,0">
+        <StackPanel Orientation="Horizontal" Spacing="6" IsVisible="{Binding HasLegendLeft}">
+          <Border Width="9" Height="9" CornerRadius="1" Background="{Binding LegendLeftBrush}" VerticalAlignment="Center" />
+          <TextBlock Classes="label" Text="{Binding LegendLeft}" FontSize="10" VerticalAlignment="Center" />
+        </StackPanel>
+        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
+          <Border Width="9" Height="9" CornerRadius="1" Background="{Binding LegendRightBrush}" VerticalAlignment="Center" />
+          <TextBlock Classes="label" Text="{Binding LegendRight}" FontSize="10" VerticalAlignment="Center" />
+        </StackPanel>
+      </Grid>
+    </StackPanel>
+  </Border>
+</UserControl>

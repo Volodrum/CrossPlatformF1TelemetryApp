@@ -1,0 +1,24 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:F1Telemetry.App.ViewModels"
+             x:Class="F1Telemetry.App.Views.Overlays.DeltaOverlayView"
+             x:DataType="vm:DeltaOverlayViewModel"
+             Width="280">
+  <Border Classes="hud" Opacity="{Binding Opacity}">
+    <StackPanel Spacing="10">
+      <TextBlock Classes="label strong" Text="LAP DELTA" FontSize="14" />
+      <StackPanel Orientation="Horizontal" Spacing="10">
+        <Panel Width="30" Height="26" VerticalAlignment="Center">
+          <Path Data="M2,2 L28,2 L15,24 Z" Fill="{Binding LapBrush}" IsVisible="{Binding IsFaster}" />
+          <Path Data="M15,2 L28,24 L2,24 Z" Fill="{Binding LapBrush}" IsVisible="{Binding IsSlower}" />
+        </Panel>
+        <TextBlock Text="{Binding LapDelta}" Foreground="{Binding LapBrush}" FontFamily="{StaticResource DataFont}"
+                   FontSize="58" FontWeight="ExtraBold" LineHeight="60" />
+      </StackPanel>
+      <StackPanel Orientation="Horizontal" Spacing="10">
+        <TextBlock Classes="label strong" Text="{Binding SectorLabel}" FontSize="14" VerticalAlignment="Center" />
+        <ContentControl Content="{Binding SectorChip}" />
+      </StackPanel>
+    </StackPanel>
+  </Border>
+</UserControl>

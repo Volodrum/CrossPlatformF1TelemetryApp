@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <AssemblyName>F1Telemetry</AssemblyName>
+    <RootNamespace>F1Telemetry.App</RootNamespace>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+    <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="F1Telemetry.Screenshots" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Avalonia" />
+    <PackageReference Include="Avalonia.Desktop" />
+    <PackageReference Include="Avalonia.Themes.Fluent" />
+    <PackageReference Include="Avalonia.Fonts.Inter" />
+    <PackageReference Include="CommunityToolkit.Mvvm" />
+    <PackageReference Include="ScottPlot.Avalonia" />
+    <PackageReference Include="SharpHook" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\F1Telemetry.Core\F1Telemetry.Core.csproj" />
+    <ProjectReference Include="..\F1Telemetry.Ingest\F1Telemetry.Ingest.csproj" />
+    <ProjectReference Include="..\F1Telemetry.Storage\F1Telemetry.Storage.csproj" />
+    <ProjectReference Include="..\F1Telemetry.Simulation\F1Telemetry.Simulation.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Embedded UI fonts (SIL OFL 1.1, see Assets/Fonts/OFL.txt). Also copied next to the exe so ScottPlot (Skia) can load them. -->
+    <AvaloniaResource Include="Assets\Fonts\*.ttf" />
+    <None Include="Assets\Fonts\*.ttf" Link="fonts\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="..\..\assets\track_maps\*.json" Link="track_maps\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\assets\tracks\*.srtt" Link="tracks\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

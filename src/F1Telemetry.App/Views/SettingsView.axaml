@@ -1,0 +1,172 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:F1Telemetry.App.ViewModels"
+             xmlns:services="using:F1Telemetry.App.Services"
+             xmlns:models="using:F1Telemetry.Core.Models"
+             xmlns:engine="using:F1Telemetry.Core.Engine"
+             x:Class="F1Telemetry.App.Views.SettingsView"
+             x:DataType="vm:SettingsViewModel"
+             Focusable="True">
+  <DockPanel Margin="0,16,0,0">
+    <!-- Fixed (never scrolls) so previewed overlays can be kept off it: see OverlayManager.KeepClearArea. -->
+    <Border x:Name="PreviewBar" DockPanel.Dock="Top" Classes="panel" Padding="18,12" Margin="0,0,0,16" MaxWidth="1100" HorizontalAlignment="Left">
+      <DockPanel>
+        <ToggleSwitch DockPanel.Dock="Left" IsChecked="{Binding PreviewOverlays}" OnContent="PREVIEW OVERLAYS" OffContent="PREVIEW OVERLAYS" VerticalAlignment="Center" Margin="0,0,20,0" />
+        <TextBlock Classes="body" VerticalAlignment="Center" TextWrapping="Wrap"
+                   Text="Shows every overlay with sample data so you can drag and resize it. This bar stays visible and clickable even under an overlay. Leaving Settings turns the preview off." />
+      </DockPanel>
+    </Border>
+
+    <ScrollViewer>
+      <StackPanel Spacing="16" MaxWidth="1100" HorizontalAlignment="Left">
+        <Border Classes="panel" Padding="18">
+          <StackPanel Spacing="12">
+            <TextBlock Classes="label strong" Text="GLOBAL HOTKEYS" FontSize="14" />
+            <TextBlock Classes="body" Text="Work while the game has focus. macOS: grant the Accessibility permission. Not available on Wayland." />
+            <Grid ColumnDefinitions="260,220,Auto" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="10" ColumnSpacing="12">
+              <TextBlock Classes="h2" Text="Start / stop recording" VerticalAlignment="Center" />
+              <TextBlock Grid.Column="1" Classes="data-s" Text="{Binding StartStopHotkey}" VerticalAlignment="Center" />
+              <Button Grid.Column="2" Theme="{StaticResource SecondaryButton}" Content="CHANGE…" Command="{Binding BeginCaptureCommand}" CommandParameter="startStop" />
+              <TextBlock Grid.Row="1" Classes="h2" Text="Toggle overlays" VerticalAlignment="Center" />
+              <TextBlock Grid.Row="1" Grid.Column="1" Classes="data-s" Text="{Binding ToggleOverlaysHotkey}" VerticalAlignment="Center" />
+              <Button Grid.Row="1" Grid.Column="2" Theme="{StaticResource SecondaryButton}" Content="CHANGE…" Command="{Binding BeginCaptureCommand}" CommandParameter="toggleOverlays" />
+              <TextBlock Grid.Row="2" Classes="h2" Text="Strategy / damage page" VerticalAlignment="Center" />
+              <TextBlock Grid.Row="2" Grid.Column="1" Classes="data-s" Text="{Binding StrategyPageHotkey}" VerticalAlignment="Center" />
+              <Button Grid.Row="2" Grid.Column="2" Theme="{StaticResource SecondaryButton}" Content="CHANGE…" Command="{Binding BeginCaptureCommand}" CommandParameter="strategyPage" />
+              <TextBlock Grid.Row="3" Classes="h2" Text="Strategy / damage page (wheel)" VerticalAlignment="Center" />
+              <ComboBox Grid.Row="3" Grid.Column="1" ItemsSource="{Binding WheelButtons}" SelectedIndex="{Binding StrategyPageUdpAction}"
+                        HorizontalAlignment="Stretch" VerticalAlignment="Center" />
+            </Grid>
+            <TextBlock Classes="body"
+                       Text="Wheel or pad: in the game's controls settings, bind a button to the UDP Action chosen above. The press arrives with the telemetry, so any wheel works, on every OS and without a keyboard hook." />
+            <TextBlock Text="{Binding CaptureHint}" Foreground="{StaticResource DangerBrush}" FontWeight="SemiBold" />
+          </StackPanel>
+        </Border>
+
+        <Border Classes="panel" Padding="18">
+          <StackPanel Spacing="12">
+            <TextBlock Classes="label strong" Text="HUD OVERLAYS" FontSize="14" />
+            <TextBlock Classes="body" Text="Always = always visible · Session = only while recording · Never = hidden. Turn on PREVIEW OVERLAYS above to see them with sample data and drag them into place." />
+            <ItemsControl ItemsSource="{Binding Overlays}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:OverlaySettingsViewModel">
+                  <Border Classes="raised" Margin="0,0,0,8">
+                    <Grid ColumnDefinitions="240,*,150" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="12" RowSpacing="8">
+                      <StackPanel Spacing="2" VerticalAlignment="Center">
+                        <TextBlock Classes="h2" Text="{Binding Name}" />
+                        <TextBlock Classes="mono" Text="{Binding Position}" FontSize="13" Foreground="{StaticResource TextLoBrush}" />
+                      </StackPanel>
+                      <TextBlock Grid.Column="1" Classes="body" Text="{Binding Description}" VerticalAlignment="Center" TextWrapping="Wrap" />
+                      <ComboBox Grid.Column="2" ItemsSource="{Binding Modes}" SelectedItem="{Binding Mode}" HorizontalAlignment="Stretch" VerticalAlignment="Center" />
+
+                      <WrapPanel Grid.Row="1" Grid.ColumnSpan="3" Orientation="Horizontal">
+                        <StackPanel Orientation="Horizontal" Spacing="12" Margin="0,0,28,6">
+                          <TextBlock Classes="label" Text="SIZE" VerticalAlignment="Center" Width="40" />
+                          <Slider Minimum="{Binding MinScale}" Maximum="{Binding MaxScale}" Value="{Binding Scale}"
+                                  TickFrequency="0.05" IsSnapToTickEnabled="True" SmallChange="0.05" LargeChange="0.25"
+                                  Width="200" VerticalAlignment="Center" />
+                          <TextBlock Classes="data-s" Text="{Binding ScaleText}" Width="64" VerticalAlignment="Center" />
+                          <Button Theme="{StaticResource SecondaryButton}" Content="100%" Command="{Binding ResetScaleCommand}" />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="12" Margin="0,0,28,6">
+                          <TextBlock Classes="label" Text="OPACITY" VerticalAlignment="Center" />
+                          <Slider Minimum="{Binding MinOpacity}" Maximum="1" Value="{Binding Opacity}"
+                                  TickFrequency="0.05" IsSnapToTickEnabled="True" SmallChange="0.05" LargeChange="0.2"
+                                  Width="200" VerticalAlignment="Center" />
+                          <TextBlock Classes="data-s" Text="{Binding OpacityText}" Width="64" VerticalAlignment="Center" />
+                          <Button Theme="{StaticResource SecondaryButton}" Content="100%" Command="{Binding ResetOpacityCommand}" />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,0,0,6">
+                          <TextBlock Classes="label" Text="PLACE" VerticalAlignment="Center" Margin="0,0,6,0" />
+                          <Button Theme="{StaticResource SecondaryButton}" Content="TOP LEFT" Command="{Binding PresetCommand}" CommandParameter="{x:Static services:OverlayPreset.TopLeft}" />
+                          <Button Theme="{StaticResource SecondaryButton}" Content="TOP RIGHT" Command="{Binding PresetCommand}" CommandParameter="{x:Static services:OverlayPreset.TopRight}" />
+                          <Button Theme="{StaticResource SecondaryButton}" Content="LEFT" Command="{Binding PresetCommand}" CommandParameter="{x:Static services:OverlayPreset.LeftCenter}" />
+                          <Button Theme="{StaticResource SecondaryButton}" Content="TOP" Command="{Binding PresetCommand}" CommandParameter="{x:Static services:OverlayPreset.TopCenter}" />
+                          <Button Theme="{StaticResource SecondaryButton}" Content="CENTRE" Command="{Binding PresetCommand}" CommandParameter="{x:Static services:OverlayPreset.Center}" />
+                          <Button Theme="{StaticResource SecondaryButton}" Content="RIGHT" Command="{Binding PresetCommand}" CommandParameter="{x:Static services:OverlayPreset.RightCenter}" />
+                          <Button Theme="{StaticResource SecondaryButton}" Content="BOTTOM" Command="{Binding PresetCommand}" CommandParameter="{x:Static services:OverlayPreset.BottomCenter}" />
+                        </StackPanel>
+                      </WrapPanel>
+
+                      <!-- Overlay-specific option (at most one per overlay). -->
+                      <Panel Grid.Row="2" Grid.ColumnSpan="3">
+                        <StackPanel Orientation="Horizontal" Spacing="12" IsVisible="{Binding HasHistory}">
+                          <TextBlock Classes="label" Text="HISTORY" VerticalAlignment="Center" />
+                          <NumericUpDown Value="{Binding HistorySeconds}" Minimum="1" Maximum="30" Increment="1" FormatString="0" Width="150" />
+                          <TextBlock Classes="body" Text="seconds of throttle / brake shown (1–30)" VerticalAlignment="Center" />
+                        </StackPanel>
+
+                        <StackPanel Orientation="Horizontal" Spacing="12" IsVisible="{Binding HasReference}">
+                          <TextBlock Classes="label" Text="GAP TO" VerticalAlignment="Center" />
+                          <Border Classes="segmented">
+                            <StackPanel Orientation="Horizontal">
+                              <Button Theme="{StaticResource ModeToggle}" Content="SESSION BEST" Classes.selected="{Binding IsSessionBestReference}"
+                                      Command="{Binding SetReferenceCommand}" CommandParameter="{x:Static models:SectorReference.SessionBest}" />
+                              <Button Theme="{StaticResource ModeToggle}" Content="PERSONAL BEST" Classes.selected="{Binding IsPersonalBestReference}"
+                                      Command="{Binding SetReferenceCommand}" CommandParameter="{x:Static models:SectorReference.PersonalBest}" />
+                            </StackPanel>
+                          </Border>
+                          <TextBlock Classes="body" Text="what the gap after each sector is measured against" VerticalAlignment="Center" />
+                        </StackPanel>
+
+                        <StackPanel Orientation="Horizontal" Spacing="12" IsVisible="{Binding HasGapMode}">
+                          <TextBlock Classes="label" Text="RACE GAP" VerticalAlignment="Center" />
+                          <Border Classes="segmented">
+                            <StackPanel Orientation="Horizontal">
+                              <Button Theme="{StaticResource ModeToggle}" Content="GAP TO ME" Classes.selected="{Binding IsGapToMe}"
+                                      Command="{Binding SetGapModeCommand}" CommandParameter="{x:Static engine:TowerGapMode.GapToMe}" />
+                              <Button Theme="{StaticResource ModeToggle}" Content="INTERVAL" Classes.selected="{Binding IsInterval}"
+                                      Command="{Binding SetGapModeCommand}" CommandParameter="{x:Static engine:TowerGapMode.Interval}" />
+                            </StackPanel>
+                          </Border>
+                          <TextBlock Classes="body" Text="time between each car and you, or to the car directly ahead" VerticalAlignment="Center" />
+                        </StackPanel>
+
+                        <StackPanel Orientation="Horizontal" Spacing="12" IsVisible="{Binding HasDamagePage}">
+                          <TextBlock Classes="label" Text="DAMAGE POP-UP" VerticalAlignment="Center" />
+                          <ToggleSwitch IsChecked="{Binding DamagePopup}" OnContent="" OffContent="" VerticalAlignment="Center" />
+                          <NumericUpDown Value="{Binding DamagePopupSeconds}" Minimum="1" Maximum="60" Increment="1" FormatString="0" Width="150"
+                                         IsEnabled="{Binding DamagePopup}" />
+                          <TextBlock Classes="body" Text="seconds on the damage page after new damage (tyre wear is ignored)" VerticalAlignment="Center" />
+                        </StackPanel>
+                      </Panel>
+                    </Grid>
+                  </Border>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+        </Border>
+
+
+        <Border Classes="panel" Padding="18">
+          <StackPanel Spacing="12">
+            <TextBlock Classes="label strong" Text="TELEMETRY &amp; STRATEGY" FontSize="14" />
+            <Grid ColumnDefinitions="320,Auto" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="10">
+              <TextBlock Classes="h2" Text="UDP port" VerticalAlignment="Center" />
+              <NumericUpDown Grid.Column="1" Value="{Binding UdpPort}" Minimum="1024" Maximum="65535" FormatString="0" Width="170" />
+              <TextBlock Grid.Row="1" Classes="h2" Text="Listen for the game on startup" VerticalAlignment="Center" />
+              <ToggleSwitch Grid.Row="1" Grid.Column="1" IsChecked="{Binding ListenOnStartup}" />
+              <TextBlock Grid.Row="2" Classes="h2" Text="Tyre wear limit for projections (%)" VerticalAlignment="Center" />
+              <NumericUpDown Grid.Row="2" Grid.Column="1" Value="{Binding TyreWearLimit}" Minimum="30" Maximum="100" Increment="5" FormatString="0" Width="170" />
+              <TextBlock Grid.Row="3" Classes="h2" Text="Also save raw packets (.f1rec) while recording" VerticalAlignment="Center" />
+              <ToggleSwitch Grid.Row="3" Grid.Column="1" IsChecked="{Binding CaptureRawPackets}" />
+            </Grid>
+            <StackPanel Orientation="Horizontal" Spacing="12">
+              <Button Theme="{StaticResource PrimaryButton}" Content="SAVE" Command="{Binding SaveCommand}" MinWidth="120" />
+              <TextBlock Text="{Binding SaveStatus}" Foreground="{StaticResource TextMidBrush}" VerticalAlignment="Center" />
+            </StackPanel>
+          </StackPanel>
+        </Border>
+
+        <Border Classes="panel" Padding="18">
+          <StackPanel Spacing="10">
+            <TextBlock Classes="label strong" Text="DATA" FontSize="14" />
+            <TextBlock Classes="mono" Text="{Binding DatabasePath}" FontSize="14" Foreground="{StaticResource TextMidBrush}" TextWrapping="Wrap" />
+            <Button Theme="{StaticResource SecondaryButton}" Content="OPEN DATA FOLDER" Command="{Binding OpenDataFolderCommand}" HorizontalAlignment="Left" />
+          </StackPanel>
+        </Border>
+      </StackPanel>
+    </ScrollViewer>
+  </DockPanel>
+</UserControl>

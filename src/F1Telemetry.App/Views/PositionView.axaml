@@ -1,0 +1,16 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:F1Telemetry.App.ViewModels"
+             xmlns:controls="using:F1Telemetry.App.Controls"
+             x:Class="F1Telemetry.App.Views.PositionView"
+             x:DataType="vm:SessionViewModel">
+  <DockPanel Margin="0,16,0,0">
+    <StackPanel DockPanel.Dock="Top" Spacing="4" Margin="0,0,0,12">
+      <TextBlock Classes="label" Text="POSITION HISTORY" />
+      <TextBlock Classes="h1" Text="{Binding Header}" />
+    </StackPanel>
+    <Border Classes="panel" Padding="0">
+      <controls:TelemetryPlot Model="{Binding PositionChart}" />
+    </Border>
+  </DockPanel>
+</UserControl>

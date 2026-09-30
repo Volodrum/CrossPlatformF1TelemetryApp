@@ -1,0 +1,8 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:F1Telemetry.App.ViewModels"
+             xmlns:controls="using:F1Telemetry.App.Controls"
+             x:Class="F1Telemetry.App.Views.Overlays.RadarOverlayView"
+             x:DataType="vm:RadarOverlayViewModel">
+  <controls:RadarControl Frame="{Binding Frame}" Opacity="{Binding Opacity}" />
+</UserControl>

@@ -1,0 +1,146 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:F1Telemetry.App.ViewModels"
+             xmlns:controls="using:F1Telemetry.App.Controls"
+             x:Class="F1Telemetry.App.Views.StrategyView"
+             x:DataType="vm:SessionViewModel">
+  <!-- Design: Strategy.dc.html -->
+  <ScrollViewer Margin="0,16,0,0">
+    <StackPanel Spacing="16">
+      <StackPanel Spacing="4">
+        <TextBlock Classes="label" Text="RACE STRATEGY · STINTS FROM THE GAME'S TYRE HISTORY" />
+        <TextBlock Classes="h1" Text="{Binding Header}" />
+      </StackPanel>
+
+      <Grid ColumnDefinitions="Auto,*" ColumnSpacing="16">
+        <ListBox Classes="cards horizontal" ItemsSource="{Binding Stints}" SelectedItem="{Binding SelectedStint}">
+          <ListBox.ItemsPanel>
+            <ItemsPanelTemplate>
+              <StackPanel Orientation="Horizontal" />
+            </ItemsPanelTemplate>
+          </ListBox.ItemsPanel>
+          <ListBox.ItemTemplate>
+            <DataTemplate x:DataType="vm:StintViewModel">
+              <StackPanel Orientation="Horizontal" Spacing="12" MinWidth="220">
+                <controls:CompoundBadge Compound="{Binding Compound}" Width="40" Height="40" />
+                <StackPanel Spacing="2" VerticalAlignment="Center">
+                  <TextBlock Classes="h2" Text="{Binding Header}" />
+                  <TextBlock Classes="mono" Text="{Binding Laps}" FontSize="13" Foreground="{StaticResource TextMidBrush}" />
+                </StackPanel>
+              </StackPanel>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+        <TextBlock Grid.Column="1" Classes="body" VerticalAlignment="Center" Text="Pit, safety-car and out-laps are excluded from every average." />
+      </Grid>
+
+      <ContentControl Content="{Binding SelectedStint}">
+        <ContentControl.ContentTemplate>
+          <DataTemplate x:DataType="vm:StintViewModel">
+            <Grid ColumnDefinitions="*,*,*" ColumnSpacing="16">
+              <!-- Tyre life -->
+              <Border Classes="panel" Padding="18">
+                <StackPanel Spacing="14">
+                  <TextBlock Classes="label strong" Text="TYRE LIFE" FontSize="14" />
+                  <StackPanel Orientation="Horizontal" Spacing="10">
+                    <TextBlock Classes="data-xl" Text="{Binding Lifespan}" />
+                    <TextBlock Classes="unit" Text="LAPS · FRESH SET" FontSize="17" VerticalAlignment="Bottom" Margin="0,0,0,8" />
+                  </StackPanel>
+                  <TextBlock Classes="body" Text="{Binding LifespanNote}" />
+                  <ItemsControl ItemsSource="{Binding Wheels}">
+                    <ItemsControl.ItemsPanel>
+                      <ItemsPanelTemplate>
+                        <UniformGrid Columns="2" />
+                      </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate x:DataType="vm:WheelRate">
+                        <Border Background="{Binding Background}" BorderBrush="{Binding Border}" BorderThickness="2" CornerRadius="8" Padding="10,8" Margin="0,0,8,8">
+                          <StackPanel Spacing="2">
+                            <TextBlock Classes="label" Text="{Binding Label}" Foreground="{Binding Foreground}" />
+                            <StackPanel Orientation="Horizontal" Spacing="4">
+                              <TextBlock Classes="data-m" FontSize="22" Text="{Binding Rate}" Foreground="{Binding Foreground}" />
+                              <TextBlock Classes="unit" FontSize="14" Text="/LAP" VerticalAlignment="Bottom" Margin="0,0,0,3" />
+                            </StackPanel>
+                          </StackPanel>
+                        </Border>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                  <Border BorderBrush="{StaticResource SlowerBrush}" BorderThickness="2" CornerRadius="8" Padding="12,10" IsVisible="{Binding HasLimiting}">
+                    <Grid ColumnDefinitions="*,Auto">
+                      <TextBlock Classes="label" Text="{Binding LimitingName}" FontSize="14" Foreground="{StaticResource SlowerBrush}" VerticalAlignment="Center" />
+                      <TextBlock Grid.Column="1" Classes="data-m" FontSize="22" Text="{Binding LimitingLaps}" Foreground="{StaticResource SlowerBrush}" />
+                    </Grid>
+                  </Border>
+                </StackPanel>
+              </Border>
+
+              <!-- Pace degradation -->
+              <Border Grid.Column="1" Classes="panel" Padding="18">
+                <StackPanel Spacing="14">
+                  <TextBlock Classes="label strong" Text="PACE DEGRADATION" FontSize="14" />
+                  <StackPanel Orientation="Horizontal" Spacing="10">
+                    <TextBlock Classes="data-xl" Text="{Binding Pace}" Foreground="{Binding PaceBrush}" />
+                    <TextBlock Classes="unit" Text="S / LAP" FontSize="17" VerticalAlignment="Bottom" Margin="0,0,0,8" />
+                  </StackPanel>
+                  <TextBlock Classes="body" Text="{Binding PaceNote}" />
+                  <ItemsControl ItemsSource="{Binding Bars}" Height="130">
+                    <ItemsControl.ItemsPanel>
+                      <ItemsPanelTemplate>
+                        <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Bottom" />
+                      </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate x:DataType="vm:LapBar">
+                        <StackPanel Spacing="6" VerticalAlignment="Bottom">
+                          <Border Width="30" Height="{Binding Height}" CornerRadius="3" Background="{Binding Fill}" />
+                          <TextBlock Classes="mono" Text="{Binding Label}" FontSize="12" Foreground="{StaticResource TextMidBrush}" HorizontalAlignment="Center" />
+                        </StackPanel>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                  <UniformGrid Columns="2">
+                    <StackPanel Spacing="2">
+                      <TextBlock Classes="label" Text="BEST" />
+                      <TextBlock Classes="data-m" FontSize="22" Text="{Binding Best}" Foreground="{StaticResource SessionBestBrush}" />
+                    </StackPanel>
+                    <StackPanel Spacing="2">
+                      <TextBlock Classes="label" Text="AVERAGE" />
+                      <TextBlock Classes="data-m" FontSize="22" Text="{Binding Average}" />
+                    </StackPanel>
+                  </UniformGrid>
+                </StackPanel>
+              </Border>
+
+              <!-- Fuel -->
+              <Border Grid.Column="2" Classes="panel" Padding="18">
+                <StackPanel Spacing="14">
+                  <TextBlock Classes="label strong" Text="FUEL" FontSize="14" />
+                  <StackPanel Orientation="Horizontal" Spacing="10">
+                    <TextBlock Classes="data-xl" Text="{Binding Fuel}" />
+                    <TextBlock Classes="unit" Text="KG / LAP" FontSize="17" VerticalAlignment="Bottom" Margin="0,0,0,8" />
+                  </StackPanel>
+                  <TextBlock Classes="body" Text="{Binding FuelNote}" />
+                </StackPanel>
+              </Border>
+            </Grid>
+          </DataTemplate>
+        </ContentControl.ContentTemplate>
+      </ContentControl>
+
+      <!-- Fuel load calculator (session-level: uses the selected stint's rate) -->
+      <Border Classes="panel" HorizontalAlignment="Left" MinWidth="460" Padding="18">
+        <StackPanel Spacing="12">
+          <TextBlock Classes="label strong" Text="FUEL LOAD CALCULATOR · SELECTED STINT RATE" />
+          <StackPanel Orientation="Horizontal" Spacing="16">
+            <TextBlock Classes="h2" Text="Target laps" VerticalAlignment="Center" />
+            <NumericUpDown Value="{Binding TargetLaps}" Minimum="1" Maximum="100" Increment="1" FormatString="0" Width="140" />
+            <TextBlock Classes="data-l" Text="{Binding FuelForTarget}" Foreground="#FFD12E" VerticalAlignment="Center" />
+            <TextBlock Classes="unit" Text="KG TO ADD" VerticalAlignment="Center" />
+          </StackPanel>
+        </StackPanel>
+      </Border>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

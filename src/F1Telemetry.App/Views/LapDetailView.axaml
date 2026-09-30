@@ -1,0 +1,117 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:F1Telemetry.App.ViewModels"
+             xmlns:controls="using:F1Telemetry.App.Controls"
+             x:Class="F1Telemetry.App.Views.LapDetailView"
+             x:DataType="vm:LapDetailViewModel">
+  <!-- Design: LapDetail.dc.html -->
+  <DockPanel Margin="0,16,0,0">
+    <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="16" Margin="0,0,0,16">
+      <StackPanel Spacing="4">
+        <TextBlock Classes="label" Text="{Binding Context}" />
+        <StackPanel Orientation="Horizontal" Spacing="14">
+          <TextBlock Classes="h1" Text="{Binding Title}" />
+          <TextBlock Classes="data-m" FontSize="30" Text="{Binding LapTime}" VerticalAlignment="Bottom" />
+          <TextBlock Classes="muted" Text="Loading…" IsVisible="{Binding IsLoading}" VerticalAlignment="Center" />
+        </StackPanel>
+      </StackPanel>
+      <ContentControl Grid.Column="1" Content="{Binding DeltaChip}" VerticalAlignment="Center" />
+      <controls:CompoundBadge Grid.Column="2" Compound="{Binding Compound}" Width="44" Height="44" VerticalAlignment="Center" />
+    </Grid>
+
+    <!-- Lap comparison: any lap of this session vs any lap of any recording on the same track. -->
+    <Border DockPanel.Dock="Top" Classes="panel" Padding="14,10" Margin="0,0,0,16" IsVisible="{Binding HasLapOptions}">
+      <WrapPanel Orientation="Horizontal">
+        <StackPanel Orientation="Horizontal" Spacing="10" Margin="0,0,20,0">
+          <TextBlock Classes="label strong" Text="LAP" VerticalAlignment="Center" />
+          <ComboBox ItemsSource="{Binding LapOptions}" SelectedItem="{Binding SelectedLap}" MinWidth="210" VerticalAlignment="Center" />
+        </StackPanel>
+        <StackPanel Orientation="Horizontal" Spacing="10" Margin="0,0,20,0">
+          <TextBlock Classes="label strong" Text="COMPARE WITH" VerticalAlignment="Center" />
+          <ComboBox ItemsSource="{Binding CompareRecordings}" SelectedItem="{Binding SelectedCompareRecording}" MinWidth="190" VerticalAlignment="Center" />
+          <ComboBox ItemsSource="{Binding CompareLaps}" SelectedItem="{Binding SelectedCompareLap}" MinWidth="230" VerticalAlignment="Center" />
+        </StackPanel>
+        <StackPanel Orientation="Horizontal" Spacing="10">
+          <TextBlock Classes="label strong" Text="X AXIS" VerticalAlignment="Center" />
+          <ComboBox ItemsSource="{x:Static vm:LapDetailViewModel.XAxisOptions}" SelectedItem="{Binding SelectedXAxis}" MinWidth="140" VerticalAlignment="Center" />
+        </StackPanel>
+      </WrapPanel>
+    </Border>
+
+    <DockPanel IsVisible="{Binding HasData}">
+      <!-- Sector split vs the comparison lap: one compact full-width strip. -->
+      <Border DockPanel.Dock="Top" Classes="panel" Padding="16,10" Margin="0,0,0,12">
+        <ItemsControl ItemsSource="{Binding Sectors}">
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate>
+              <UniformGrid Columns="3" />
+            </ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:SectorCard">
+              <StackPanel Orientation="Horizontal" Spacing="12">
+                <TextBlock Classes="label strong" Text="{Binding Label}" VerticalAlignment="Center" />
+                <TextBlock Classes="data-m" Text="{Binding Time}" VerticalAlignment="Center" />
+                <ContentControl Content="{Binding Delta}" VerticalAlignment="Center" />
+              </StackPanel>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </Border>
+
+      <Border DockPanel.Dock="Top" Classes="segmented" HorizontalAlignment="Left" Margin="0,0,0,12">
+        <TabControl Classes="segments" ItemsSource="{Binding Tabs}" SelectedItem="{Binding SelectedTab}" Padding="0">
+          <TabControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:ChartTabViewModel">
+              <TextBlock Text="{Binding Name}" />
+            </DataTemplate>
+          </TabControl.ItemTemplate>
+          <TabControl.ContentTemplate>
+            <DataTemplate x:DataType="vm:ChartTabViewModel">
+              <Panel />
+            </DataTemplate>
+          </TabControl.ContentTemplate>
+        </TabControl>
+      </Border>
+
+      <Panel>
+        <!-- Chart tabs: full width. -->
+        <DockPanel IsVisible="{Binding ShowCharts}">
+          <TextBlock DockPanel.Dock="Bottom" Classes="body" Margin="0,8,0,0" Text="Drag or scroll to zoom along the lap. The value axis stays fixed. The dashed trace is the comparison lap." />
+          <ScrollViewer>
+            <ItemsControl ItemsSource="{Binding SelectedTab.Charts, FallbackValue={x:Null}}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:ChartModel">
+                  <Border Classes="panel" Padding="0" Margin="0,0,8,12" Height="250">
+                    <controls:TelemetryPlot Model="{Binding}" />
+                  </Border>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </ScrollViewer>
+        </DockPanel>
+
+        <!-- Trajectory tab: the track map at full size. -->
+        <DockPanel IsVisible="{Binding ShowTrajectory}">
+          <!-- Toggle is laid out first at full width; the hint takes what is left and trims. -->
+          <DockPanel DockPanel.Dock="Top" Margin="0,0,0,12">
+            <ToggleSwitch DockPanel.Dock="Left" IsChecked="{Binding ColorByInputs}" OnContent="COLOUR BY INPUTS" OffContent="TRAJECTORY ONLY" Margin="0,0,16,0" />
+            <TextBlock Classes="label" Text="WHEEL ZOOM · DRAG PAN · DOUBLE-CLICK RESET" VerticalAlignment="Center" HorizontalAlignment="Right" TextTrimming="CharacterEllipsis" />
+          </DockPanel>
+          <Border Classes="panel" Padding="0" ClipToBounds="True">
+            <Panel>
+              <controls:TrackMapControl Outline="{Binding Outline}" ActiveLap="{Binding Samples}" ReferenceLap="{Binding ReferenceSamples}" ColorByInputs="{Binding ColorByInputs}" />
+              <TextBlock Classes="h2" Text="{Binding TrackName}" FontSize="20" Margin="16,14" HorizontalAlignment="Left" VerticalAlignment="Top" IsHitTestVisible="False" />
+              <StackPanel Margin="16,14" HorizontalAlignment="Right" VerticalAlignment="Bottom" Spacing="8" IsHitTestVisible="False">
+                <StackPanel Orientation="Horizontal" Spacing="6"><Border Width="18" Height="6" CornerRadius="3" Background="{StaticResource FasterBrush}" VerticalAlignment="Center" /><TextBlock Classes="label" Text="FULL THROTTLE" Foreground="{StaticResource FasterBrush}" /></StackPanel>
+                <StackPanel Orientation="Horizontal" Spacing="6"><Border Width="18" Height="6" CornerRadius="3" Background="{StaticResource SlowerBrush}" VerticalAlignment="Center" /><TextBlock Classes="label" Text="PARTIAL" Foreground="{StaticResource SlowerBrush}" /></StackPanel>
+                <StackPanel Orientation="Horizontal" Spacing="6"><Border Width="18" Height="6" CornerRadius="3" Background="{StaticResource DangerBrush}" VerticalAlignment="Center" /><TextBlock Classes="label" Text="BRAKING" Foreground="{StaticResource DangerBrush}" /></StackPanel>
+                <StackPanel Orientation="Horizontal" Spacing="6" IsVisible="{Binding HasReference}"><Border Width="18" Height="3" BorderBrush="{StaticResource TextLoBrush}" BorderThickness="0,2,0,0" VerticalAlignment="Center" /><TextBlock Classes="label" Text="{Binding ReferenceLegend}" /></StackPanel>
+              </StackPanel>
+            </Panel>
+          </Border>
+        </DockPanel>
+      </Panel>
+    </DockPanel>
+  </DockPanel>
+</UserControl>

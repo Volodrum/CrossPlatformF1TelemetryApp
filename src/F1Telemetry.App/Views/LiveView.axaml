@@ -1,0 +1,160 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:F1Telemetry.App.ViewModels"
+             xmlns:controls="using:F1Telemetry.App.Controls"
+             xmlns:overlays="using:F1Telemetry.App.Views.Overlays"
+             x:Class="F1Telemetry.App.Views.LiveView"
+             x:DataType="vm:LiveViewModel">
+  <!-- Design: Live.dc.html -->
+  <Grid RowDefinitions="Auto,*,Auto" RowSpacing="16" Margin="0,16,0,0">
+    <!-- Hero value tiles -->
+    <UniformGrid Columns="5">
+      <Border Classes="panel" Margin="0,0,12,0">
+        <StackPanel Spacing="6">
+          <TextBlock Classes="label" Text="SPEED · KM/H" />
+          <TextBlock Classes="data-l" Text="{Binding Speed}" />
+        </StackPanel>
+      </Border>
+      <Border Classes="panel" Margin="0,0,12,0">
+        <StackPanel Spacing="6">
+          <TextBlock Classes="label" Text="GEAR · RPM" />
+          <StackPanel Orientation="Horizontal" Spacing="10">
+            <TextBlock Classes="data-l" Text="{Binding Gear}" />
+            <TextBlock Classes="data-s" Text="{Binding Rpm}" Foreground="{StaticResource TextMidBrush}" VerticalAlignment="Bottom" Margin="0,0,0,8" />
+          </StackPanel>
+        </StackPanel>
+      </Border>
+      <Border Classes="panel" Margin="0,0,12,0">
+        <StackPanel Spacing="6">
+          <TextBlock Classes="label" Text="LAP" />
+          <StackPanel Orientation="Horizontal">
+            <TextBlock Classes="data-l" Text="{Binding Lap}" />
+            <TextBlock Classes="data-m" Text="{Binding TotalLaps}" Foreground="{StaticResource TextMidBrush}" VerticalAlignment="Bottom" Margin="0,0,0,5" />
+          </StackPanel>
+        </StackPanel>
+      </Border>
+      <Border Classes="panel" Margin="0,0,12,0">
+        <StackPanel Spacing="6">
+          <TextBlock Classes="label" Text="POSITION" />
+          <TextBlock Classes="data-l" Text="{Binding Position}" />
+        </StackPanel>
+      </Border>
+      <Border Classes="panel" Background="{Binding DeltaBackground}" BorderBrush="{Binding DeltaBackground}">
+        <StackPanel Spacing="6">
+          <TextBlock Classes="label" Text="DELTA VS BEST" Foreground="{Binding DeltaForeground}" />
+          <TextBlock Classes="data-l" Text="{Binding Delta}" Foreground="{Binding DeltaForeground}" />
+        </StackPanel>
+      </Border>
+    </UniformGrid>
+
+    <!-- Map + car state -->
+    <Grid Grid.Row="1" ColumnDefinitions="*,440" ColumnSpacing="16">
+      <Border Classes="panel" Padding="0" ClipToBounds="True">
+        <Panel>
+          <controls:TrackMapControl Outline="{Binding Outline}" ActiveLap="{Binding CurrentLapSamples}" />
+          <StackPanel Margin="16,14" HorizontalAlignment="Left" VerticalAlignment="Top" Spacing="2" IsHitTestVisible="False">
+            <TextBlock Classes="h2" Text="{Binding Session}" FontSize="18" />
+          </StackPanel>
+          <StackPanel Margin="16,14" HorizontalAlignment="Right" VerticalAlignment="Bottom" Spacing="8" IsHitTestVisible="False">
+            <StackPanel Orientation="Horizontal" Spacing="6"><Border Width="18" Height="6" CornerRadius="3" Background="{StaticResource FasterBrush}" VerticalAlignment="Center" /><TextBlock Classes="label" Text="FULL THROTTLE" Foreground="{StaticResource FasterBrush}" /></StackPanel>
+            <StackPanel Orientation="Horizontal" Spacing="6"><Border Width="18" Height="6" CornerRadius="3" Background="{StaticResource SlowerBrush}" VerticalAlignment="Center" /><TextBlock Classes="label" Text="PARTIAL" Foreground="{StaticResource SlowerBrush}" /></StackPanel>
+            <StackPanel Orientation="Horizontal" Spacing="6"><Border Width="18" Height="6" CornerRadius="3" Background="{StaticResource DangerBrush}" VerticalAlignment="Center" /><TextBlock Classes="label" Text="BRAKING" Foreground="{StaticResource DangerBrush}" /></StackPanel>
+          </StackPanel>
+        </Panel>
+      </Border>
+
+      <ScrollViewer Grid.Column="1">
+        <StackPanel Spacing="12">
+          <!-- Inputs -->
+          <Border Classes="panel">
+            <Grid ColumnDefinitions="84,*,60" RowDefinitions="Auto,Auto" RowSpacing="10" ColumnSpacing="12">
+              <TextBlock Classes="label" Text="THROTTLE" VerticalAlignment="Center" />
+              <ProgressBar Grid.Column="1" Classes="bar" Minimum="0" Maximum="1" Value="{Binding Throttle}" Foreground="{StaticResource FasterBrush}" />
+              <TextBlock Grid.Column="2" Classes="data-s" FontWeight="ExtraBold" Text="{Binding ThrottleText}" HorizontalAlignment="Right" />
+              <TextBlock Grid.Row="1" Classes="label" Text="BRAKE" VerticalAlignment="Center" />
+              <ProgressBar Grid.Row="1" Grid.Column="1" Classes="bar" Minimum="0" Maximum="1" Value="{Binding Brake}" Foreground="{StaticResource DangerBrush}" />
+              <TextBlock Grid.Row="1" Grid.Column="2" Classes="data-s" FontWeight="ExtraBold" Text="{Binding BrakeText}" HorizontalAlignment="Right" />
+            </Grid>
+          </Border>
+
+          <!-- Fuel / ERS -->
+          <Border Classes="panel">
+            <UniformGrid Columns="3">
+              <StackPanel Spacing="4">
+                <TextBlock Classes="label" Text="FUEL · KG" />
+                <TextBlock Classes="data-m" Text="{Binding Fuel}" />
+              </StackPanel>
+              <StackPanel Spacing="4">
+                <TextBlock Classes="label" Text="RANGE · LAPS" />
+                <TextBlock Classes="data-m" Text="{Binding FuelRange}" Foreground="{Binding FuelRangeBrush}" />
+              </StackPanel>
+              <StackPanel Spacing="4">
+                <TextBlock Classes="label" Text="ERS · MJ" />
+                <TextBlock Classes="data-m" Text="{Binding Ers}" />
+              </StackPanel>
+            </UniformGrid>
+          </Border>
+
+          <!-- Tyres -->
+          <Border Classes="panel">
+            <StackPanel Spacing="10">
+              <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+                <controls:CompoundBadge Compound="{Binding Compound}" Width="36" Height="36" />
+                <TextBlock Grid.Column="1" Classes="label" Text="{Binding TyreHeader}" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="2" Classes="data-s" Text="{Binding TyreLapsLeft}" Foreground="{Binding TyreLapsBrush}" VerticalAlignment="Center" />
+              </Grid>
+              <ItemsControl ItemsSource="{Binding Wheels}">
+                <ItemsControl.ItemsPanel>
+                  <ItemsPanelTemplate>
+                    <UniformGrid Columns="2" />
+                  </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="vm:WheelCell">
+                    <Border Background="{Binding Background}" BorderBrush="{Binding Border}" BorderThickness="2" CornerRadius="8" Padding="10,8" Margin="0,0,8,8">
+                      <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
+                        <TextBlock Text="{Binding Name}" FontFamily="{StaticResource DisplayFont}" FontSize="15" FontWeight="Bold" Foreground="{Binding Foreground}" VerticalAlignment="Center" />
+                        <TextBlock Grid.Column="1" Classes="mono" Text="{Binding Temperature}" FontSize="14" Foreground="{Binding Foreground}" VerticalAlignment="Center" />
+                        <TextBlock Grid.Column="2" Classes="data-m" Text="{Binding Wear}" Foreground="{Binding Foreground}" />
+                      </Grid>
+                    </Border>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+          </Border>
+
+          <!-- Radar preview -->
+          <Border Classes="panel" Height="240">
+            <Grid RowDefinitions="Auto,*" RowSpacing="8">
+              <TextBlock Classes="label" Text="PROXIMITY RADAR" />
+              <overlays:RadarOverlayView Grid.Row="1" DataContext="{Binding Radar}" HorizontalAlignment="Center" />
+            </Grid>
+          </Border>
+
+          <!-- Diagnostics -->
+          <Border Classes="panel">
+            <StackPanel Spacing="6">
+              <TextBlock Classes="label" Text="PACKETS RECEIVED" />
+              <ItemsControl ItemsSource="{Binding PacketStats}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="vm:PacketStatRow">
+                    <Grid ColumnDefinitions="*,Auto">
+                      <TextBlock Classes="mono" Text="{Binding Packet}" Foreground="{StaticResource TextMidBrush}" FontSize="14" />
+                      <TextBlock Grid.Column="1" Classes="mono" Text="{Binding Count, StringFormat='{}{0:N0}'}" FontSize="14" />
+                    </Grid>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+          </Border>
+        </StackPanel>
+      </ScrollViewer>
+    </Grid>
+
+    <!-- Current lap trace -->
+    <Border Grid.Row="2" Classes="panel" Padding="0" Height="180">
+      <controls:TelemetryPlot Model="{Binding CurrentLapChart}" />
+    </Border>
+  </Grid>
+</UserControl>

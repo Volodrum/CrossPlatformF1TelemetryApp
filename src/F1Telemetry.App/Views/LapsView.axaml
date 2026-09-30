@@ -1,0 +1,46 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:F1Telemetry.App.ViewModels"
+             xmlns:controls="using:F1Telemetry.App.Controls"
+             x:Class="F1Telemetry.App.Views.LapsView"
+             x:DataType="vm:SessionViewModel">
+  <DockPanel Margin="0,16,0,0">
+    <StackPanel DockPanel.Dock="Top" Spacing="4" Margin="0,0,0,12">
+      <TextBlock Classes="label" Text="SESSION LAPS · CLICK A LAP TO OPEN ITS TELEMETRY AND COMPARE IT WITH ANY OTHER LAP" />
+      <TextBlock Classes="h1" Text="{Binding Header}" />
+    </StackPanel>
+    <Border Classes="panel" Padding="8">
+      <DockPanel>
+        <Grid DockPanel.Dock="Top" ColumnDefinitions="60,120,96,96,96,100,190,60" ColumnSpacing="12" Margin="12,6,12,8">
+          <TextBlock Classes="label" Text="LAP" />
+          <TextBlock Grid.Column="1" Classes="label" Text="TIME" HorizontalAlignment="Center" />
+          <TextBlock Grid.Column="2" Classes="label" Text="S1" HorizontalAlignment="Center" />
+          <TextBlock Grid.Column="3" Classes="label" Text="S2" HorizontalAlignment="Center" />
+          <TextBlock Grid.Column="4" Classes="label" Text="S3" HorizontalAlignment="Center" />
+          <TextBlock Grid.Column="5" Classes="label" Text="Δ BEST" HorizontalAlignment="Right" />
+          <TextBlock Grid.Column="6" Classes="label" Text="TYRE / TYPE" Margin="8,0,0,0" />
+          <TextBlock Grid.Column="7" Classes="label" Text="POS" HorizontalAlignment="Right" />
+        </Grid>
+        <ListBox Classes="rows" ItemsSource="{Binding Laps}" SelectedItem="{Binding SelectedLap}">
+          <ListBox.ItemTemplate>
+            <DataTemplate x:DataType="vm:LapRowViewModel">
+              <Grid ColumnDefinitions="60,120,96,96,96,100,190,60" ColumnSpacing="12">
+                <TextBlock Classes="h2" Text="{Binding Label}" VerticalAlignment="Center" />
+                <ContentControl Grid.Column="1" Content="{Binding LapTime}" />
+                <ContentControl Grid.Column="2" Content="{Binding S1}" />
+                <ContentControl Grid.Column="3" Content="{Binding S2}" />
+                <ContentControl Grid.Column="4" Content="{Binding S3}" />
+                <TextBlock Grid.Column="5" Classes="data-s" Text="{Binding Delta}" Foreground="{Binding DeltaBrush}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                <StackPanel Grid.Column="6" Orientation="Horizontal" Spacing="10" Margin="8,0,0,0">
+                  <controls:CompoundBadge Compound="{Binding Compound}" Width="30" Height="30" />
+                  <TextBlock Text="{Binding TyreText}" FontFamily="{StaticResource DisplayFont}" FontSize="15" FontWeight="Bold" Foreground="{Binding TyreBrush}" VerticalAlignment="Center" />
+                </StackPanel>
+                <TextBlock Grid.Column="7" Classes="data-s" Text="{Binding Position}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+              </Grid>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+      </DockPanel>
+    </Border>
+  </DockPanel>
+</UserControl>

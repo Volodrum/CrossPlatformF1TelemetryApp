@@ -1,0 +1,70 @@
+<!--
+  Race HUD design tokens (see the "F1 Telemetry Design Template" canvas).
+  Contrast on Panel: TextHi 17.3:1, TextMid 11.4:1, TextLo 6.3:1 (labels only), status colours >= 6:1.
+  Keep in sync with ViewModels/Palette.cs, which exposes the same values to code.
+-->
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <!-- Surfaces -->
+  <Color x:Key="Bg0Color">#07080A</Color>
+  <Color x:Key="ChromeColor">#0C0D10</Color>
+  <Color x:Key="PanelColor">#101216</Color>
+  <Color x:Key="CardColor">#121418</Color>
+  <Color x:Key="RaisedColor">#181B21</Color>
+  <Color x:Key="SelectedColor">#1E2129</Color>
+  <Color x:Key="DividerColor">#22262E</Color>
+  <Color x:Key="LineColor">#2C313B</Color>
+  <Color x:Key="LineStrongColor">#3A404C</Color>
+
+  <!-- Text -->
+  <Color x:Key="TextHiColor">#F4F6F9</Color>
+  <Color x:Key="TextMidColor">#C3CAD5</Color>
+  <Color x:Key="TextLoColor">#8D97A6</Color>
+  <Color x:Key="OnColorColor">#07080A</Color>
+
+  <!-- Status -->
+  <Color x:Key="BrandColor">#E10600</Color>
+  <Color x:Key="SessionBestColor">#C77DFF</Color>
+  <Color x:Key="FasterColor">#2EE88F</Color>
+  <Color x:Key="SlowerColor">#FFC23D</Color>
+  <Color x:Key="DangerColor">#FF5A4F</Color>
+  <!-- Third damage step on the car damage page (between amber and red). -->
+  <Color x:Key="OrangeColor">#FF8A3D</Color>
+  <Color x:Key="InfoColor">#4DB5FF</Color>
+  <Color x:Key="FasterTintColor">#0F2A1C</Color>
+  <Color x:Key="InfoTintColor">#0E2236</Color>
+  <Color x:Key="WarningTintColor">#3A1F00</Color>
+
+  <SolidColorBrush x:Key="Bg0Brush" Color="{StaticResource Bg0Color}" />
+  <SolidColorBrush x:Key="ChromeBrush" Color="{StaticResource ChromeColor}" />
+  <SolidColorBrush x:Key="PanelBrush" Color="{StaticResource PanelColor}" />
+  <SolidColorBrush x:Key="CardBrush" Color="{StaticResource CardColor}" />
+  <SolidColorBrush x:Key="RaisedBrush" Color="{StaticResource RaisedColor}" />
+  <SolidColorBrush x:Key="SelectedBrush" Color="{StaticResource SelectedColor}" />
+  <SolidColorBrush x:Key="DividerBrush" Color="{StaticResource DividerColor}" />
+  <SolidColorBrush x:Key="LineBrush" Color="{StaticResource LineColor}" />
+  <SolidColorBrush x:Key="LineStrongBrush" Color="{StaticResource LineStrongColor}" />
+  <SolidColorBrush x:Key="TextHiBrush" Color="{StaticResource TextHiColor}" />
+  <SolidColorBrush x:Key="TextMidBrush" Color="{StaticResource TextMidColor}" />
+  <SolidColorBrush x:Key="TextLoBrush" Color="{StaticResource TextLoColor}" />
+  <SolidColorBrush x:Key="OnColorBrush" Color="{StaticResource OnColorColor}" />
+  <SolidColorBrush x:Key="BrandBrush" Color="{StaticResource BrandColor}" />
+  <SolidColorBrush x:Key="SessionBestBrush" Color="{StaticResource SessionBestColor}" />
+  <SolidColorBrush x:Key="FasterBrush" Color="{StaticResource FasterColor}" />
+  <SolidColorBrush x:Key="SlowerBrush" Color="{StaticResource SlowerColor}" />
+  <SolidColorBrush x:Key="DangerBrush" Color="{StaticResource DangerColor}" />
+  <SolidColorBrush x:Key="OrangeBrush" Color="{StaticResource OrangeColor}" />
+  <SolidColorBrush x:Key="InfoBrush" Color="{StaticResource InfoColor}" />
+  <SolidColorBrush x:Key="FasterTintBrush" Color="{StaticResource FasterTintColor}" />
+  <SolidColorBrush x:Key="InfoTintBrush" Color="{StaticResource InfoTintColor}" />
+  <SolidColorBrush x:Key="WarningTintBrush" Color="{StaticResource WarningTintColor}" />
+
+  <!-- Type: Chakra Petch for labels/headings, JetBrains Mono for every number, IBM Plex Sans for text. -->
+  <FontFamily x:Key="DisplayFont">avares://F1Telemetry/Assets/Fonts#Chakra Petch</FontFamily>
+  <FontFamily x:Key="DataFont">avares://F1Telemetry/Assets/Fonts#JetBrains Mono</FontFamily>
+  <FontFamily x:Key="BodyFont">avares://F1Telemetry/Assets/Fonts#IBM Plex Sans</FontFamily>
+
+  <CornerRadius x:Key="PanelRadius">10</CornerRadius>
+  <CornerRadius x:Key="ChipRadius">5</CornerRadius>
+  <Thickness x:Key="StrokeThickness">2</Thickness>
+</ResourceDictionary>

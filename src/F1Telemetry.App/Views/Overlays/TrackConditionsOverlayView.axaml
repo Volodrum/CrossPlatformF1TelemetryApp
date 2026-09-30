@@ -1,0 +1,163 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:F1Telemetry.App.ViewModels"
+             xmlns:controls="using:F1Telemetry.App.Controls"
+             x:Class="F1Telemetry.App.Views.Overlays.TrackConditionsOverlayView"
+             x:DataType="vm:TrackConditionsOverlayViewModel"
+             Width="360">
+  <UserControl.Styles>
+    <Style Selector="Border.part">
+      <Setter Property="Background" Value="{StaticResource RaisedBrush}" />
+      <Setter Property="CornerRadius" Value="6" />
+      <Setter Property="BorderThickness" Value="4,0,0,0" />
+      <Setter Property="Padding" Value="8,4,8,5" />
+    </Style>
+    <Style Selector="Border.swatch">
+      <Setter Property="Width" Value="10" />
+      <Setter Property="Height" Value="10" />
+      <Setter Property="CornerRadius" Value="2" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="TextBlock.legend">
+      <Setter Property="FontFamily" Value="{StaticResource DataFont}" />
+      <Setter Property="FontSize" Value="11" />
+      <Setter Property="Foreground" Value="{StaticResource TextLoBrush}" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="Margin" Value="5,0,12,0" />
+    </Style>
+  </UserControl.Styles>
+
+  <Border Classes="hud">
+    <Panel>
+      <!-- Page 1: strategy -->
+      <StackPanel Spacing="10" IsVisible="{Binding ShowStrategy}">
+        <Grid ColumnDefinitions="*,Auto" Margin="0,-2,0,0">
+          <TextBlock Classes="label strong" Text="STRATEGY" FontSize="12" VerticalAlignment="Center" />
+          <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+            <Border Width="18" Height="4" CornerRadius="2" Background="{Binding StrategyPager}" />
+            <Border Width="18" Height="4" CornerRadius="2" Background="{Binding DamagePager}" />
+          </StackPanel>
+        </Grid>
+
+        <Grid ColumnDefinitions="*,Auto">
+          <TextBlock Text="{Binding Weather}" FontFamily="{StaticResource DisplayFont}" FontSize="18" FontWeight="Bold" LetterSpacing="1" VerticalAlignment="Center" />
+          <Border Grid.Column="1" Classes="pill" Background="{StaticResource SlowerBrush}" IsVisible="{Binding HasSafetyCar}" Padding="10,4" CornerRadius="6">
+            <TextBlock Text="{Binding SafetyCar}" FontFamily="{StaticResource DisplayFont}" FontSize="15" FontWeight="Bold" LetterSpacing="1.5" Foreground="{StaticResource OnColorBrush}" />
+          </Border>
+        </Grid>
+
+        <Grid ColumnDefinitions="*,*">
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <TextBlock Classes="label" Text="TRACK" VerticalAlignment="Center" />
+            <TextBlock Classes="data-m" Text="{Binding TrackTemp}" />
+          </StackPanel>
+          <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+            <TextBlock Classes="label" Text="AIR" VerticalAlignment="Center" />
+            <TextBlock Classes="data-m" Text="{Binding AirTemp}" />
+          </StackPanel>
+        </Grid>
+
+        <TextBlock Classes="label" Text="RAIN FORECAST" />
+        <ItemsControl ItemsSource="{Binding Forecast}">
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate>
+              <UniformGrid Columns="3" />
+            </ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:ForecastTile">
+              <Border Background="{Binding Background}" BorderBrush="{Binding Border}" BorderThickness="2" CornerRadius="6" Padding="8,6" Margin="0,0,6,0">
+                <StackPanel Spacing="4">
+                  <TextBlock Text="{Binding Time}" FontFamily="{StaticResource DataFont}" FontSize="13" FontWeight="Bold" Foreground="{StaticResource TextMidBrush}" />
+                  <TextBlock Text="{Binding Rain}" FontFamily="{StaticResource DataFont}" FontSize="18" FontWeight="ExtraBold" Foreground="{Binding Foreground}" />
+                </StackPanel>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <Border Classes="divider" />
+
+        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
+          <controls:CompoundBadge Compound="{Binding Compound}" Width="44" Height="44" />
+          <StackPanel Grid.Column="1" Spacing="2">
+            <TextBlock Classes="label" Text="{Binding TyreLabel}" />
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <TextBlock Classes="data-m" FontSize="30" Text="{Binding TyreLaps}" Foreground="{Binding TyreBrush}" />
+              <TextBlock Classes="unit" Text="LAPS" FontSize="17" VerticalAlignment="Bottom" Margin="0,0,0,5" />
+            </StackPanel>
+          </StackPanel>
+        </Grid>
+
+        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
+          <Viewbox Width="44" Height="44">
+            <Canvas Width="24" Height="24">
+              <Path Stroke="{StaticResource TextHiBrush}" StrokeThickness="2.2" StrokeLineCap="Round" StrokeJoin="Round"
+                    Data="M4,21 L4,5 A2,2 0 0 1 6,3 L13,3 A2,2 0 0 1 15,5 L15,21 M3,21 L16,21 M15,9 L17,9 A2,2 0 0 1 19,11 L19,17 A1.5,1.5 0 0 0 22,17 L22,8 L19,5 M7,7 L12,7 L12,11 L7,11 Z" />
+            </Canvas>
+          </Viewbox>
+          <StackPanel Grid.Column="1" Spacing="2">
+            <TextBlock Classes="label" Text="{Binding FuelLabel}" />
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <TextBlock Classes="data-m" FontSize="30" Text="{Binding FuelLaps}" Foreground="{Binding FuelBrush}" />
+              <TextBlock Classes="unit" Text="LAPS" FontSize="17" VerticalAlignment="Bottom" Margin="0,0,0,5" />
+            </StackPanel>
+          </StackPanel>
+        </Grid>
+
+        <Border Classes="pill" HorizontalAlignment="Center" Background="{Binding StatusBrush}" IsVisible="{Binding HasStatus}" Padding="12,4" CornerRadius="6">
+          <TextBlock Text="{Binding Status}" FontFamily="{StaticResource DisplayFont}" FontSize="15" FontWeight="Bold" LetterSpacing="1.5" Foreground="{StaticResource OnColorBrush}" />
+        </Border>
+      </StackPanel>
+
+      <!-- Page 2: car damage (hotkey, or pops up on new damage) -->
+      <StackPanel Spacing="6" IsVisible="{Binding ShowDamage}">
+        <Grid ColumnDefinitions="*,Auto" Margin="0,-2,0,4">
+          <TextBlock Classes="label strong" Text="CAR DAMAGE" FontSize="12" VerticalAlignment="Center" />
+          <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+            <Border Width="18" Height="4" CornerRadius="2" Background="{Binding StrategyPager}" />
+            <Border Width="18" Height="4" CornerRadius="2" Background="{Binding DamagePager}" />
+          </StackPanel>
+        </Grid>
+
+        <controls:CarDamageControl Damage="{Binding Damage}" />
+
+        <UniformGrid Columns="3" ColumnSpacing="6">
+          <Border Classes="part" BorderBrush="{Binding FloorBrush}">
+            <StackPanel>
+              <TextBlock Classes="label" Text="FLOOR" FontSize="10" />
+              <TextBlock Classes="data-s" FontSize="17" Text="{Binding Floor}" Foreground="{Binding FloorBrush}" />
+            </StackPanel>
+          </Border>
+          <Border Classes="part" BorderBrush="{Binding DiffuserBrush}">
+            <StackPanel>
+              <TextBlock Classes="label" Text="DIFFUSER" FontSize="10" />
+              <TextBlock Classes="data-s" FontSize="17" Text="{Binding Diffuser}" Foreground="{Binding DiffuserBrush}" />
+            </StackPanel>
+          </Border>
+          <Border Classes="part" BorderBrush="{Binding GearboxBrush}">
+            <StackPanel>
+              <TextBlock Classes="label" Text="GEARBOX" FontSize="10" />
+              <TextBlock Classes="data-s" FontSize="17" Text="{Binding Gearbox}" Foreground="{Binding GearboxBrush}" />
+            </StackPanel>
+          </Border>
+        </UniformGrid>
+
+        <Border Classes="part" BorderBrush="{Binding FaultsBrush}">
+          <StackPanel>
+            <TextBlock Classes="label" Text="FAULTS" FontSize="10" />
+            <TextBlock Classes="data-s" FontSize="14" Text="{Binding Faults}" Foreground="{Binding FaultsBrush}" />
+          </StackPanel>
+        </Border>
+
+        <WrapPanel Margin="0,4,0,0">
+          <Border Classes="swatch" Background="{StaticResource FasterBrush}" /><TextBlock Classes="legend" Text="&lt;10%" />
+          <Border Classes="swatch" Background="{StaticResource SlowerBrush}" /><TextBlock Classes="legend" Text="10–29%" />
+          <Border Classes="swatch" Background="{StaticResource OrangeBrush}" /><TextBlock Classes="legend" Text="30–49%" />
+          <Border Classes="swatch" Background="{StaticResource DangerBrush}" /><TextBlock Classes="legend" Text="50%+" />
+          <TextBlock Classes="legend" Text="tyres &lt;35 / 35–55 / &gt;55" Margin="0" />
+        </WrapPanel>
+      </StackPanel>
+    </Panel>
+  </Border>
+</UserControl>
