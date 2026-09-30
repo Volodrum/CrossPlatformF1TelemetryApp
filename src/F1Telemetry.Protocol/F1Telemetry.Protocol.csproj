@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <Description>Zero-dependency parser for the F1 25 and F1 26 (2026 Season Pack) UDP telemetry protocol.</Description>
+  </PropertyGroup>
+</Project>
