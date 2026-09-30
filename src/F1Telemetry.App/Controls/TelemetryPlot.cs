@@ -1,5 +1,8 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
+using Avalonia.Interactivity;
+using Avalonia.VisualTree;
 using F1Telemetry.App.ViewModels;
 using ScottPlot;
 using ScottPlot.Avalonia;
@@ -36,6 +39,31 @@ public sealed class TelemetryPlot : ContentControl
         // Legend outside the data area (so it never hides the trace). Added once: each call adds another panel.
         _plot.Plot.ShowLegend(Edge.Right);
         _plot.UserInputProcessor.DoubleLeftClickBenchmark(false);
+
+        // Tunnel so this runs before ScottPlot sees the wheel.
+        AddHandler(PointerWheelChangedEvent, OnPreviewPointerWheel, RoutingStrategies.Tunnel);
+    }
+
+    /// <summary>
+    /// Inside a scrollable page a plain wheel scrolls the page, so a stack of charts never traps the pointer;
+    /// Ctrl + wheel zooms along the lap. Charts outside a scrollable page zoom with a plain wheel as before.
+    /// </summary>
+    private void OnPreviewPointerWheel(object? sender, PointerWheelEventArgs e)
+    {
+        if (e.KeyModifiers.HasFlag(KeyModifiers.Control))
+        {
+            return;
+        }
+
+        var scroller = this.FindAncestorOfType<ScrollViewer>();
+        if (scroller is null || scroller.Extent.Height <= scroller.Viewport.Height)
+        {
+            return;
+        }
+
+        // 50 px per wheel notch, the same step ScrollViewer uses; Offset is clamped by the ScrollViewer.
+        scroller.Offset = scroller.Offset.WithY(scroller.Offset.Y - e.Delta.Y * 50);
+        e.Handled = true;
     }
 
     public ChartModel? Model

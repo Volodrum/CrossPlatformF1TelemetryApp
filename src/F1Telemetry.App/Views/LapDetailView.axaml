@@ -77,7 +77,7 @@
       <Panel>
         <!-- Chart tabs: full width. -->
         <DockPanel IsVisible="{Binding ShowCharts}">
-          <TextBlock DockPanel.Dock="Bottom" Classes="body" Margin="0,8,0,0" Text="Drag or scroll to zoom along the lap. The value axis stays fixed. The dashed trace is the comparison lap." />
+          <TextBlock DockPanel.Dock="Bottom" Classes="body" Margin="0,8,0,0" Text="Scroll to move down the page. Ctrl + scroll zooms along the lap, drag pans. The value axis stays fixed. The dashed trace is the comparison lap." />
           <ScrollViewer>
             <ItemsControl ItemsSource="{Binding SelectedTab.Charts, FallbackValue={x:Null}}">
               <ItemsControl.ItemTemplate>
