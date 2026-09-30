@@ -63,7 +63,7 @@ public static class LapClassifier
         return laps.Select((l, i) => l with { LapType = pitLaps.Contains(i) ? LapType.Pit : LapType.Regular }).ToList();
     }
 
-    private static bool StintChanged(LapRecord previous, LapRecord current) =>
+    internal static bool StintChanged(LapRecord previous, LapRecord current) =>
         previous.StintIndex >= 0 && current.StintIndex >= 0
             ? previous.StintIndex != current.StintIndex
             : previous.Compound != current.Compound;

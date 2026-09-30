@@ -293,19 +293,21 @@ public sealed class DuckDbTelemetryStore(string databasePath, ILogger<DuckDbTele
     private void UpsertLapRow(long recordingId, LapRecord lap) =>
         NonQuery("""
             INSERT INTO laps (recording_id, lap_number, lap_time_ms, s1_ms, s2_ms, s3_ms, is_valid, is_best_lap, is_best_s1,
-                              is_best_s2, is_best_s3, compound, actual_compound, stint_index, car_position, lap_type)
-            VALUES ($rid, $lap, $time, $s1, $s2, $s3, $valid, $best, $bs1, $bs2, $bs3, $compound, $actual, $stint, $pos, $type)
+                              is_best_s2, is_best_s3, compound, actual_compound, stint_index, car_position, lap_type, pit_lane_ms, pit_stop_ms)
+            VALUES ($rid, $lap, $time, $s1, $s2, $s3, $valid, $best, $bs1, $bs2, $bs3, $compound, $actual, $stint, $pos, $type, $pitLane, $pitStop)
             ON CONFLICT (recording_id, lap_number) DO UPDATE SET
                 lap_time_ms = EXCLUDED.lap_time_ms, s1_ms = EXCLUDED.s1_ms, s2_ms = EXCLUDED.s2_ms, s3_ms = EXCLUDED.s3_ms,
                 is_valid = EXCLUDED.is_valid, is_best_lap = EXCLUDED.is_best_lap, is_best_s1 = EXCLUDED.is_best_s1,
                 is_best_s2 = EXCLUDED.is_best_s2, is_best_s3 = EXCLUDED.is_best_s3, compound = EXCLUDED.compound,
                 actual_compound = EXCLUDED.actual_compound, stint_index = EXCLUDED.stint_index,
-                car_position = coalesce(EXCLUDED.car_position, laps.car_position), lap_type = EXCLUDED.lap_type
+                car_position = coalesce(EXCLUDED.car_position, laps.car_position), lap_type = EXCLUDED.lap_type,
+                pit_lane_ms = EXCLUDED.pit_lane_ms, pit_stop_ms = EXCLUDED.pit_stop_ms
             """,
             ("rid", recordingId), ("lap", lap.LapNumber), ("time", (long)lap.LapTimeMs), ("s1", (long)lap.Sector1Ms),
             ("s2", (long)lap.Sector2Ms), ("s3", (long)lap.Sector3Ms), ("valid", lap.IsValid), ("best", lap.IsBestLap),
             ("bs1", lap.IsBestSector1), ("bs2", lap.IsBestSector2), ("bs3", lap.IsBestSector3), ("compound", lap.Compound),
-            ("actual", lap.ActualCompound), ("stint", lap.StintIndex), ("pos", lap.CarPosition), ("type", lap.LapType.ToString()));
+            ("actual", lap.ActualCompound), ("stint", lap.StintIndex), ("pos", lap.CarPosition), ("type", lap.LapType.ToString()),
+            ("pitLane", (long)lap.PitLaneTimeMs), ("pitStop", (long)lap.PitStopTimeMs));
 
     private void NonQuery(string sql, params (string Name, object? Value)[] args)
     {
@@ -332,7 +334,7 @@ public sealed class DuckDbTelemetryStore(string databasePath, ILogger<DuckDbTele
     public Task<IReadOnlyList<LapRecord>> GetLapsAsync(long recordingId, CancellationToken cancellationToken = default) =>
         QueryAsync("""
             SELECT t.lap_number, l.lap_time_ms, l.s1_ms, l.s2_ms, l.s3_ms, l.is_valid, l.is_best_lap, l.is_best_s1, l.is_best_s2,
-                   l.is_best_s3, l.compound, l.actual_compound, l.stint_index, l.car_position, l.lap_type
+                   l.is_best_s3, l.compound, l.actual_compound, l.stint_index, l.car_position, l.lap_type, l.pit_lane_ms, l.pit_stop_ms
             FROM (SELECT DISTINCT lap_number FROM telemetry WHERE recording_id = $id) t
             LEFT JOIN laps l ON l.recording_id = $id AND l.lap_number = t.lap_number
             ORDER BY t.lap_number
@@ -354,6 +356,8 @@ public sealed class DuckDbTelemetryStore(string databasePath, ILogger<DuckDbTele
                 StintIndex = r.IsDBNull(12) ? -1 : r.GetInt32(12),
                 CarPosition = r.IsDBNull(13) ? null : r.GetInt32(13),
                 LapType = !r.IsDBNull(14) && Enum.TryParse<LapType>(r.GetString(14), out var type) ? type : LapType.Regular,
+                PitLaneTimeMs = (uint)GetLong(r, 15),
+                PitStopTimeMs = (uint)GetLong(r, 16),
             },
             cancellationToken, ("id", recordingId));
 

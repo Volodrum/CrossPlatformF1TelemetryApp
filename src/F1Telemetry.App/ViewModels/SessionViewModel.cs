@@ -46,13 +46,24 @@ public sealed record WheelRate(string Label, string Rate, IBrush Background, IBr
 
 public sealed record LapBar(string Label, double Height, IBrush Fill);
 
-public sealed record StintViewModel(StintAnalysis Stint, IReadOnlyList<LapBar> Bars)
+public sealed record PitStopRowViewModel(PitStopAnalysis Stop)
+{
+    public string Laps => $"L{Stop.InLap}–{Stop.OutLap}";
+    public string FromCompound => Stop.FromCompound;
+    public string ToCompound => Stop.ToCompound;
+    public string Loss => $"{Stop.LossSeconds:0.0}";
+    public string Detail => Stop.PitLaneSeconds is { } lane
+        ? $"Pit lane {lane:0.0} s · stationary {Stop.StationarySeconds ?? 0:0.0} s"
+        : "Pit-lane timer not recorded (older recording)";
+}
+
+public sealed record StintViewModel(StintAnalysis Stint, IReadOnlyList<LapBar> Bars, FuelEffect FuelEffect)
 {
     public string Header => $"Stint {Stint.StintNumber} · {Stint.Compound}";
     public string Laps => $"L{Stint.StartLap}–{Stint.EndLap} · {Stint.RegularLapCount} clean";
     public string Compound => Stint.Compound;
     public bool HasData => Stint.RegularLapCount > 0;
-    public bool HasPace => Stint.RegularLapCount >= 2;
+    public bool HasPace => Stint.PaceLapCount >= 2;
 
     public string Lifespan => HasData ? $"{Stint.TyreLifespanLaps:0.0}" : "—";
     public string LifespanNote => HasData ? $"{Stint.AverageWearCombined:0.00}% wear per lap combined, to the wear limit" : "Drive one clean flying lap to build projections";
@@ -66,9 +77,12 @@ public sealed record StintViewModel(StintAnalysis Stint, IReadOnlyList<LapBar> B
     public string LimitingName => Stint.LimitingTyre is { } t ? $"LIMITING TYRE · {WheelValues.ShortNames[Array.IndexOf(WheelValues.Names, t.Name)]}" : "";
     public string LimitingLaps => Stint.LimitingTyre is { } t ? $"{Math.Max(0, Math.Floor(t.LapsRemaining)):0} LAPS" : "";
 
-    public string Pace => HasPace ? $"{Stint.PaceDegradationPerLap:+0.000;−0.000}" : "—";
-    public IBrush PaceBrush => !HasPace ? Palette.TextLo : Stint.PaceDegradationPerLap > 0 ? Palette.Slower : Palette.Faster;
-    public string PaceNote => HasPace ? $"{Stint.TotalStintTimeLoss:+0.00;−0.00} s over {Stint.RegularLapCount} clean laps (linear fit)" : "Needs 2+ clean laps for the pace regression";
+    public string Pace => HasPace ? $"{Stint.FuelCorrectedDegradationPerLap:+0.000;−0.000}" : "—";
+    public IBrush PaceBrush => !HasPace ? Palette.TextLo : Stint.FuelCorrectedDegradationPerLap > 0 ? Palette.Slower : Palette.Faster;
+    public string PaceNote => HasPace ? $"{Stint.TotalStintTimeLoss:+0.00;−0.00} s over {Stint.PaceLapCount} clean laps, with the fuel burn taken out" : "Needs 2+ clean laps for the pace regression";
+    public string RawPaceNote => HasPace
+        ? $"Raw lap times {Stint.PaceDegradationPerLap:+0.000;−0.000} s/lap. Fuel effect {FuelEffect.SecondsPerKg:0.000} s/kg, {FuelEffect.Basis}."
+        : "";
     public string Best => Stint.BestLapFormatted;
     public string Average => Stint.AverageLapFormatted;
 
@@ -91,6 +105,9 @@ public sealed partial class SessionViewModel(TelemetryRuntime runtime) : Observa
 
     public ObservableCollection<LapRowViewModel> Laps { get; } = [];
     public ObservableCollection<StintViewModel> Stints { get; } = [];
+    public ObservableCollection<PitStopRowViewModel> PitStops { get; } = [];
+
+    [ObservableProperty] public partial bool HasPitStops { get; set; }
 
     public IReadOnlyList<LapRecord> ClassifiedLaps { get; private set; } = [];
 
@@ -120,6 +137,8 @@ public sealed partial class SessionViewModel(TelemetryRuntime runtime) : Observa
             Header = "Select a recording";
             Laps.Clear();
             Stints.Clear();
+            PitStops.Clear();
+            HasPitStops = false;
             PositionChart = null;
             return;
         }
@@ -191,8 +210,16 @@ public sealed partial class SessionViewModel(TelemetryRuntime runtime) : Observa
         Stints.Clear();
         foreach (var stint in analysis?.Stints ?? [])
         {
-            Stints.Add(new StintViewModel(stint, BuildBars(stint)));
+            Stints.Add(new StintViewModel(stint, BuildBars(stint), analysis!.FuelEffect));
         }
+
+        PitStops.Clear();
+        foreach (var stop in analysis?.PitStops ?? [])
+        {
+            PitStops.Add(new PitStopRowViewModel(stop));
+        }
+
+        HasPitStops = PitStops.Count > 0;
 
         SelectedStint = Stints.FirstOrDefault(s => s.Stint.StintNumber == selected) ?? Stints.LastOrDefault();
     }

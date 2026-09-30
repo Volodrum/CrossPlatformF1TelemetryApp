@@ -45,6 +45,12 @@ internal static class Schema
             """,
             TelemetryColumns.CreateTableSql,
         ],
+
+        // v2: pit-lane visit timing per lap (pit-stop loss)
+        [
+            "ALTER TABLE laps ADD COLUMN IF NOT EXISTS pit_lane_ms BIGINT",
+            "ALTER TABLE laps ADD COLUMN IF NOT EXISTS pit_stop_ms BIGINT",
+        ],
     ];
 
     public static int LatestVersion => Migrations.Length;

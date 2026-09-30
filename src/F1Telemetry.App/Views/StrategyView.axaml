@@ -79,12 +79,13 @@
               <!-- Pace degradation -->
               <Border Grid.Column="1" Classes="panel" Padding="18">
                 <StackPanel Spacing="14">
-                  <TextBlock Classes="label strong" Text="PACE DEGRADATION" FontSize="14" />
+                  <TextBlock Classes="label strong" Text="TYRE DEGRADATION" FontSize="14" />
                   <StackPanel Orientation="Horizontal" Spacing="10">
                     <TextBlock Classes="data-xl" Text="{Binding Pace}" Foreground="{Binding PaceBrush}" />
                     <TextBlock Classes="unit" Text="S / LAP" FontSize="17" VerticalAlignment="Bottom" Margin="0,0,0,8" />
                   </StackPanel>
-                  <TextBlock Classes="body" Text="{Binding PaceNote}" />
+                  <TextBlock Classes="body" Text="{Binding PaceNote}" TextWrapping="Wrap" />
+                  <TextBlock Classes="muted" Text="{Binding RawPaceNote}" FontSize="13" TextWrapping="Wrap" IsVisible="{Binding HasPace}" />
                   <ItemsControl ItemsSource="{Binding Bars}" Height="130">
                     <ItemsControl.ItemsPanel>
                       <ItemsPanelTemplate>
@@ -128,6 +129,30 @@
           </DataTemplate>
         </ContentControl.ContentTemplate>
       </ContentControl>
+
+      <!-- Pit stops: in-lap + out-lap against what each would have been as a clean lap -->
+      <Border Classes="panel" Padding="18" IsVisible="{Binding HasPitStops}">
+        <StackPanel Spacing="12">
+          <TextBlock Classes="label strong" Text="PIT STOPS · TIME LOST ON THE IN-LAP AND OUT-LAP" />
+          <ItemsControl ItemsSource="{Binding PitStops}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:PitStopRowViewModel">
+                <Grid ColumnDefinitions="90,Auto,Auto,Auto,150,*" ColumnSpacing="12" Margin="0,4">
+                  <TextBlock Classes="mono" Text="{Binding Laps}" FontSize="14" VerticalAlignment="Center" />
+                  <controls:CompoundBadge Grid.Column="1" Compound="{Binding FromCompound}" Width="28" Height="28" />
+                  <TextBlock Grid.Column="2" Classes="muted" Text="→" VerticalAlignment="Center" />
+                  <controls:CompoundBadge Grid.Column="3" Compound="{Binding ToCompound}" Width="28" Height="28" />
+                  <StackPanel Grid.Column="4" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                    <TextBlock Classes="data-m" FontSize="22" Text="{Binding Loss}" Foreground="{StaticResource SlowerBrush}" />
+                    <TextBlock Classes="unit" Text="S LOST" FontSize="14" VerticalAlignment="Bottom" Margin="0,0,0,3" />
+                  </StackPanel>
+                  <TextBlock Grid.Column="5" Classes="body" Text="{Binding Detail}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                </Grid>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
+      </Border>
 
       <!-- Fuel load calculator (session-level: uses the selected stint's rate) -->
       <Border Classes="panel" HorizontalAlignment="Left" MinWidth="460" Padding="18">

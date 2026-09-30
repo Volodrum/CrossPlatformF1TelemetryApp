@@ -18,6 +18,16 @@ public sealed record SimulationOptions
     /// <summary>Lap at whose end the player pits (0 = no stop).</summary>
     public int PitOnLap { get; init; } = 3;
 
+    /// <summary>Laps at whose end the player pits, for multi-stop races; replaces <see cref="PitOnLap"/> when set.
+    /// Compounds alternate medium, hard, medium…</summary>
+    public IReadOnlyList<int>? PitLaps { get; init; }
+
+    /// <summary>Time stationary in the box at each stop.</summary>
+    public double PitStopSeconds { get; init; } = 2.5;
+
+    /// <summary>Lap time cost of fuel mass, seconds per kg.</summary>
+    public double FuelEffectSecondsPerKg { get; init; } = 0.03;
+
     public int AiCars { get; init; } = 3;
 
     /// <summary>
@@ -59,6 +69,10 @@ public sealed class SessionSimulator
     private readonly PacketWriter _writer;
     private readonly SpeedProfile _profile;
     private readonly Random _rng;
+    private readonly int[] _pitLaps;
+
+    // Lap time on fresh tyres with an empty tank, which the fuel effect is added to.
+    private readonly double _baseLapSeconds;
 
     public SessionSimulator(SimulationOptions options)
     {
@@ -66,6 +80,12 @@ public sealed class SessionSimulator
         _writer = new PacketWriter(FormatLayout.For(options.Format));
         _profile = new SpeedProfile(options.Track?.Centerline ?? Oval());
         _rng = new Random(options.Seed);
+        _pitLaps = options.PitLaps is { } laps ? laps.Where(l => l > 0).Distinct().Order().ToArray()
+            : options.PitOnLap > 0 ? [options.PitOnLap] : [];
+        for (var d = 0.0; d < _profile.Length; d += 1)
+        {
+            _baseLapSeconds += 1 / Math.Max(1, _profile.SpeedAt(d));
+        }
     }
 
     public double LapLength => _profile.Length;
@@ -79,6 +99,7 @@ public sealed class SessionSimulator
         var L = _profile.Length;
 
         double t = 0, s = 0, lapStart = 0, prevV = 0, paceScale = 1;
+        double stationaryLeft = 0, pitLaneTime = 0, pitStopTime = 0;
         double fuel = 5 + 1.75 * _o.Laps;
         var wear = new double[4]; // FL, FR, RL, RR
         int lap = 1, position = 4, pitStops = 0;
@@ -95,14 +116,30 @@ public sealed class SessionSimulator
             cancellationToken.ThrowIfCancellationRequested();
 
             var fraction = s / L;
-            var isInLap = _o.PitOnLap > 0 && lap == _o.PitOnLap && fraction > 1 - PitZoneFraction;
-            var isOutLap = _o.PitOnLap > 0 && lap == _o.PitOnLap + 1 && fraction < PitZoneFraction;
+            var isInLap = _pitLaps.Contains(lap) && fraction > 1 - PitZoneFraction;
+            var isOutLap = _pitLaps.Contains(lap - 1) && fraction < PitZoneFraction;
             var inPitLane = isInLap || isOutLap;
 
-            var v = _profile.SpeedAt(s) * paceScale;
+            // Fuel mass adds FuelEffectSecondsPerKg × kg to the lap: scale the speed by base / (base + that).
+            var fuelScale = _baseLapSeconds / (_baseLapSeconds + _o.FuelEffectSecondsPerKg * fuel);
+            var v = _profile.SpeedAt(s) * paceScale * fuelScale;
             if (inPitLane)
             {
                 v = Math.Min(v, PitLaneSpeed);
+            }
+
+            // The box is at the line: the car stands still there at the start of the out-lap.
+            if (stationaryLeft > 0)
+            {
+                v = 0;
+                stationaryLeft -= dt;
+                pitStopTime += dt;
+            }
+
+            pitLaneTime = inPitLane ? pitLaneTime + dt : 0;
+            if (!inPitLane)
+            {
+                pitStopTime = 0;
             }
 
             var accel = (v - prevV) / dt;
@@ -141,7 +178,8 @@ public sealed class SessionSimulator
 
             yield return Emit(t, MotionPacket(uid, sessionTime, frame, s, v, accel, t));
             yield return Emit(t, LapDataPacket(uid, sessionTime, frame, s, lap, position, status, driverStatus, pitStops,
-                (uint)((t - lapStart) * 1000), completed.LastOrDefault().LapTimeMs, s1, s2, L, t));
+                (uint)((t - lapStart) * 1000), completed.LastOrDefault().LapTimeMs, s1, s2, L, t,
+                (ushort)Math.Min(ushort.MaxValue, pitLaneTime * 1000), (ushort)Math.Min(ushort.MaxValue, pitStopTime * 1000)));
             yield return Emit(t, TelemetryPacket(uid, sessionTime, frame, s, v, accel, lap));
             if (_writer.Layout.Format == GameFormat.F1_26)
             {
@@ -187,13 +225,14 @@ public sealed class SessionSimulator
             lapStart = t;
             s1 = s2 = 0;
 
-            if (lap == _o.PitOnLap)
+            if (_pitLaps.Contains(lap))
             {
                 stints[^1] = stints[^1] with { EndLap = (byte)lap };
-                stints.Add(new TyreStint(TyreStint.Current, 19, 18)); // C2 hard
+                stints.Add(stints.Count % 2 == 1 ? new TyreStint(TyreStint.Current, 19, 18) : new TyreStint(TyreStint.Current, 18, 17)); // C2 hard / C3 medium
                 Array.Clear(wear);
                 pitStops++;
                 position = 7;
+                stationaryLeft = _o.PitStopSeconds;
             }
             else if (position > 3)
             {
@@ -238,7 +277,7 @@ public sealed class SessionSimulator
                 new WeatherForecastSample(_o.SessionType, 10, 2, 31, 1, 23, 1, 20),
                 new WeatherForecastSample(_o.SessionType, 15, 3, 29, 1, 22, 1, 45),
             ],
-            ForecastAccuracy: 0, AiDifficulty: 90, PitStopWindowIdealLap: (byte)_o.PitOnLap, PitStopWindowLatestLap: (byte)(_o.PitOnLap + 2),
+            ForecastAccuracy: 0, AiDifficulty: 90, PitStopWindowIdealLap: (byte)_pitLaps.FirstOrDefault(), PitStopWindowLatestLap: (byte)(_pitLaps.FirstOrDefault() + 2),
             PitStopRejoinPosition: 7, NumSafetyCarPeriods: 0, NumVirtualSafetyCarPeriods: 0, NumRedFlagPeriods: 0,
             Sector2LapDistanceStart: (float)(lapLength / 3), Sector3LapDistanceStart: (float)(2 * lapLength / 3),
             Aero: new SessionAeroInfo(1, [], [], [], 0.2f)));
@@ -277,7 +316,8 @@ public sealed class SessionSimulator
     private byte[] DamagePacket(ulong uid, float t, uint frame, double[] wear, int lap, double fraction)
     {
         // A front-wing hit halfway round lap 2, fixed by the new nose at the pit stop.
-        var hit = lap == 2 ? fraction > 0.5 : lap > 2 && (_o.PitOnLap < 2 || lap <= _o.PitOnLap);
+        var firstStop = _pitLaps.FirstOrDefault();
+        var hit = lap == 2 ? fraction > 0.5 : lap > 2 && (firstStop < 2 || lap <= firstStop);
         var p = _writer.Create(PacketId.CarDamage, uid, t, frame, PlayerIndex);
         _writer.WriteCarDamage(p, PlayerIndex, new CarDamage(
             TyresWear: new Tyres<float>((float)wear[2], (float)wear[3], (float)wear[0], (float)wear[1]),
@@ -375,7 +415,7 @@ public sealed class SessionSimulator
     }
 
     private byte[] LapDataPacket(ulong uid, float t, uint frame, double s, int lap, int position, PitStatus pit, DriverStatus driver,
-        int pitStops, uint currentLapMs, uint lastLapMs, uint s1, uint s2, double L, double time)
+        int pitStops, uint currentLapMs, uint lastLapMs, uint s1, uint s2, double L, double time, ushort pitLaneMs, ushort pitStopMs)
     {
         var p = _writer.Create(PacketId.LapData, uid, t, frame, PlayerIndex);
         var sector = SectorAt(s, L);
@@ -394,7 +434,7 @@ public sealed class SessionSimulator
 
         _writer.WriteLapData(p, PlayerIndex, new LapData(lastLapMs, currentLapMs, s1, s2, toFront[PlayerIndex], toLeader[PlayerIndex],
             (float)s, (float)((lap - 1) * L + s), 0, (byte)positions[PlayerIndex], (byte)lap, pit, (byte)pitStops, sector, false, 0, 0, 0, 4,
-            driver, ResultStatus.Active, pit != PitStatus.None, 0, 0, 330));
+            driver, ResultStatus.Active, pit != PitStatus.None, pitLaneMs, pitStopMs, 330));
 
         for (var i = 1; i < CarCount; i++)
         {

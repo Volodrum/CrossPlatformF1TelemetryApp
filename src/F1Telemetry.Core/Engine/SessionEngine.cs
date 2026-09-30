@@ -29,6 +29,10 @@ public sealed class SessionEngine
     private readonly List<int> _observedStintStarts = [];
     private int? _pitStops;
 
+    // Pit-lane visits keyed by the lap the car entered the lane on (see TrackPitLane).
+    private readonly Dictionary<int, (uint Lane, uint Stationary)> _pitVisits = [];
+    private int? _pitEntryLap;
+
     private ulong? _sessionUid;
     private SessionData? _sessionData;
     private LapDataPacket? _lapData;
@@ -179,6 +183,8 @@ public sealed class SessionEngine
         _positionByLap.Clear();
         _observedStintStarts.Clear();
         _pitStops = null;
+        _pitVisits.Clear();
+        _pitEntryLap = null;
         _lapTypes.Reset();
         _consumption.Reset();
         _delta.Reset();
@@ -250,6 +256,7 @@ public sealed class SessionEngine
         var lapNum = (int)lap.CurrentLapNum;
         _lapTypes.OnPitStatus(lapNum, lap.PitStatus);
         TrackPitStops(lapNum, lap);
+        TrackPitLane(lapNum, lap);
         _consumption.EnsureStarted(_status, _damage);
 
         if (_currentLap != 0 && lapNum > _currentLap)
@@ -292,9 +299,30 @@ public sealed class SessionEngine
         else if (_pitStops is { } before && lap.NumPitStops < before)
         {
             _observedStintStarts.RemoveAll(start => start > lapNum); // flashback to before the stop
+            foreach (var entryLap in _pitVisits.Keys.Where(entryLap => entryLap >= lapNum).ToList())
+            {
+                _pitVisits.Remove(entryLap);
+            }
         }
 
         _pitStops = lap.NumPitStops;
+    }
+
+    /// <summary>
+    /// Times each pit-lane visit. The game's lane and stop timers run only while the car is in the lane and carry on
+    /// across the line, so a visit is kept against the lap it started on: the in-lap of a normal stop.
+    /// </summary>
+    private void TrackPitLane(int lapNum, LapData lap)
+    {
+        if (!lap.PitLaneTimerActive)
+        {
+            _pitEntryLap = null;
+            return;
+        }
+
+        var entryLap = _pitEntryLap ??= lapNum;
+        var visit = _pitVisits.GetValueOrDefault(entryLap);
+        _pitVisits[entryLap] = (Math.Max(visit.Lane, lap.PitLaneTimeInLaneMs), Math.Max(visit.Stationary, lap.PitStopTimerMs));
     }
 
     /// <summary>
@@ -434,6 +462,8 @@ public sealed class SessionEngine
                 StintIndex = stintIdx,
                 CarPosition = _positionByLap.TryGetValue(lapNumber, out var pos) ? pos : null,
                 LapType = stintPitLaps.Contains(lapNumber) ? LapType.Pit : _lapTypes.Get(lapNumber),
+                PitLaneTimeMs = _pitVisits.GetValueOrDefault(lapNumber).Lane,
+                PitStopTimeMs = _pitVisits.GetValueOrDefault(lapNumber).Stationary,
             });
         }
 

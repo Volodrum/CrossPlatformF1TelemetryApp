@@ -10,6 +10,12 @@ public sealed record StrategyOptions
 
     /// <summary>Fuel deltas outside (0, max) are treated as refuel / flashback artefacts.</summary>
     public double MaxPlausibleFuelPerLap { get; init; } = 10;
+
+    /// <summary>
+    /// Lap time cost of fuel mass in seconds per kg, used to separate fuel burn from tyre degradation when a race has
+    /// too little data to measure it (see <see cref="Analytics.PaceModel"/>). 0.03 s/kg is the usual F1 figure.
+    /// </summary>
+    public double FuelEffectSecondsPerKg { get; init; } = 0.03;
 }
 
 /// <summary>

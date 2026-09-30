@@ -35,6 +35,12 @@ public sealed record LapRecord
     public int? CarPosition { get; init; }
     public LapType LapType { get; init; } = LapType.Regular;
 
+    /// <summary>Time in the pit lane (entry to exit) of a visit that started on this lap; 0 = none or not recorded.</summary>
+    public uint PitLaneTimeMs { get; init; }
+
+    /// <summary>Time stationary in the box during that visit; 0 = none or not recorded.</summary>
+    public uint PitStopTimeMs { get; init; }
+
     public bool HasTime => LapTimeMs > 0;
 }
 

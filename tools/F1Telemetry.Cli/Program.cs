@@ -44,11 +44,11 @@ static int Help()
           record   --out <file.f1rec> [--port 20777]               Capture raw game UDP packets (Ctrl+C to stop)
           replay   <file.f1rec> [--host 127.0.0.1] [--port 20777] [--speed 1] [--loop]
                                                                    Re-send a capture over UDP with original timing
-          simulate [--format 2025|2026] [--laps 6] [--pit 3] [--track Monza] [--speed 1]
+          simulate [--format 2025|2026] [--laps 6] [--pit 3 | --pits 3,6] [--track Monza] [--speed 1]
                    [--host 127.0.0.1] [--port 20777] [--out file.f1rec]
                                                                    Stream a simulated race over UDP (or write a capture)
           inspect  <file.f1rec>                                    Packet counts, formats, sessions and size errors
-          seed     --db <file.duckdb> [--format 2025|2026] [--laps 8] [--pit 4] [--track Monza] [--from <file.f1rec>]
+          seed     --db <file.duckdb> [--format 2025|2026] [--laps 8] [--pit 4 | --pits 3,6] [--track Monza] [--from <file.f1rec>]
                                                                    Process a simulation/capture offline into a database
         """);
     return 1;
@@ -223,6 +223,7 @@ static SimulationOptions SimulationFromArgs(Args cli)
         TrackId = track.Id,
         Laps = cli.GetInt("--laps", 6),
         PitOnLap = cli.GetInt("--pit", 3),
+        PitLaps = cli.Get("--pits")?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Select(int.Parse).ToArray(),
         SessionUid = (ulong)Random.Shared.NextInt64(1, long.MaxValue),
         Seed = Random.Shared.Next(),
     };

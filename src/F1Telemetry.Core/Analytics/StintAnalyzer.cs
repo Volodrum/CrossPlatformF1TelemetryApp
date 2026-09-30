@@ -31,17 +31,35 @@ public sealed record StintAnalysis
     public required uint BestLapMs { get; init; }
     public required double AverageLapMs { get; init; }
 
-    /// <summary>Linear-regression slope of lap time against lap number, seconds per lap.</summary>
+    /// <summary>Slope of the raw lap times, seconds per lap: tyre wear net of the fuel burn-off gain.</summary>
     public required double PaceDegradationPerLap { get; init; }
 
-    public double TotalStintTimeLoss => PaceDegradationPerLap * RegularLapCount;
+    /// <summary>Slope with the fuel effect taken out, seconds per lap: what the tyres alone cost.</summary>
+    public required double FuelCorrectedDegradationPerLap { get; init; }
+
+    /// <summary>The fit behind both slopes; null when the stint has no clean laps.</summary>
+    public required StintPaceFit? PaceFit { get; init; }
+
+    /// <summary>Laps used for the pace fit: clean laps without a race's lap 1 and without outliers.</summary>
+    public int PaceLapCount => PaceFit?.Laps ?? 0;
+
+    public double TotalStintTimeLoss => FuelCorrectedDegradationPerLap * PaceLapCount;
 
     public string BestLapFormatted => TimeFormat.Lap(BestLapMs);
     public string AverageLapFormatted => TimeFormat.Lap(AverageLapMs);
     public double FuelForLaps(int laps) => AverageFuelPerLap * laps;
 }
 
-public sealed record SessionAnalysis(IReadOnlyList<StintAnalysis> Stints, WheelValues CurrentWear, string LatestCompound, int SessionType);
+public sealed record SessionAnalysis(IReadOnlyList<StintAnalysis> Stints, WheelValues CurrentWear, string LatestCompound, int SessionType)
+{
+    /// <summary>Fuel effect used for every fuel-corrected figure of this session.</summary>
+    public FuelEffect FuelEffect { get; init; } = new(0, FuelEffectSource.Default, "");
+
+    public IReadOnlyList<PitStopAnalysis> PitStops { get; init; } = [];
+
+    /// <summary>Every lap that fed a pace fit, across all stints.</summary>
+    public IReadOnlyList<PaceLap> PaceLaps { get; init; } = [];
+}
 
 /// <summary>
 /// Race strategy post-mortem: segments laps into tyre stints and derives wear rates, projected tyre
@@ -63,11 +81,29 @@ public static class StintAnalyzer
         }
 
         var aggregateByLap = aggregates.ToDictionary(a => a.LapNumber);
-        var stints = Segment(classifiedLaps)
-            .Select((laps, idx) => AnalyzeStint(idx + 1, laps, aggregateByLap, options))
+        var segments = Segment(classifiedLaps).ToList();
+        var paceLaps = segments.Select((laps, idx) => PaceModel.CleanLaps(idx + 1, laps, aggregateByLap, sessionType)).ToList();
+        var allPaceLaps = paceLaps.SelectMany(l => l).ToList();
+        var fuelEffect = PaceModel.Resolve(allPaceLaps, options.FuelEffectSecondsPerKg);
+        var stints = segments
+            .Select((laps, idx) => AnalyzeStint(idx + 1, laps, paceLaps[idx], fuelEffect.SecondsPerKg, aggregateByLap, options))
             .ToList();
 
-        return new SessionAnalysis(stints, currentWear, classifiedLaps[^1].Compound, sessionType);
+        // Clean-lap time the stint's fit gives any of its laps (the in- and out-laps of a stop, say).
+        double? PredictCleanLap(int lapNumber)
+        {
+            var idx = segments.FindIndex(laps => laps.Exists(l => l.LapNumber == lapNumber));
+            return idx >= 0 && stints[idx].PaceFit is { Laps: >= 2 } fit && aggregateByLap.TryGetValue(lapNumber, out var a)
+                ? fit.Predict(lapNumber - segments[idx][0].LapNumber, (a.MinFuel + a.MaxFuel) / 2, fuelEffect.SecondsPerKg)
+                : null;
+        }
+
+        return new SessionAnalysis(stints, currentWear, classifiedLaps[^1].Compound, sessionType)
+        {
+            FuelEffect = fuelEffect,
+            PitStops = PitStopAnalyzer.Analyze(classifiedLaps, sessionType, PredictCleanLap),
+            PaceLaps = allPaceLaps,
+        };
     }
 
     private static IEnumerable<List<LapRecord>> Segment(IReadOnlyList<LapRecord> laps)
@@ -95,7 +131,8 @@ public static class StintAnalyzer
             ? previous.StintIndex != lap.StintIndex
             : previous.Compound != lap.Compound;
 
-    private static StintAnalysis AnalyzeStint(int number, List<LapRecord> laps, Dictionary<int, LapAggregate> aggregates, StrategyOptions options)
+    private static StintAnalysis AnalyzeStint(int number, List<LapRecord> laps, List<PaceLap> paceLaps, double fuelEffect,
+        Dictionary<int, LapAggregate> aggregates, StrategyOptions options)
     {
         var regular = laps.Where(l => l.LapType == LapType.Regular && l.HasTime).ToList();
 
@@ -147,6 +184,7 @@ public static class StintAnalyzer
         }
 
         var lapTimes = regular.Select(l => (double)l.LapTimeMs).ToList();
+        var fit = PaceModel.FitStint(number, laps[0].Compound, paceLaps, fuelEffect);
         return new StintAnalysis
         {
             StintNumber = number,
@@ -164,7 +202,9 @@ public static class StintAnalyzer
             TotalFuelUsed = fuelSum,
             BestLapMs = regular.Count > 0 ? regular.Min(l => l.LapTimeMs) : 0,
             AverageLapMs = lapTimes.Count > 0 ? lapTimes.Average() : 0,
-            PaceDegradationPerLap = LinearRegression.Slope(regular.Select(l => ((double)l.LapNumber, (double)l.LapTimeMs)).ToList()) / 1000.0,
+            PaceDegradationPerLap = fit?.RawDegradationPerLap ?? 0,
+            FuelCorrectedDegradationPerLap = fit?.DegradationPerLap ?? 0,
+            PaceFit = fit,
         };
     }
 }
