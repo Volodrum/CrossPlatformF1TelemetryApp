@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <Description>Packet sources (UDP, .f1rec replay, simulator), raw recording and the ingest pipeline.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\F1Telemetry.Core\F1Telemetry.Core.csproj" />
+    <ProjectReference Include="..\F1Telemetry.Simulation\F1Telemetry.Simulation.csproj" />
+  </ItemGroup>
+</Project>

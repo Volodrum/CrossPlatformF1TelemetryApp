@@ -1,5 +1,8 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/F1Telemetry.Core/F1Telemetry.Core.csproj" />
+    <Project Path="src/F1Telemetry.Ingest/F1Telemetry.Ingest.csproj" />
     <Project Path="src/F1Telemetry.Protocol/F1Telemetry.Protocol.csproj" />
+    <Project Path="src/F1Telemetry.Simulation/F1Telemetry.Simulation.csproj" />
   </Folder>
 </Solution>

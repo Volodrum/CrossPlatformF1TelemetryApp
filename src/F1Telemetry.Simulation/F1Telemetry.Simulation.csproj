@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <Description>Synthetic F1 UDP packet generation: protocol writer + session simulator for demo mode, tests and tooling.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\F1Telemetry.Core\F1Telemetry.Core.csproj" />
+  </ItemGroup>
+</Project>
