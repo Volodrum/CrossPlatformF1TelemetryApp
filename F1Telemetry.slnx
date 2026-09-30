@@ -12,5 +12,6 @@
   </Folder>
   <Folder Name="/tools/">
     <Project Path="tools/F1Telemetry.Cli/F1Telemetry.Cli.csproj" />
+    <Project Path="tools/F1Telemetry.Screenshots/F1Telemetry.Screenshots.csproj" />
   </Folder>
 </Solution>
