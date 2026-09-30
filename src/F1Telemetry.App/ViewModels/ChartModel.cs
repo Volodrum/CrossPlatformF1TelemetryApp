@@ -4,6 +4,9 @@ namespace F1Telemetry.App.ViewModels;
 
 public sealed record ChartSeries(string Name, string Color, double[] X, double[] Y, bool Step = false, bool IsReference = false);
 
+/// <summary>A dotted vertical line at <paramref name="X"/> (a pit stop, say); only markers with a label get a legend entry.</summary>
+public sealed record ChartMarker(double X, string Color, string Label = "");
+
 /// <param name="XIsTime">X values are seconds; ticks are formatted as m:ss.</param>
 /// <param name="ZeroLine">Draws a dashed line at y = 0 (delta charts).</param>
 public sealed record ChartModel(
@@ -14,7 +17,9 @@ public sealed record ChartModel(
     bool IntegerY = false,
     string YPrefix = "",
     bool XIsTime = false,
-    bool ZeroLine = false);
+    bool ZeroLine = false,
+    IReadOnlyList<ChartMarker>? Markers = null,
+    bool IntegerX = false);
 
 public sealed record SeriesSpec(string Name, string Color, Func<TelemetrySample, double> Value, bool Step = false);
 

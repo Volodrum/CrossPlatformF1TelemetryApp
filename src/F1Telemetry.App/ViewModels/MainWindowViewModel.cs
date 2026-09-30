@@ -17,6 +17,7 @@ public enum MainTab
     Laps,
     LapDetail,
     Strategy,
+    Compare,
     Position,
     Settings,
 }
@@ -37,6 +38,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
         LiveViewModel live,
         SessionViewModel session,
         LapDetailViewModel lapDetail,
+        CompareViewModel compare,
         SettingsViewModel settings,
         ILogger<MainWindowViewModel> log)
     {
@@ -46,6 +48,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
         Live = live;
         Session = session;
         LapDetail = lapDetail;
+        Compare = compare;
         Settings = settings;
 
         Sources =
@@ -93,6 +96,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
     public LiveViewModel Live { get; }
     public SessionViewModel Session { get; }
     public LapDetailViewModel LapDetail { get; }
+    public CompareViewModel Compare { get; }
     public SettingsViewModel Settings { get; }
     public IReadOnlyList<SourceOption> Sources { get; }
     public ObservableCollection<RecordingItemViewModel> Recordings { get; } = [];
@@ -163,9 +167,28 @@ public sealed partial class MainWindowViewModel : ObservableObject
         }
 
         OnPropertyChanged(nameof(SelectedTabIndex));
+
+        if (value == MainTab.Compare)
+        {
+            _ = ActivateCompareAsync();
+        }
     }
 
     public async Task InitializeAsync() => await RefreshRecordingsAsync();
+
+    /// <summary>Opens the compare tab on the sidebar's recordings, with the selected one as race A.</summary>
+    public async Task ActivateCompareAsync()
+    {
+        try
+        {
+            await Compare.ActivateAsync([.. Recordings], SelectedRecording?.Info);
+        }
+        catch (Exception ex)
+        {
+            _log.LogError(ex, "Race comparison failed");
+            StatusMessage = $"Race comparison failed: {ex.Message}";
+        }
+    }
 
     [RelayCommand]
     private void ToggleRecording() => _runtime.Recorder.Toggle();

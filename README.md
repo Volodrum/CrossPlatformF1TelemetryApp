@@ -1,6 +1,6 @@
 # F1 Telemetry (cross-platform)
 
-Desktop telemetry app for **EA SPORTS F1 25**. It has two telemetry modes: **F1 25** (UDP format `2025`) and **F1 26** (the 2026 Season Pack, UDP format `2026`). It records sessions, calculates strategy (tyre wear, fuel, pace degradation), plots lap telemetry, draws circuit maps, and shows click-through HUD overlays over the game.
+Desktop telemetry app for **EA SPORTS F1 25**. It has two telemetry modes: **F1 25** (UDP format `2025`) and **F1 26** (the 2026 Season Pack, UDP format `2026`). It records sessions, calculates strategy (tyre wear, fuel, fuel-corrected tyre degradation, pit-stop loss), compares two races run on different strategies, plots lap telemetry, draws circuit maps, and shows click-through HUD overlays over the game.
 
 It is a rewrite of the Electron + React + DuckDB app on **.NET 10 + Avalonia 12**, and runs on Windows, macOS and Linux.
 
@@ -39,7 +39,7 @@ It is a rewrite of the Electron + React + DuckDB app on **.NET 10 + Avalonia 12*
           ▼
  DuckDbTelemetryStore (single writer queue, batched appender)
           │
- SessionAnalysisService → LapClassifier + StintAnalyzer → Laps / Strategy / Position / Lap detail views
+ SessionAnalysisService → LapClassifier + StintAnalyzer + RaceComparison → Laps / Strategy / Compare / Position / Lap detail views
 ```
 
 ### Projects
@@ -47,7 +47,7 @@ It is a rewrite of the Electron + React + DuckDB app on **.NET 10 + Avalonia 12*
 | Project | Responsibility | Depends on |
 |---|---|---|
 | `F1Telemetry.Protocol` | Zero-dependency UDP parser. `FormatLayout` holds every difference between the 2025 and 2026 formats | – |
-| `F1Telemetry.Core` | Domain models, `SessionEngine`, strategy calculators, `LapClassifier`, `StintAnalyzer`, `RecordingCoordinator`, track maps (`assets/track_maps/*_coords.json` from the original dashboard, with `.srtt` fallback) | Protocol |
+| `F1Telemetry.Core` | Domain models, `SessionEngine`, strategy calculators, `LapClassifier`, `StintAnalyzer`, `PaceModel`, `PitStopAnalyzer`, `RaceComparison`, `RecordingCoordinator`, track maps (`assets/track_maps/*_coords.json` from the original dashboard, with `.srtt` fallback) | Protocol |
 | `F1Telemetry.Simulation` | Spec-exact `PacketWriter` and a physics-lite `SessionSimulator` (speed profile from track curvature, fuel, wear, pit stop, AI cars) | Core |
 | `F1Telemetry.Ingest` | Packet sources (UDP, replay, simulator), `.f1rec` capture format, `TelemetryPipeline` | Core, Simulation |
 | `F1Telemetry.Storage` | DuckDB schema and migrations, batched writer, analytics queries | Core |
@@ -85,7 +85,7 @@ dotnet run --project src/F1Telemetry.App
 dotnet run --project src/F1Telemetry.App -- --mode f1-26 --source demo --record
 ```
 
-Other switches: `--mode f1-25|f1-26`, `--source udp|demo|replay=<file>`, `--record`, `--tab live|laps|lapdetail|strategy|position|settings`, `--select-latest`, `--lap <n>`, `--preview-overlays` (with `--tab settings`), and `--exit-after <s>` for smoke tests.
+Other switches: `--mode f1-25|f1-26`, `--source udp|demo|replay=<file>`, `--record`, `--tab live|laps|lapdetail|strategy|compare|position|settings`, `--select-latest`, `--lap <n>`, `--preview-overlays` (with `--tab settings`), and `--exit-after <s>` for smoke tests.
 
 Data is stored in `%LOCALAPPDATA%\F1Telemetry` on Windows, `~/Library/Application Support/F1Telemetry` on macOS and `~/.local/share/F1Telemetry` on Linux. Override it with `F1TELEMETRY_DATA_DIR`.
 
@@ -97,6 +97,7 @@ dotnet run --project tools/F1Telemetry.Cli -- record --out race.f1rec           
 dotnet run --project tools/F1Telemetry.Cli -- replay race.f1rec --speed 2                                         # replay it to the app
 dotnet run --project tools/F1Telemetry.Cli -- inspect race.f1rec                                                  # packet/format breakdown
 dotnet run --project tools/F1Telemetry.Cli -- seed --db test.duckdb --laps 8 --track Spa                          # offline database seeding
+dotnet run --project tools/F1Telemetry.Cli -- seed --db test.duckdb --laps 20 --pits 7,14 --track Spa             # a two-stop race (Medium → Hard → Medium)
 ```
 
 ### Tests
@@ -140,11 +141,31 @@ The UI implements the "F1 Telemetry Design Template": a dark, high-contrast race
 
 | Live | Lap detail | Strategy |
 |---|---|---|
-| ![Live](docs/screenshots/01-live.png) | ![Lap detail](docs/screenshots/03-lap-detail.png) | ![Strategy](docs/screenshots/04-strategy.png) |
+| ![Live](docs/screenshots/01-live.png) | ![Lap detail](docs/screenshots/03-lap-detail.png) | ![Strategy](docs/screenshots/11-strategy-two-stops.png) |
+
+| Race vs race | Gap and pace charts |
+|---|---|
+| ![Race vs race](docs/screenshots/09-compare.png) | ![Gap and pace charts](docs/screenshots/10-compare-charts.png) |
 
 ![HUD overlays](docs/screenshots/07-overlays.png)
 
 ![Timing tower, sector box and damage page](docs/screenshots/08-hud-overlays.png)
+
+## Strategy analytics
+
+**Fuel-corrected tyre degradation.** Over a stint two things change the lap time: the tyres wear (slower) and the fuel burns off (faster). Raw lap times show only the net of the two, so they understate tyre wear. Each stint is fitted as *lap time = base + degradation × tyre age + fuel effect × fuel kg*, and the Strategy tab shows the degradation with the fuel taken out, next to the raw slope. The fit leaves out a race's standing-start lap 1 and laps more than 3 s slower than the stint's median (spins, traffic, damage).
+
+Within one stint the two effects can't be told apart, because fuel falls in step with tyre age. When a compound is run in two stints (Medium → Hard → Medium, say), the same tyre age comes round again with less fuel, and the fuel effect is **measured** from the race. Otherwise the app uses **0.03 s/kg**, the usual F1 figure (`StrategyOptions.FuelEffectSecondsPerKg`). The Strategy tab says which one it used.
+
+**Pit-stop loss.** Each stop costs its in-lap plus out-lap minus what those two laps would have been as clean laps: the in-lap on the old tyres, the out-lap on the new ones, predicted from each stint's fit (or the median of the clean laps either side when a stint is too short to fit). The game's pit-lane timer (time in the lane, time stationary) is recorded per stop from this version on.
+
+**Race vs race (COMPARE tab).** Pick two recordings of the same track, for example the same race run on a one-stop and a two-stop strategy. You get:
+
+- the lap-by-lap **gap** between them, with every pit stop marked;
+- **fuel-corrected lap times** per stint for both races, and position lap by lap;
+- **where the time went:** the total gap split into pit stops, tyre wear, fuel load, base pace (compound and driving) and a remainder for the start, traffic and mistakes. Each lap is split into the fitted model plus what it doesn't explain, so the five parts add up to the total gap exactly. Both races use the same fuel effect.
+
+The fits need a few clean laps per stint: with only two or three, wear rates are noisy.
 
 ## Overlays
 
@@ -175,7 +196,7 @@ Switch on **PREVIEW OVERLAYS** at the top of the Settings tab to show every over
 - Lap classification now lives in one place; it was duplicated in two files.
 - Stints are split using the game's tyre-stint history, so a medium → medium stop is detected.
 - Packets with session UID 0 (sent while the game leaves a session for the menus) are ignored. They used to look like a session change and back, which auto-split the recording into an extra, empty one.
-- Lap charts plot against elapsed lap time (m:ss) by default, or against lap distance (X AXIS picker in Lap detail). The position chart uses session time. Dragging and wheel-zooming only move along the x axis (the value axis is locked), and the view stays within the recorded lap.
+- Lap charts plot against elapsed lap time (m:ss) by default, or against lap distance (X AXIS picker in Lap detail). The position chart uses session time. A plain mouse wheel scrolls the page; dragging and Ctrl + wheel zoom only move along the x axis (the value axis is locked), and the view stays within the recorded lap.
 - Lap detail shows the S1/S2/S3 split as a strip above full-width chart tabs; the track map has its own **TRAJECTORY** tab.
 - Lap detail compares the opened lap with **any lap**: another lap of the same session or a lap from any other recording on the same track (defaults to the session best). The comparison adds a dashed reference trace, a running time-delta chart and sector deltas.
 - All SQL is parameterized.
@@ -187,6 +208,7 @@ Switch on **PREVIEW OVERLAYS** at the top of the Settings tab to show every over
 
 ## Next steps
 
+- Strategy optimiser: a per-track compound library from every recording, then 1-, 2- and 3-stop plans ranked with pit windows and undercut values.
 - Driver names on the radar.
 - Installer and auto-update (e.g. Velopack), plus CI builds for all three OSes.
 - Synchronised cursor/zoom across lap charts.

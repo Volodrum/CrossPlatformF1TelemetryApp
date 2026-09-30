@@ -1,0 +1,123 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:F1Telemetry.App.ViewModels"
+             xmlns:controls="using:F1Telemetry.App.Controls"
+             x:Class="F1Telemetry.App.Views.CompareView"
+             x:DataType="vm:CompareViewModel">
+  <UserControl.Resources>
+    <DataTemplate x:Key="CompareStintTemplate" x:DataType="vm:CompareStintRow">
+      <Grid ColumnDefinitions="36,*" ColumnSpacing="10" Margin="0,3">
+        <controls:CompoundBadge Compound="{Binding Compound}" Width="28" Height="28" IsVisible="{Binding Compound, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+        <StackPanel Grid.Column="1" Spacing="1">
+          <TextBlock Classes="h2" FontSize="14" Text="{Binding Title}" />
+          <TextBlock Classes="muted" FontSize="12" Text="{Binding Detail}" TextWrapping="Wrap" />
+        </StackPanel>
+      </Grid>
+    </DataTemplate>
+  </UserControl.Resources>
+
+  <ScrollViewer Margin="0,16,0,0">
+    <StackPanel Spacing="16">
+      <StackPanel Spacing="4">
+        <TextBlock Classes="label" Text="RACE VS RACE · TWO RECORDINGS OF THE SAME TRACK" />
+        <TextBlock Classes="h1" Text="{Binding Header}" />
+      </StackPanel>
+
+      <!-- Pickers: B lists only recordings of A's track. -->
+      <Border Classes="panel" Padding="14,10">
+        <WrapPanel Orientation="Horizontal">
+          <StackPanel Orientation="Horizontal" Spacing="10" Margin="0,0,24,0">
+            <TextBlock Classes="label strong" Text="RACE A" VerticalAlignment="Center" />
+            <ComboBox ItemsSource="{Binding RecordingsA}" SelectedItem="{Binding SelectedA}" MinWidth="320" VerticalAlignment="Center">
+              <ComboBox.ItemTemplate>
+                <DataTemplate x:DataType="vm:RecordingItemViewModel">
+                  <TextBlock><Run Text="{Binding Title}" /><Run Text="  " /><Run Text="{Binding Subtitle}" Foreground="{StaticResource TextLoBrush}" /></TextBlock>
+                </DataTemplate>
+              </ComboBox.ItemTemplate>
+            </ComboBox>
+          </StackPanel>
+          <StackPanel Orientation="Horizontal" Spacing="10">
+            <TextBlock Classes="label strong" Text="RACE B" VerticalAlignment="Center" />
+            <ComboBox ItemsSource="{Binding RecordingsB}" SelectedItem="{Binding SelectedB}" MinWidth="320" VerticalAlignment="Center">
+              <ComboBox.ItemTemplate>
+                <DataTemplate x:DataType="vm:RecordingItemViewModel">
+                  <TextBlock><Run Text="{Binding Title}" /><Run Text="  " /><Run Text="{Binding Subtitle}" Foreground="{StaticResource TextLoBrush}" /></TextBlock>
+                </DataTemplate>
+              </ComboBox.ItemTemplate>
+            </ComboBox>
+          </StackPanel>
+        </WrapPanel>
+      </Border>
+
+      <TextBlock Classes="body" Text="{Binding Message}" IsVisible="{Binding !HasResult}" />
+
+      <StackPanel Spacing="16" IsVisible="{Binding HasResult}">
+        <!-- Verdict -->
+        <StackPanel Spacing="4">
+          <TextBlock Classes="data-l" Text="{Binding Verdict}" Foreground="{Binding VerdictBrush}" />
+          <TextBlock Classes="body" Text="{Binding VerdictNote}" TextWrapping="Wrap" />
+        </StackPanel>
+
+        <Grid ColumnDefinitions="3*,2*" ColumnSpacing="16">
+          <!-- Where the gap came from -->
+          <Border Classes="panel" Padding="18" VerticalAlignment="Top">
+            <StackPanel Spacing="10">
+              <TextBlock Classes="label strong" Text="WHERE THE TIME WENT · THE PARTS ADD UP TO THE TOTAL" />
+              <Grid ColumnDefinitions="*,130,130,110" ColumnSpacing="12">
+                <TextBlock Classes="label" Text="" />
+                <TextBlock Grid.Column="1" Classes="label" Text="A" HorizontalAlignment="Right" />
+                <TextBlock Grid.Column="2" Classes="label" Text="B" HorizontalAlignment="Right" />
+                <TextBlock Grid.Column="3" Classes="label" Text="B − A" HorizontalAlignment="Right" />
+              </Grid>
+              <ItemsControl ItemsSource="{Binding Breakdown}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="vm:BreakdownRow">
+                    <Border BorderBrush="{StaticResource DividerBrush}" BorderThickness="0,1,0,0" Padding="0,8">
+                      <Grid ColumnDefinitions="*,130,130,110" ColumnSpacing="12">
+                        <StackPanel Spacing="2">
+                          <TextBlock Classes="h2" FontSize="15" Text="{Binding Label}" FontWeight="{Binding Weight}" />
+                          <TextBlock Classes="muted" FontSize="12" Text="{Binding Note}" TextWrapping="Wrap" />
+                        </StackPanel>
+                        <TextBlock Grid.Column="1" Classes="mono" FontSize="14" Text="{Binding A}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                        <TextBlock Grid.Column="2" Classes="mono" FontSize="14" Text="{Binding B}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                        <TextBlock Grid.Column="3" Classes="mono" FontSize="15" Text="{Binding Delta}" Foreground="{Binding DeltaBrush}" FontWeight="{Binding Weight}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                      </Grid>
+                    </Border>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+          </Border>
+
+          <!-- The two strategies -->
+          <StackPanel Grid.Column="1" Spacing="16">
+            <Border Classes="panel" Padding="18">
+              <StackPanel Spacing="10">
+                <TextBlock Classes="label strong" Text="{Binding StrategyA}" TextWrapping="Wrap" />
+                <ItemsControl ItemsSource="{Binding StintsA}" ItemTemplate="{StaticResource CompareStintTemplate}" />
+              </StackPanel>
+            </Border>
+            <Border Classes="panel" Padding="18">
+              <StackPanel Spacing="10">
+                <TextBlock Classes="label strong" Text="{Binding StrategyB}" TextWrapping="Wrap" Foreground="{StaticResource SlowerBrush}" />
+                <ItemsControl ItemsSource="{Binding StintsB}" ItemTemplate="{StaticResource CompareStintTemplate}" />
+              </StackPanel>
+            </Border>
+          </StackPanel>
+        </Grid>
+
+        <Border Classes="panel" Padding="0" Height="280">
+          <controls:TelemetryPlot Model="{Binding GapChart}" />
+        </Border>
+        <Border Classes="panel" Padding="0" Height="280">
+          <controls:TelemetryPlot Model="{Binding PaceChart}" />
+        </Border>
+        <Border Classes="panel" Padding="0" Height="240">
+          <controls:TelemetryPlot Model="{Binding PositionChart}" />
+        </Border>
+        <TextBlock Classes="body" Text="Scroll to move down the page. Ctrl + scroll zooms a chart, drag pans. Dotted lines are pit stops; dashed traces are race A." />
+      </StackPanel>
+    </StackPanel>
+  </ScrollViewer>
+
+</UserControl>

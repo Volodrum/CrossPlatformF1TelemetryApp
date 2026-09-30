@@ -117,6 +117,9 @@
       <TabItem Header="STRATEGY">
         <views:StrategyView DataContext="{Binding Session}" />
       </TabItem>
+      <TabItem Header="COMPARE">
+        <views:CompareView DataContext="{Binding Compare}" />
+      </TabItem>
       <TabItem Header="POSITION">
         <views:PositionView DataContext="{Binding Session}" />
       </TabItem>

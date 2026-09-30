@@ -94,6 +94,7 @@ public partial class App : Application
         services.AddSingleton<LiveViewModel>();
         services.AddSingleton<SessionViewModel>();
         services.AddSingleton<LapDetailViewModel>();
+        services.AddSingleton<CompareViewModel>();
         services.AddSingleton<SettingsViewModel>();
         services.AddSingleton<MainWindowViewModel>();
         return services.BuildServiceProvider();

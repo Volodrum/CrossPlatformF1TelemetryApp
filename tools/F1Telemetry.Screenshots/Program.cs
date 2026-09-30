@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Media;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using F1Telemetry.App;
 using F1Telemetry.App.Services;
 using F1Telemetry.App.ViewModels;
@@ -59,28 +60,43 @@ var hub = services.GetRequiredService<LiveDataHub>();
 var overlays = services.GetRequiredService<OverlayManager>();
 var vm = services.GetRequiredService<MainWindowViewModel>();
 
-// Seed: 6 simulated laps at Monza (pit on lap 3), recorded; stop mid-lap 6 so the live view has a lap in progress.
-var sim = new SessionSimulator(new SimulationOptions
+void Seed(SimulationOptions options, string description, TimeSpan? stopAt = null)
 {
-    Format = GameFormat.F1_26, Track = runtime.Tracks.ForTrackId(11), TrackId = 11, Laps = 6, PitOnLap = 3, TickRateHz = 30, Seed = 7,
-});
-var stopAt = TimeSpan.FromSeconds(5 * 86 + 40);
-foreach (var datagram in sim.Generate())
-{
-    if (datagram.Time > stopAt)
+    foreach (var datagram in new SessionSimulator(options).Generate())
     {
-        break;
-    }
-
-    if (PacketParser.Parse(datagram.Data) is { IsSuccess: true, Packet: { } packet })
-    {
-        runtime.Engine.Process(packet);
-        if (!runtime.Recorder.IsRecording && runtime.Engine.Session is { TrackId: >= 0 })
+        if (datagram.Time > stopAt)
         {
-            runtime.Recorder.Start("Screenshot seed");
+            break;
+        }
+
+        if (PacketParser.Parse(datagram.Data) is { IsSuccess: true, Packet: { } packet })
+        {
+            runtime.Engine.Process(packet);
+            if (!runtime.Recorder.IsRecording && runtime.Engine.Session is { TrackId: >= 0 })
+            {
+                runtime.Recorder.Start(description);
+            }
         }
     }
 }
+
+// Two finished 12-lap races at Monza for the compare tab: one stop against two.
+Seed(new SimulationOptions
+{
+    Format = GameFormat.F1_26, Track = runtime.Tracks.ForTrackId(11), TrackId = 11, Laps = 12, PitLaps = [6], TickRateHz = 30, Seed = 11, SessionUid = 1001,
+}, "One stop");
+runtime.Recorder.Stop();
+Seed(new SimulationOptions
+{
+    Format = GameFormat.F1_26, Track = runtime.Tracks.ForTrackId(11), TrackId = 11, Laps = 12, PitLaps = [4, 8], TickRateHz = 30, Seed = 12, SessionUid = 1002,
+}, "Two stops");
+runtime.Recorder.Stop();
+
+// Seed: 6 simulated laps at Monza (pit on lap 3), recorded; stop mid-lap 6 so the live view has a lap in progress.
+Seed(new SimulationOptions
+{
+    Format = GameFormat.F1_26, Track = runtime.Tracks.ForTrackId(11), TrackId = 11, Laps = 6, PitOnLap = 3, TickRateHz = 30, Seed = 7, SessionUid = 1003,
+}, "Screenshot seed", stopAt: TimeSpan.FromSeconds(5 * 86 + 40));
 
 Pump(runtime.Store.FlushAsync(), 400);
 
@@ -110,6 +126,24 @@ vm.SelectedTab = MainTab.Position;
 Capture(window, "05-position");
 vm.SelectedTab = MainTab.Settings;
 Capture(window, "06-settings");
+
+// Race vs race: the one-stop race as A, the two-stop race as B; the second shot scrolls down to the charts.
+vm.SelectedRecording = vm.Recordings.First(r => r.Description == "One stop");
+Pump(vm.Session.RefreshAsync(), 300);
+vm.SelectedTab = MainTab.Compare;
+Pump(vm.ActivateCompareAsync(), 800);
+vm.Compare.SelectedB = vm.Compare.RecordingsB.First(r => r.Description == "Two stops");
+Capture(window, "09-compare");
+if (window.GetVisualDescendants().OfType<CompareView>().FirstOrDefault()?.GetVisualDescendants().OfType<ScrollViewer>().FirstOrDefault() is { } compareScroll)
+{
+    compareScroll.Offset = compareScroll.Offset.WithY(560);
+    Capture(window, "10-compare-charts");
+}
+
+vm.SelectedRecording = vm.Recordings.First(r => r.Description == "Two stops");
+Pump(vm.Session.RefreshAsync(), 300);
+vm.SelectedTab = MainTab.Strategy;
+Capture(window, "11-strategy-two-stops");
 vm.SelectedTab = MainTab.Live;
 
 // Overlays in preview state, on the worst-case bright background used in the design's overlay board.

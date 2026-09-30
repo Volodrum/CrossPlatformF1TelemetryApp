@@ -110,7 +110,7 @@ public sealed class TelemetryPlot : ContentControl
             var scatter = plot.Add.Scatter(series.X, series.Y);
             scatter.LegendText = series.Name;
             scatter.Color = series.IsReference ? TextLo : Color.FromHex(series.Color);
-            scatter.MarkerSize = 0;
+            scatter.MarkerSize = series.X.Length < 3 ? 7 : 0; // a line of one or two points would be invisible or easy to miss
             scatter.LineWidth = series.IsReference ? 2 : 3;
             if (series.IsReference)
             {
@@ -129,12 +129,19 @@ public sealed class TelemetryPlot : ContentControl
             zero.ExcludeFromLegend = true;
         }
 
+        foreach (var marker in model.Markers ?? [])
+        {
+            var line = plot.Add.VerticalLine(marker.X, 2, Color.FromHex(marker.Color), LinePattern.Dotted);
+            line.LegendText = marker.Label;
+            line.ExcludeFromLegend = marker.Label.Length == 0;
+        }
+
         plot.Axes.Left.TickGenerator = model.IntegerY
             ? new ScottPlot.TickGenerators.NumericAutomatic { IntegerTicksOnly = true, LabelFormatter = v => model.YPrefix + v.ToString("0") }
             : new ScottPlot.TickGenerators.NumericAutomatic();
         plot.Axes.Bottom.TickGenerator = model.XIsTime
             ? new TimeTickGenerator()
-            : new ScottPlot.TickGenerators.NumericAutomatic();
+            : new ScottPlot.TickGenerators.NumericAutomatic { IntegerTicksOnly = model.IntegerX };
         plot.Axes.AutoScale();
 
         // Mouse drag / wheel only pans and zooms along the lap-distance axis; the value axis stays fixed,
