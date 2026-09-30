@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+  </ItemGroup>
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\F1Telemetry.Protocol\F1Telemetry.Protocol.csproj" />
+    <ProjectReference Include="..\..\src\F1Telemetry.Core\F1Telemetry.Core.csproj" />
+    <ProjectReference Include="..\..\src\F1Telemetry.Simulation\F1Telemetry.Simulation.csproj" />
+    <ProjectReference Include="..\..\src\F1Telemetry.Ingest\F1Telemetry.Ingest.csproj" />
+    <ProjectReference Include="..\..\src\F1Telemetry.Storage\F1Telemetry.Storage.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="..\..\assets\track_maps\*.json" Link="track_maps\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\assets\tracks\Monza.srtt" Link="tracks\Monza.srtt" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <Description>DuckDB persistence: schema/migrations, single-writer queue with batched appender, analytics queries.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\F1Telemetry.Core\F1Telemetry.Core.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="DuckDB.NET.Data.Full" />
+  </ItemGroup>
+</Project>

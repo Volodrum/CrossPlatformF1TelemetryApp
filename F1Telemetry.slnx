@@ -4,5 +4,12 @@
     <Project Path="src/F1Telemetry.Ingest/F1Telemetry.Ingest.csproj" />
     <Project Path="src/F1Telemetry.Protocol/F1Telemetry.Protocol.csproj" />
     <Project Path="src/F1Telemetry.Simulation/F1Telemetry.Simulation.csproj" />
+    <Project Path="src/F1Telemetry.Storage/F1Telemetry.Storage.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/F1Telemetry.Tests/F1Telemetry.Tests.csproj" />
+  </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/F1Telemetry.Cli/F1Telemetry.Cli.csproj" />
   </Folder>
 </Solution>

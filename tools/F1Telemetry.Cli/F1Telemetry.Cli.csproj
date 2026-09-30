@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>f1tel</AssemblyName>
+    <Description>Developer tooling: capture, replay, simulate, inspect and seed telemetry without running the game.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\F1Telemetry.Ingest\F1Telemetry.Ingest.csproj" />
+    <ProjectReference Include="..\..\src\F1Telemetry.Storage\F1Telemetry.Storage.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="..\..\assets\track_maps\*.json" Link="track_maps\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\assets\tracks\*.srtt" Link="tracks\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>
