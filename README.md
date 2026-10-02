@@ -70,6 +70,23 @@ The layout differences between the two formats are handled in `FormatLayout`:
 
 Packets whose length doesn't match their format are rejected and counted, never misread. The Live view shows the count.
 
+## Download
+
+Ready-to-run zips for **Windows** and **Linux** (x64) are on the [Releases](https://github.com/Volodrum/CrossPlatformF1TelemetryApp/releases) page. They are self-contained: no .NET install needed. Unzip and keep the `fonts/`, `track_maps/` and `tracks/` folders next to the program.
+
+- **Windows:** run `F1Telemetry.exe`. Windows SmartScreen may warn on first start because the exe is not signed (*More info → Run anyway*).
+- **Linux:** run `./F1Telemetry`. It needs an X11 session (overlays and global hotkeys don't work under Wayland, see [Overlays](#overlays)) and the usual desktop libraries: `libX11`, `libICE`, `libSM`, `fontconfig` and `libicu`.
+
+Releases are built by `.github/workflows/release.yml` when a version tag is pushed:
+
+```bash
+git tag v0.2.0
+```
+
+```bash
+git push origin v0.2.0
+```
+
 ## Running
 
 Requires the .NET 10 SDK.
