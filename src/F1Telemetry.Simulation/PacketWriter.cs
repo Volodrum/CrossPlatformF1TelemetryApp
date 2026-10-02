@@ -301,6 +301,21 @@ public sealed class PacketWriter(FormatLayout layout)
         }
     }
 
+    public void WriteFinalClassification(byte[] packet, int car, FinalClassification c)
+    {
+        packet[H] = (byte)layout.MaxCars;
+        var s = packet.AsSpan(H + 1 + car * layout.FinalClassificationSlot, layout.FinalClassificationSlot);
+        s[0] = c.Position;
+        s[1] = c.NumLaps;
+        s[2] = c.GridPosition;
+        s[3] = c.Points;
+        s[4] = c.NumPitStops;
+        s[5] = (byte)c.ResultStatus;
+        U32(s, 7, c.BestLapTimeMs);
+        BinaryPrimitives.WriteDoubleLittleEndian(s[11..], c.TotalRaceTime);
+        s[19] = c.PenaltiesTime;
+    }
+
     public void WriteNumActiveCars(byte[] packet, byte count) => packet[H] = count;
 
     public void WriteParticipant(byte[] packet, int car, Participant p)

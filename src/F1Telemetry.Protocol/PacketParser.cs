@@ -58,6 +58,7 @@ public static class PacketParser
             PacketId.CarTelemetry => CarTelemetryPacket.Read(ref reader, header, layout),
             PacketId.CarStatus => CarStatusPacket.Read(ref reader, header, layout),
             PacketId.CarDamage => CarDamagePacket.Read(ref reader, header, layout),
+            PacketId.FinalClassification => FinalClassificationPacket.Read(ref reader, header, layout),
             PacketId.SessionHistory => SessionHistoryPacket.Read(ref reader, header),
             PacketId.CarTelemetry2 => CarTelemetry2Packet.Read(ref reader, header, layout),
             _ => new UnhandledPacket(header),

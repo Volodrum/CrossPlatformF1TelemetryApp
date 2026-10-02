@@ -8,6 +8,8 @@ namespace F1Telemetry.Core.Engine;
 /// reference laps are fixed at the moment the split is crossed (later history updates, which may already include
 /// that very lap, must not change them). A finished sector is reported (<see cref="SectorBoxSnapshot.LastSplit"/>) for
 /// <see cref="SplitSeconds"/> after the split; after the line the finished lap is held for <see cref="HoldSeconds"/>.
+/// At the flag the game classifies the car without moving the lap number on: the final lap is held from then on, through
+/// the cool-down lap.
 /// </summary>
 public sealed class SectorTimer
 {
@@ -21,12 +23,17 @@ public sealed class SectorTimer
     private int _lapNum;
     private bool _invalid;
     private bool _outOrIn;
+    private bool _classified;
+    private uint _lastLapMsAtLapStart;
+    private uint _currentLapMs;
     private SectorBoxSnapshot? _hold;
     private double _holdUntil;
 
     public void Reset()
     {
         _lapNum = 0;
+        _classified = false;
+        _currentLapMs = 0;
         _hold = null;
         ClearLap();
     }
@@ -37,7 +44,13 @@ public sealed class SectorTimer
         var sessionBest = field.SessionBestLap();
         var personalBest = field.PersonalBestLap();
 
-        if (_lapNum > 0 && lapNum == _lapNum + 1)
+        // Classified once the final lap's time is in (it may follow the status by a packet): the last-lap time has
+        // changed, or the lap timer has restarted (two laps can take the same time).
+        var classified = lap.ResultStatus == ResultStatus.Finished
+            && (_classified || lapNum != _lapNum || lap.LastLapTimeMs != _lastLapMsAtLapStart || lap.CurrentLapTimeMs < _currentLapMs);
+        _currentLapMs = lap.CurrentLapTimeMs;
+        var tookFlag = classified && !_classified && lapNum == _lapNum;
+        if (_lapNum > 0 && (lapNum == _lapNum + 1 || tookFlag))
         {
             if (FinishLap(lap, sessionBest, personalBest, field) is { } finished)
             {
@@ -54,10 +67,25 @@ public sealed class SectorTimer
             ClearLap();
         }
 
+        if (lapNum != _lapNum)
+        {
+            _lastLapMsAtLapStart = lap.LastLapTimeMs;
+        }
+
         _lapNum = lapNum;
-        _invalid = lap.CurrentLapInvalid;
-        _outOrIn = lap.DriverStatus is DriverStatus.OutLap or DriverStatus.InLap or DriverStatus.InGarage || lap.PitStatus != PitStatus.None;
-        TrackSplits(lap, sessionTime, sessionBest, personalBest, field);
+        _classified = classified;
+        if (_classified)
+        {
+            return _hold is not null ? _hold with { Position = lap.CarPosition } : Live(lap, sessionTime, sessionBest, personalBest, field);
+        }
+
+        // Waiting at the flag for the final lap's time: keep this lap's splits as they are.
+        if (lap.ResultStatus != ResultStatus.Finished)
+        {
+            _invalid = lap.CurrentLapInvalid;
+            _outOrIn = lap.DriverStatus is DriverStatus.OutLap or DriverStatus.InLap or DriverStatus.InGarage || lap.PitStatus != PitStatus.None;
+            TrackSplits(lap, sessionTime, sessionBest, personalBest, field);
+        }
 
         if (_hold is not null && sessionTime < _holdUntil && sessionTime >= _holdUntil - HoldSeconds)
         {

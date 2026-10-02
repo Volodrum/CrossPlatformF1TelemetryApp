@@ -140,9 +140,14 @@ public sealed class EndToEndTests : IAsyncLifetime
         var laps = await analysis.GetClassifiedLapsAsync(recording, TestContext.Current.CancellationToken);
         Assert.Equal([1, 2, 3, 4, 5], laps.Select(l => l.LapNumber));
         Assert.All(laps, l => Assert.True(l.HasTime));
+        Assert.All(laps, l => Assert.Equal(l.LapTimeMs, l.Sector1Ms + l.Sector2Ms + l.Sector3Ms)); // incl. the final lap, missing from the game's history
         Assert.Equal([LapType.Regular, LapType.Pit, LapType.Pit, LapType.Regular, LapType.Regular], laps.Select(l => l.LapType));
         Assert.Equal(VisualCompound.Hard.ToString(), laps[^1].Compound);
         Assert.Single(laps, l => l.IsBestLap);
+        Assert.Contains(laps[^1].LapTimeMs, finishedLaps); // the sector box finished the final lap at the flag
+
+        var finalLap = await store.GetLapSamplesAsync(recording.Id, 5, TestContext.Current.CancellationToken);
+        Assert.True(finalLap.MaxBy(s => s.SessionTime)!.LapDistance > 1000); // nothing from past the flag
 
         var samples = await store.GetLapSamplesAsync(recording.Id, 3, TestContext.Current.CancellationToken);
         Assert.True(samples.Count > 100);

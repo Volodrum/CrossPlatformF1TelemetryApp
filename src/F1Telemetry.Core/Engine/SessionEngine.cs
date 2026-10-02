@@ -33,6 +33,13 @@ public sealed class SessionEngine
     private readonly Dictionary<int, (uint Lane, uint Stationary)> _pitVisits = [];
     private int? _pitEntryLap;
 
+    // Lap times seen outside the session history, keyed by lap (see TrackLapTimes). The game never writes the final
+    // lap of a race into the player's history: it stops updating it at the flag, leaving that lap with no time and S3.
+    private readonly Dictionary<int, uint> _lapTimesFromLapData = [];
+    private uint _lastLapTimeMs;
+    private uint _currentLapTimeMs;
+    private SessionHistoryPacket? _playerHistory;
+
     private ulong? _sessionUid;
     private SessionData? _sessionData;
     private LapDataPacket? _lapData;
@@ -153,9 +160,13 @@ public sealed class SessionEngine
                 _field.OnHistory(history);
                 if (history.IsPlayer)
                 {
+                    _playerHistory = history;
                     OnPlayerHistory(history);
                 }
 
+                break;
+            case FinalClassificationPacket classification:
+                OnFinalClassification(classification.Player);
                 break;
             case EventPacket evt:
                 GameEvent?.Invoke(evt.Code);
@@ -185,6 +196,10 @@ public sealed class SessionEngine
         _pitStops = null;
         _pitVisits.Clear();
         _pitEntryLap = null;
+        _lapTimesFromLapData.Clear();
+        _lastLapTimeMs = 0;
+        _currentLapTimeMs = 0;
+        _playerHistory = null;
         _lapTypes.Reset();
         _consumption.Reset();
         _delta.Reset();
@@ -257,6 +272,7 @@ public sealed class SessionEngine
         _lapTypes.OnPitStatus(lapNum, lap.PitStatus);
         TrackPitStops(lapNum, lap);
         TrackPitLane(lapNum, lap);
+        TrackLapTimes(lapNum, lap);
         _consumption.EnsureStarted(_status, _damage);
 
         if (_currentLap != 0 && lapNum > _currentLap)
@@ -324,6 +340,95 @@ public sealed class SessionEngine
         var visit = _pitVisits.GetValueOrDefault(entryLap);
         _pitVisits[entryLap] = (Math.Max(visit.Lane, lap.PitLaneTimeInLaneMs), Math.Max(visit.Stationary, lap.PitStopTimerMs));
     }
+
+    /// <summary>
+    /// Keeps the time of each lap as the car finishes it (<c>m_lastLapTimeInMS</c>), the lap history's fallback. On the
+    /// line the lap number goes up with it, except at the flag, where the car is classified and the lap number stays:
+    /// there the last-lap time changing or the lap timer restarting (two laps can take the same time) marks the line.
+    /// Otherwise a new time belongs to the lap before (first packet received, or the lap number moved first).
+    /// </summary>
+    private void TrackLapTimes(int lapNum, LapData lap)
+    {
+        if (lapNum < _currentLap)
+        {
+            // Flashback to an earlier lap: the laps from here on will be driven again.
+            foreach (var undone in _lapTimesFromLapData.Keys.Where(lapNumber => lapNumber >= lapNum).ToList())
+            {
+                _lapTimesFromLapData.Remove(undone);
+            }
+        }
+
+        var time = lap.LastLapTimeMs;
+        var timeChanged = time != _lastLapTimeMs;
+        var timerRestarted = lap.CurrentLapTimeMs < _currentLapTimeMs;
+        _lastLapTimeMs = time;
+        _currentLapTimeMs = lap.CurrentLapTimeMs;
+
+        int finishedLap;
+        if (_currentLap != 0 && lapNum > _currentLap)
+        {
+            finishedLap = _currentLap;
+        }
+        else if (lap.ResultStatus == ResultStatus.Finished && lapNum == _currentLap
+                 && (timeChanged || (timerRestarted && !_lapTimesFromLapData.ContainsKey(lapNum))))
+        {
+            finishedLap = lapNum;
+        }
+        else if (timeChanged)
+        {
+            finishedLap = lapNum - 1;
+        }
+        else
+        {
+            return;
+        }
+
+        if (time == 0 || finishedLap <= 0 || _lapTimesFromLapData.GetValueOrDefault(finishedLap) == time)
+        {
+            return;
+        }
+
+        _lapTimesFromLapData[finishedLap] = time;
+        if (_playerHistory is { } history && finishedLap <= history.Laps.Length && history.Laps[finishedLap - 1].LapTimeMs == 0)
+        {
+            OnPlayerHistory(history);
+        }
+    }
+
+    /// <summary>
+    /// The race time of the final lap, if neither the history nor the lap data had it: the total race time less every
+    /// other lap (lap 1 is timed from the start, like the race).
+    /// </summary>
+    private void OnFinalClassification(FinalClassification result)
+    {
+        if (_playerHistory is not { } history || result.NumLaps == 0 || result.NumLaps > history.Laps.Length
+            || history.Laps[result.NumLaps - 1].LapTimeMs != 0 || _lapTimesFromLapData.ContainsKey(result.NumLaps))
+        {
+            return;
+        }
+
+        var earlier = 0L;
+        for (var lapNumber = 1; lapNumber < result.NumLaps; lapNumber++)
+        {
+            var ms = LapTimeMs(history, lapNumber);
+            if (ms == 0)
+            {
+                return;
+            }
+
+            earlier += ms;
+        }
+
+        var last = (long)Math.Round(result.TotalRaceTime * 1000) - earlier;
+        if (last > 0)
+        {
+            _lapTimesFromLapData[result.NumLaps] = (uint)last;
+            OnPlayerHistory(history);
+        }
+    }
+
+    private uint LapTimeMs(SessionHistoryPacket history, int lapNumber) =>
+        history.Laps[lapNumber - 1].LapTimeMs is > 0 and var ms ? ms : _lapTimesFromLapData.GetValueOrDefault(lapNumber);
 
     /// <summary>
     /// Last lap of each stint (255 for the running one): the game's value, unless a stop was seen live within a lap or
@@ -412,7 +517,12 @@ public sealed class SessionEngine
         if (_status is { } status && _damage is { } damage)
         {
             StrategyUpdated?.Invoke(BuildStrategy(status, damage));
-            SampleCaptured?.Invoke(BuildSample(packet.Header, telemetry, status, damage));
+
+            // Past the flag the lap number stays on the final lap: a sample there would join it from the start line.
+            if (_lapData?.Player.ResultStatus != ResultStatus.Finished)
+            {
+                SampleCaptured?.Invoke(BuildSample(packet.Header, telemetry, status, damage));
+            }
         }
     }
 
@@ -444,14 +554,18 @@ public sealed class SessionEngine
             var lapNumber = i + 1;
             var stintIdx = StintIndexForLap(stintEnds, lapNumber);
             var stint = stintIdx >= 0 ? history.Stints[stintIdx] : default;
+            var lapTimeMs = LapTimeMs(history, lapNumber);
+            var sector3Ms = h.Sector3Ms == 0 && h.Sector1Ms > 0 && h.Sector2Ms > 0 && lapTimeMs > h.Sector1Ms + h.Sector2Ms
+                ? lapTimeMs - h.Sector1Ms - h.Sector2Ms
+                : h.Sector3Ms;
 
             laps.Add(new LapRecord
             {
                 LapNumber = lapNumber,
-                LapTimeMs = h.LapTimeMs,
+                LapTimeMs = lapTimeMs,
                 Sector1Ms = h.Sector1Ms,
                 Sector2Ms = h.Sector2Ms,
-                Sector3Ms = h.Sector3Ms,
+                Sector3Ms = sector3Ms,
                 IsValid = h.IsLapValid,
                 IsBestLap = history.BestLapNum == lapNumber,
                 IsBestSector1 = history.BestSector1LapNum == lapNumber,
@@ -465,6 +579,25 @@ public sealed class SessionEngine
                 PitLaneTimeMs = _pitVisits.GetValueOrDefault(lapNumber).Lane,
                 PitStopTimeMs = _pitVisits.GetValueOrDefault(lapNumber).Stationary,
             });
+        }
+
+        // The game's bests leave out a lap it never timed: a final lap filled in above can beat them.
+        for (var i = 0; i < laps.Count; i++)
+        {
+            if (history.Laps[i].LapTimeMs != 0 || !laps[i].HasTime || !laps[i].IsValid)
+            {
+                continue;
+            }
+
+            if (!laps.Any(l => l.IsBestLap && l.LapTimeMs <= laps[i].LapTimeMs))
+            {
+                laps = [.. laps.Select(l => l with { IsBestLap = l.LapNumber == laps[i].LapNumber })];
+            }
+
+            if (laps[i].Sector3Ms > 0 && !laps.Any(l => l.IsBestSector3 && l.Sector3Ms <= laps[i].Sector3Ms))
+            {
+                laps = [.. laps.Select(l => l with { IsBestSector3 = l.LapNumber == laps[i].LapNumber })];
+            }
         }
 
         LapsUpdated?.Invoke(laps);

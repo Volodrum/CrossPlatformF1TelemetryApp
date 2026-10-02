@@ -33,6 +33,7 @@ public class ProtocolTests
             Assert.Equal(layout.PacketSizes[PacketId.CarTelemetry], h + layout.MaxCars * layout.TelemetrySlot + 3);
             Assert.Equal(layout.PacketSizes[PacketId.CarStatus], h + layout.MaxCars * layout.StatusSlot);
             Assert.Equal(layout.PacketSizes[PacketId.CarDamage], h + layout.MaxCars * layout.DamageSlot);
+            Assert.Equal(layout.PacketSizes[PacketId.FinalClassification], h + 1 + layout.MaxCars * layout.FinalClassificationSlot);
         }
 
         Assert.Equal(FormatLayout.HeaderSize + 24 * 10, FormatLayout.F1_26.PacketSizes[PacketId.CarTelemetry2]);
@@ -232,6 +233,19 @@ public class ProtocolTests
         Assert.Equal(0, parsed.StintIndexForLap(2));
         Assert.Equal(1, parsed.StintIndexForLap(3));
         Assert.Equal(61_500u, parsed.Laps[1].Sector1Ms); // minutes part recombined
+    }
+
+    [Theory]
+    [MemberData(nameof(Formats))]
+    public void Final_classification_round_trips(GameFormat format)
+    {
+        var layout = FormatLayout.For(format);
+        var writer = new PacketWriter(layout);
+        var player = (byte)(layout.MaxCars - 1);
+        var packet = writer.Create(PacketId.FinalClassification, 1, 0, 0, player);
+        var expected = new FinalClassification(3, 57, 5, 15, 1, ResultStatus.Finished, 91_931, 5_341.517, 5);
+        writer.WriteFinalClassification(packet, player, expected);
+        Assert.Equal(expected, Assert.IsType<FinalClassificationPacket>(PacketParser.Parse(packet).Packet).Player);
     }
 
     [Fact]

@@ -244,8 +244,17 @@ public sealed class SessionSimulator
 
             if (lap > _o.Laps)
             {
-                yield return Emit(t, HistoryPacket(uid, (float)t, frame, PlayerIndex, completed, stints));
+                // Like the game at the flag: the lap data times the final lap and classifies the car, but the lap
+                // number stays (one more telemetry packet arrives past the line) and the player's history only gets
+                // the final lap's time and S3 with the results, if the app is still listening by then.
+                var final = completed[^1];
+                yield return Emit(t, LapDataPacket(uid, (float)t, frame, 0, _o.Laps, position, PitStatus.None, DriverStatus.OnTrack,
+                    pitStops, 0, final.LapTimeMs, 0, 0, L, t, 0, 0, ResultStatus.Finished));
+                yield return Emit(t, TelemetryPacket(uid, (float)t, frame, 0, prevV, 0, _o.Laps));
+                yield return Emit(t, HistoryPacket(uid, (float)t, frame, PlayerIndex,
+                    [.. completed[..^1], final with { LapTimeMs = 0, Sector3Ms = 0 }], stints));
                 yield return Emit(t, EventPacket(uid, t, frame, "SEND"));
+                yield return Emit(t, FinalClassificationPacket(uid, (float)t, frame, position, pitStops, completed, t));
                 yield break;
             }
         }
@@ -415,7 +424,8 @@ public sealed class SessionSimulator
     }
 
     private byte[] LapDataPacket(ulong uid, float t, uint frame, double s, int lap, int position, PitStatus pit, DriverStatus driver,
-        int pitStops, uint currentLapMs, uint lastLapMs, uint s1, uint s2, double L, double time, ushort pitLaneMs, ushort pitStopMs)
+        int pitStops, uint currentLapMs, uint lastLapMs, uint s1, uint s2, double L, double time, ushort pitLaneMs, ushort pitStopMs,
+        ResultStatus result = ResultStatus.Active)
     {
         var p = _writer.Create(PacketId.LapData, uid, t, frame, PlayerIndex);
         var sector = SectorAt(s, L);
@@ -434,7 +444,7 @@ public sealed class SessionSimulator
 
         _writer.WriteLapData(p, PlayerIndex, new LapData(lastLapMs, currentLapMs, s1, s2, toFront[PlayerIndex], toLeader[PlayerIndex],
             (float)s, (float)((lap - 1) * L + s), 0, (byte)positions[PlayerIndex], (byte)lap, pit, (byte)pitStops, sector, false, 0, 0, 0, 4,
-            driver, ResultStatus.Active, pit != PitStatus.None, pitLaneMs, pitStopMs, 330));
+            driver, result, pit != PitStatus.None, pitLaneMs, pitStopMs, 330));
 
         for (var i = 1; i < CarCount; i++)
         {
@@ -498,6 +508,14 @@ public sealed class SessionSimulator
             ActiveAeroMode: v > 75 ? (byte)1 : (byte)0, ActiveAeroAvailable: true, ActiveAeroActivationDistance: 0,
             OvertakeAvailable: lap > 1, OvertakeActive: lap > 1 && v > 80, OvertakeActivationDistance: 0,
             Regulations2026Applicable: true, IsDrivingWrongWay: false));
+        return p;
+    }
+
+    private byte[] FinalClassificationPacket(ulong uid, float t, uint frame, int position, int pitStops, IReadOnlyList<LapHistory> laps, double raceTime)
+    {
+        var p = _writer.Create(PacketId.FinalClassification, uid, t, frame, PlayerIndex);
+        _writer.WriteFinalClassification(p, PlayerIndex, new FinalClassification((byte)position, (byte)laps.Count, 4, 0, (byte)pitStops,
+            ResultStatus.Finished, laps.Min(l => l.LapTimeMs), raceTime, 0));
         return p;
     }
 

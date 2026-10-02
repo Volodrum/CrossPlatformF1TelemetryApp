@@ -59,6 +59,13 @@ public ref struct SpanReader
         return value;
     }
 
+    public double F64()
+    {
+        var value = BinaryPrimitives.ReadDoubleLittleEndian(_buffer[Position..]);
+        Position += 8;
+        return value;
+    }
+
     /// <summary>Signed 16-bit value normalised to [-1, 1] (direction vectors).</summary>
     public float Normalised16() => I16() / 32767f;
 

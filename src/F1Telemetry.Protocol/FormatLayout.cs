@@ -37,6 +37,7 @@ public sealed class FormatLayout
     public int StatusSlot { get; }
     public int DamageSlot => 46;
     public int Telemetry2Slot => 10;
+    public int FinalClassificationSlot => 46;
 
     /// <summary>2026 widens driverId, networkId and teamId in the participants packet from u8 to u16.</summary>
     public bool WideParticipantIds => Format == GameFormat.F1_26;
