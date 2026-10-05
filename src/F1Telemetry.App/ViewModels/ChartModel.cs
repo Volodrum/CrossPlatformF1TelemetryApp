@@ -13,6 +13,7 @@ public enum ChartLine
 /// <param name="MarkerSize">Dot per point, in pixels; 0 = none. Unset: dots only for one- and two-point series.</param>
 /// <param name="OpenMarkers">Rings instead of filled dots, so two series stay apart without colour.</param>
 /// <param name="InLegend">False keeps the series out of the legend (an unnamed companion of a series that has an entry).</param>
+/// <param name="EndLabel">Text at the last point (a trend line's slope, say), above it, or below when <paramref name="EndLabelBelow"/>.</param>
 public sealed record ChartSeries(
     string Name,
     string Color,
@@ -24,17 +25,25 @@ public sealed record ChartSeries(
     float LineWidth = 3,
     float? MarkerSize = null,
     bool OpenMarkers = false,
-    bool InLegend = true);
+    bool InLegend = true,
+    string EndLabel = "",
+    bool EndLabelBelow = false);
 
 /// <summary>A dotted vertical line at <paramref name="X"/> (a pit stop, say); only markers with a label get a legend entry.</summary>
 public sealed record ChartMarker(double X, string Color, string Label = "");
 
 /// <summary>
-/// A bar in a strip above the data, spanning <paramref name="X0"/>–<paramref name="X1"/> in row <paramref name="Row"/> (0 = top):
-/// a stint of a strategy timeline, say. Filled <paramref name="Fill"/>, edged <paramref name="Edge"/>; shows
-/// <paramref name="ShortText"/> when the bar is too narrow for <paramref name="Text"/>.
+/// One row of a strategy timeline drawn under the plot on the same x axis: a badge (<paramref name="Label"/> on
+/// <paramref name="Color"/>), its stints, and a PIT chip at each of <paramref name="Pits"/> with a dotted line
+/// in <paramref name="Color"/> up through the plot.
 /// </summary>
-public sealed record ChartBand(double X0, double X1, int Row, string Text, string ShortText, string Fill, string Edge);
+public sealed record ChartTimelineRow(string Label, string Color, IReadOnlyList<ChartTimelineSegment> Segments, IReadOnlyList<double> Pits);
+
+/// <summary>
+/// A stint on a timeline row, <paramref name="X0"/>–<paramref name="X1"/>: a ring with <paramref name="Badge"/> (a compound letter)
+/// in <paramref name="Edge"/>, then <paramref name="Text"/> and, at the right end, <paramref name="Value"/>, as far as they fit.
+/// </summary>
+public sealed record ChartTimelineSegment(double X0, double X1, string Badge, string Text, string Value, string Edge);
 
 /// <param name="XIsTime">X values are seconds; ticks are formatted as m:ss.</param>
 /// <param name="ZeroLine">Draws a dashed line at y = 0 (delta charts).</param>
@@ -50,7 +59,7 @@ public sealed record ChartModel(
     bool ZeroLine = false,
     IReadOnlyList<ChartMarker>? Markers = null,
     bool IntegerX = false,
-    IReadOnlyList<ChartBand>? Bands = null,
+    IReadOnlyList<ChartTimelineRow>? Timeline = null,
     bool YIsTime = false);
 
 public sealed record SeriesSpec(string Name, string Color, Func<TelemetrySample, double> Value, bool Step = false);

@@ -109,13 +109,13 @@
         <Border Classes="panel" Padding="0" Height="280">
           <controls:TelemetryPlot Model="{Binding GapChart}" />
         </Border>
-        <Border Classes="panel" Padding="0" Height="320">
+        <Border Classes="panel" Padding="0" Height="420">
           <controls:TelemetryPlot Model="{Binding PaceChart}" />
         </Border>
         <Border Classes="panel" Padding="0" Height="240">
           <controls:TelemetryPlot Model="{Binding PositionChart}" />
         </Border>
-        <TextBlock Classes="body" Text="Scroll to move down the page. Ctrl + scroll zooms a chart, drag pans. Race A is blue and dashed (rings on the pace chart), race B orange and solid. Pace chart: each mark is a clean lap with the fuel weight taken out, each line a stint's tyre-wear trend. Pit, safety-car and lap-1 laps are not clean, hence the gaps. The bars above it are each race's stints in their compound colour, with the time lost per lap; the break between two bars is the pit stop. Dotted lines on the gap chart are pit stops." TextWrapping="Wrap" />
+        <TextBlock Classes="body" Text="Scroll to move down the page. Ctrl + scroll zooms a chart, drag pans. Race A is blue and dashed (rings on the pace chart), race B orange and solid. Pace chart: each mark is a clean lap with the fuel weight taken out, each line a stint's tyre-wear trend with its time lost per lap. Pit, safety-car and lap-1 laps are not clean, hence the gaps. Under the plot, each race's stints run along the same lap axis in their compound colour; a dotted line rises from every PIT chip to show where the stop falls among the laps. Dotted lines on the gap chart are pit stops too." TextWrapping="Wrap" />
       </StackPanel>
     </StackPanel>
   </ScrollViewer>

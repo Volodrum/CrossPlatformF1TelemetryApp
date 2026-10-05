@@ -20,9 +20,12 @@ public sealed class TelemetryPlot : ContentControl
 
     private const string DataFont = "JetBrains Mono";
     private const string LabelFont = "Chakra Petch";
+    private static readonly Color Bg0 = Color.FromHex("#07080A");
     private static readonly Color Panel = Color.FromHex("#101216");
+    private static readonly Color Raised = Color.FromHex("#181B21");
     private static readonly Color Divider = Color.FromHex("#22262E");
     private static readonly Color Line = Color.FromHex("#2C313B");
+    private static readonly Color TextHi = Color.FromHex("#F4F6F9");
     private static readonly Color TextMid = Color.FromHex("#C3CAD5");
     private static readonly Color TextLo = Color.FromHex("#8D97A6");
 
@@ -124,6 +127,13 @@ public sealed class TelemetryPlot : ContentControl
             {
                 scatter.ConnectStyle = ConnectStyle.StepHorizontal;
             }
+
+            if (series.EndLabel.Length > 0)
+            {
+                var label = AddLabel(plot, series.EndLabel, series.X[^1], series.Y[^1], DataFont, 12, TextHi);
+                label.LabelAlignment = series.EndLabelBelow ? Alignment.UpperRight : Alignment.LowerRight;
+                label.LabelOffsetY = series.EndLabelBelow ? 8 : -8;
+            }
         }
 
         if (model.ZeroLine)
@@ -151,13 +161,22 @@ public sealed class TelemetryPlot : ContentControl
         // and the view can't leave the recorded distance range.
         var limits = plot.Axes.GetLimits();
         var (bottom, top) = model.InvertY ? (limits.Top, limits.Bottom) : (limits.Bottom, limits.Top);
+        if (!model.InvertY && model.Series.Any(s => s.EndLabel.Length > 0))
+        {
+            // Labels sit above or below a line's last point: keep them inside the plot.
+            var span = top - bottom;
+            (bottom, top) = (bottom - span * 0.06, top + span * 0.08);
+        }
+
         var withData = model.Series.Where(s => s.X.Length > 0).ToList();
         var (left, right) = withData.Count > 0 ? (withData.Min(s => s.X.Min()), withData.Max(s => s.X.Max())) : (limits.Left, limits.Right);
-        IReadOnlyList<ChartBand> bands = model.InvertY ? [] : model.Bands ?? [];
-        if (bands.Count > 0)
+        IReadOnlyList<ChartTimelineRow> timeline = model.InvertY ? [] : model.Timeline ?? [];
+        var segments = timeline.SelectMany(r => r.Segments).ToList();
+        if (segments.Count > 0)
         {
-            left = Math.Min(left, bands.Min(b => b.X0));
-            right = Math.Max(right, bands.Max(b => b.X1));
+            left = Math.Min(left, segments.Min(s => s.X0));
+            right = Math.Max(right, segments.Max(s => s.X1));
+            left -= (right - left) * 0.035; // room for the race badges at the start of each row
         }
 
         if (right <= left)
@@ -165,9 +184,9 @@ public sealed class TelemetryPlot : ContentControl
             right = left + 1;
         }
 
-        if (bands.Count > 0)
+        if (segments.Count > 0)
         {
-            top = AddBandStrip(plot, bands, bottom, top, right - left);
+            bottom = AddTimeline(plot, timeline, bottom, top, left, right);
         }
 
         plot.Axes.SetLimits(left, right, bottom, top);
@@ -180,44 +199,114 @@ public sealed class TelemetryPlot : ContentControl
     }
 
     /// <summary>
-    /// Draws the bars in a strip of headroom above the data (one row each, a divider below), so they line up with
-    /// the data underneath without covering it. Value ticks stop at the data. Returns the new top of the value axis.
+    /// Draws a strategy timeline under the data on the same x axis: one row per entry, each stint a bar edged in its
+    /// compound colour with a compound ring, its text and its value (as far as they fit), a PIT chip between stints,
+    /// and a dotted line from each chip up through the data so the stop can be read against the laps.
+    /// Value ticks stop at the data. Returns the new bottom of the value axis.
     /// </summary>
-    private static double AddBandStrip(Plot plot, IReadOnlyList<ChartBand> bands, double bottom, double dataTop, double xSpan)
+    private double AddTimeline(Plot plot, IReadOnlyList<ChartTimelineRow> rows, double dataBottom, double dataTop, double left, double right)
     {
-        var rows = bands.Max(b => b.Row) + 1;
-        var rowHeight = (dataTop - bottom) * 0.16;
-        var divider = dataTop + rowHeight * 0.25;
-        var top = divider + rowHeight * rows;
-
-        var line = plot.Add.HorizontalLine(divider, 1, Line);
-        line.ExcludeFromLegend = true;
+        var rowHeight = (dataTop - dataBottom) * 0.17;
+        var divider = dataBottom - rowHeight * 0.3;
+        var bottom = divider - rowHeight * rows.Count - rowHeight * 0.1;
         if (plot.Axes.Left.TickGenerator is TimeTickGenerator ticks)
         {
-            ticks.Max = dataTop;
+            ticks.Min = dataBottom;
         }
 
-        foreach (var band in bands)
+        var rule = plot.Add.HorizontalLine(divider, 2, Line);
+        rule.ExcludeFromLegend = true;
+
+        // Pixels per x unit, to decide what text fits a stint: the plot is about its width minus axis and legend.
+        var dataPixels = Math.Max(400, (Bounds.Width > 0 ? Bounds.Width : 1300) - 200);
+        var pixelsPerUnit = dataPixels / (right - left);
+        const double CharWidth = 7.5;
+
+        for (var r = 0; r < rows.Count; r++)
         {
-            var rowTop = top - band.Row * rowHeight;
-            var (y0, y1) = (rowTop - rowHeight * 0.85, rowTop - rowHeight * 0.1);
-            var bar = plot.Add.Rectangle(band.X0, band.X1, y0, y1);
-            bar.FillColor = Color.FromHex(band.Fill);
-            bar.LineColor = Color.FromHex(band.Edge);
-            bar.LineWidth = 2;
+            var row = rows[r];
+            var y1 = divider - rowHeight * (r + 0.15);
+            var y0 = y1 - rowHeight * 0.75;
+            var mid = (y0 + y1) / 2;
+            var raceColor = Color.FromHex(row.Color);
 
-            // Roughly 7 px a character against a ~1100 px wide plot: narrow bars get the short text.
-            var narrow = (band.X1 - band.X0) / xSpan * 1100 < band.Text.Length * 7 + 12;
-            var text = plot.Add.Text(narrow ? band.ShortText : band.Text, band.X0, (y0 + y1) / 2);
-            text.LabelFontName = LabelFont;
-            text.LabelFontSize = 12;
-            text.LabelBold = true;
-            text.LabelFontColor = Panel;
-            text.LabelAlignment = Alignment.MiddleLeft;
-            text.LabelOffsetX = 6;
+            var badge = AddLabel(plot, row.Label, left, mid, LabelFont, 14, Panel);
+            badge.LabelAlignment = Alignment.MiddleLeft;
+            badge.LabelOffsetX = 4;
+            badge.LabelBackgroundColor = raceColor;
+            badge.LabelBorderRadius = 4;
+            badge.LabelPadding = 5;
+
+            for (var s = 0; s < row.Segments.Count; s++)
+            {
+                var segment = row.Segments[s];
+                var edge = Color.FromHex(segment.Edge);
+                var bar = plot.Add.Rectangle(segment.X0, segment.X1, y0, y1);
+                bar.FillColor = Raised;
+                bar.LineColor = edge;
+                bar.LineWidth = 2;
+
+                // Keep clear of the PIT chips that sit on the stint's ends (about 18 px into each side).
+                var startInset = s > 0 ? 22.0 : 6.0;
+                var endInset = s < row.Segments.Count - 1 ? 24.0 : 8.0;
+                var room = (segment.X1 - segment.X0) * pixelsPerUnit - startInset - endInset;
+                var ring = AddLabel(plot, segment.Badge, segment.X0, mid, LabelFont, 11, edge);
+                ring.LabelAlignment = Alignment.MiddleLeft;
+                ring.LabelOffsetX = (float)startInset;
+                ring.LabelBackgroundColor = Bg0;
+                ring.LabelBorderColor = edge;
+                ring.LabelBorderWidth = 2;
+                ring.LabelBorderRadius = 10;
+                ring.LabelPadding = 4;
+
+                var textWidth = segment.Text.Length * CharWidth;
+                var valueWidth = segment.Value.Length * CharWidth;
+                if (room >= 26 + textWidth)
+                {
+                    var text = AddLabel(plot, segment.Text, segment.X0, mid, LabelFont, 12, TextHi);
+                    text.LabelAlignment = Alignment.MiddleLeft;
+                    text.LabelOffsetX = (float)(startInset + 26);
+                }
+
+                if (room >= 26 + textWidth + 16 + valueWidth)
+                {
+                    var value = AddLabel(plot, segment.Value, segment.X1, mid, DataFont, 12, TextMid);
+                    value.LabelAlignment = Alignment.MiddleRight;
+                    value.LabelOffsetX = (float)-endInset;
+                }
+            }
+
+            foreach (var pit in row.Pits)
+            {
+                // The proximity line: from the chip up through the data, behind the laps.
+                var line = plot.Add.Line(pit, mid, pit, dataTop);
+                line.LineColor = raceColor;
+                line.LineWidth = 1.5f;
+                line.LinePattern = LinePattern.Dotted;
+                line.LegendText = "";
+                plot.MoveToBack(line);
+
+                var chip = AddLabel(plot, "PIT", pit, mid, LabelFont, 11, TextHi);
+                chip.LabelAlignment = Alignment.MiddleCenter;
+                chip.LabelBackgroundColor = Bg0;
+                chip.LabelBorderColor = raceColor;
+                chip.LabelBorderWidth = 2;
+                chip.LabelBorderRadius = 4;
+                chip.LabelPadding = 4;
+            }
         }
 
-        return top;
+        return bottom;
+    }
+
+    private static ScottPlot.Plottables.Text AddLabel(Plot plot, string text, double x, double y, string font, float size, Color color)
+    {
+        var label = plot.Add.Text(text, x, y);
+        label.LabelFontName = font;
+        label.LabelFontSize = size;
+        label.LabelBold = true;
+        label.LabelFontColor = color;
+        return label;
     }
 
     private static void ApplyStyle(Plot plot)
@@ -253,7 +342,9 @@ public sealed class TelemetryPlot : ContentControl
         public Tick[] Ticks { get; set; } = [];
         public int MaxTickCount { get; set; } = 1000;
 
-        /// <summary>No ticks above this value (the strip of bars above the data has no values).</summary>
+        /// <summary>No ticks below <see cref="Min"/> or above <see cref="Max"/> (a timeline under the data has no values).</summary>
+        public double Min { get; set; } = double.NegativeInfinity;
+
         public double Max { get; set; } = double.PositiveInfinity;
 
         public void Regenerate(CoordinateRange range, Edge edge, PixelLength size, Paint paint, LabelStyle labelStyle)
@@ -268,7 +359,7 @@ public sealed class TelemetryPlot : ContentControl
             // Roughly one label per 90 px keeps m:ss.t labels from colliding side by side; stacked, 40 px is enough.
             var maxTicks = Math.Max(2, size.Length / (edge is Edge.Left or Edge.Right ? 40 : 90));
             var step = Steps.FirstOrDefault(s => span / s <= maxTicks, Steps[^1]);
-            var first = Math.Ceiling(range.Min / step);
+            var first = Math.Ceiling(Math.Max(range.Min, Min) / step);
             var ticks = new List<Tick>();
             for (var i = first; i * step <= Math.Min(range.Max, Max) && ticks.Count < MaxTickCount; i++)
             {

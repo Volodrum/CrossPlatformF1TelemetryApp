@@ -147,7 +147,7 @@ vm.Compare.SelectedB = vm.Compare.RecordingsB.First(r => r.Description == "Two s
 Capture(window, "09-compare");
 if (window.GetVisualDescendants().OfType<CompareView>().FirstOrDefault()?.GetVisualDescendants().OfType<ScrollViewer>().FirstOrDefault() is { } compareScroll)
 {
-    compareScroll.Offset = compareScroll.Offset.WithY(880);
+    compareScroll.Offset = compareScroll.Offset.WithY(860);
     Capture(window, "10-compare-charts");
 }
 

@@ -239,19 +239,20 @@ public sealed partial class CompareViewModel(TelemetryRuntime runtime) : Observa
 
     /// <summary>
     /// Clean laps with the fuel effect taken out, coloured by race (A blue rings, B orange dots), with each stint's
-    /// tyre-wear trend as a line (A dashed). Above the plot, a strategy strip per race: one bar per stint in its
-    /// compound colour, spanning the stint's laps (in-lap and out-lap included), with its wear rate. The break
-    /// between two bars is the pit stop, so the plot itself needs no stop markers.
+    /// tyre-wear trend as a line (A dashed) labelled with its slope. Under the plot, on the same lap axis, a strategy
+    /// timeline per race: one bar per stint (in-lap and out-lap included) edged in its compound colour, a PIT chip
+    /// at each stop and a dotted line from the chip up through the plot.
     /// </summary>
     private static ChartModel BuildPaceChart(RaceInput a, RaceInput b, RaceComparisonResult r)
     {
         var k = r.FuelEffect.SecondsPerKg;
         var series = new List<ChartSeries>();
-        var bands = new List<ChartBand>();
+        var timeline = new List<ChartTimelineRow>();
 
         void Race(RaceInput race, IReadOnlyList<StintPaceFit> fits, string name, string color, bool isA)
         {
             var paceLaps = race.Analysis.PaceLaps.ToLookup(l => l.StintNumber);
+            var segments = new List<ChartTimelineSegment>();
             var named = false;
             foreach (var stint in race.Analysis.Stints)
             {
@@ -265,21 +266,22 @@ public sealed partial class CompareViewModel(TelemetryRuntime runtime) : Observa
                         Line: ChartLine.None, MarkerSize: 8, OpenMarkers: isA, InLegend: false));
                 }
 
+                var wear = hasTrend ? $"{fit!.DegradationPerLap:+0.00;−0.00}" : "";
                 if (hasTrend)
                 {
+                    // A's slope sits above its line end, B's below, so the two races' labels don't stack.
                     var (first, last) = (laps[0], laps[^1]);
                     series.Add(new ChartSeries($"Race {name}", color,
                         [first.LapNumber, last.LapNumber], [fit!.Predict(first.TyreAge, 0, k), fit.Predict(last.TyreAge, 0, k)],
-                        Line: isA ? ChartLine.Dashed : ChartLine.Solid, LineWidth: 2.5f, MarkerSize: 0, InLegend: !named));
+                        Line: isA ? ChartLine.Dashed : ChartLine.Solid, LineWidth: 2.5f, MarkerSize: 0, InLegend: !named,
+                        EndLabel: wear, EndLabelBelow: !isA));
                     named = true;
                 }
 
                 // A small gap either side, so back-to-back stints read as two bars with the stop between them.
-                var compound = stint.Compound;
-                var wear = hasTrend ? $"  {fit!.DegradationPerLap:+0.00;−0.00} s/lap" : "";
-                bands.Add(new ChartBand(stint.StartLap - 0.5 + 0.08, stint.EndLap + 0.5 - 0.08, isA ? 0 : 1,
-                    $"{name} · {compound.ToUpperInvariant()}{wear}", $"{name} {Palette.CompoundLetter(compound)}",
-                    Hex(Palette.Compound(compound)), color));
+                segments.Add(new ChartTimelineSegment(stint.StartLap - 0.5 + 0.08, stint.EndLap + 0.5 - 0.08,
+                    Palette.CompoundLetter(stint.Compound), $"{stint.Compound.ToUpperInvariant()} · L{stint.StartLap}–{stint.EndLap}",
+                    hasTrend ? $"{wear} s/lap" : "", Hex(Palette.Compound(stint.Compound))));
             }
 
             // No stint had a trend line: the dots carry the race's legend entry.
@@ -287,13 +289,15 @@ public sealed partial class CompareViewModel(TelemetryRuntime runtime) : Observa
             {
                 series[i] = series[i] with { InLegend = true };
             }
+
+            timeline.Add(new ChartTimelineRow(name, color, segments, [.. race.Analysis.PitStops.Select(p => p.InLap + 0.5)]));
         }
 
         Race(a, r.StintsA, "A", ColorA, isA: true);
         Race(b, r.StintsB, "B", ColorB, isA: false);
 
-        return new ChartModel("Fuel-corrected lap time · clean laps · lines = tyre wear per stint", series,
-            XLabel: "Lap", IntegerX: true, Bands: bands, YIsTime: true);
+        return new ChartModel("Fuel-corrected lap time · clean laps · lines = tyre wear per stint (s/lap)", series,
+            XLabel: "Lap", IntegerX: true, Timeline: timeline, YIsTime: true);
     }
 
     private static ChartModel BuildPositionChart(RaceInput a, RaceInput b)
