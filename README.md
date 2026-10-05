@@ -180,7 +180,7 @@ Within one stint the two effects can't be told apart, because fuel falls in step
 **Race vs race (COMPARE tab).** Pick two recordings of the same track, for example the same race run on a one-stop and a two-stop strategy. You get:
 
 - the lap-by-lap **gap** between them, with every pit stop marked;
-- **fuel-corrected lap times** for both races: each clean lap is a mark (race A blue rings, race B orange dots), each stint's tyre-wear trend a line, and tags along the top give every stint's compound and wear in s/lap. Position lap by lap uses the same race colours;
+- **fuel-corrected lap times** for both races: each clean lap is a mark (race A blue rings, race B orange dots), each stint's tyre-wear trend a line. Above the plot, a strategy strip per race shows every stint as a bar in its compound colour with its wear in s/lap, lined up with that stint's laps; the break between bars is the pit stop. Position lap by lap uses the same race colours;
 - **where the time went:** the total gap split into pit stops, tyre wear, fuel load, base pace (compound and driving) and a remainder for the start, traffic and mistakes. Each lap is split into the fitted model plus what it doesn't explain, so the five parts add up to the total gap exactly. Both races use the same fuel effect.
 
 The fits need a few clean laps per stint: with only two or three, wear rates are noisy.

@@ -115,7 +115,7 @@
         <Border Classes="panel" Padding="0" Height="240">
           <controls:TelemetryPlot Model="{Binding PositionChart}" />
         </Border>
-        <TextBlock Classes="body" Text="Scroll to move down the page. Ctrl + scroll zooms a chart, drag pans. Race A is blue and dashed (rings on the pace chart), race B orange and solid. Pace chart: each mark is a clean lap with the fuel weight taken out, each line a stint's tyre-wear trend; the tags along the top give the compound and how much time it lost per lap. Dotted lines are pit stops." TextWrapping="Wrap" />
+        <TextBlock Classes="body" Text="Scroll to move down the page. Ctrl + scroll zooms a chart, drag pans. Race A is blue and dashed (rings on the pace chart), race B orange and solid. Pace chart: each mark is a clean lap with the fuel weight taken out, each line a stint's tyre-wear trend. Pit, safety-car and lap-1 laps are not clean, hence the gaps. The bars above it are each race's stints in their compound colour, with the time lost per lap; the break between two bars is the pit stop. Dotted lines on the gap chart are pit stops." TextWrapping="Wrap" />
       </StackPanel>
     </StackPanel>
   </ScrollViewer>

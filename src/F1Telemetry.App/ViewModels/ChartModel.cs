@@ -29,8 +29,12 @@ public sealed record ChartSeries(
 /// <summary>A dotted vertical line at <paramref name="X"/> (a pit stop, say); only markers with a label get a legend entry.</summary>
 public sealed record ChartMarker(double X, string Color, string Label = "");
 
-/// <summary>A tag along the top of the plot from <paramref name="X"/> onwards (a stint's compound, say), in row <paramref name="Row"/> (0 = top).</summary>
-public sealed record ChartLabel(double X, int Row, string Text, string Color);
+/// <summary>
+/// A bar in a strip above the data, spanning <paramref name="X0"/>–<paramref name="X1"/> in row <paramref name="Row"/> (0 = top):
+/// a stint of a strategy timeline, say. Filled <paramref name="Fill"/>, edged <paramref name="Edge"/>; shows
+/// <paramref name="ShortText"/> when the bar is too narrow for <paramref name="Text"/>.
+/// </summary>
+public sealed record ChartBand(double X0, double X1, int Row, string Text, string ShortText, string Fill, string Edge);
 
 /// <param name="XIsTime">X values are seconds; ticks are formatted as m:ss.</param>
 /// <param name="ZeroLine">Draws a dashed line at y = 0 (delta charts).</param>
@@ -46,7 +50,7 @@ public sealed record ChartModel(
     bool ZeroLine = false,
     IReadOnlyList<ChartMarker>? Markers = null,
     bool IntegerX = false,
-    IReadOnlyList<ChartLabel>? Labels = null,
+    IReadOnlyList<ChartBand>? Bands = null,
     bool YIsTime = false);
 
 public sealed record SeriesSpec(string Name, string Color, Func<TelemetrySample, double> Value, bool Step = false);

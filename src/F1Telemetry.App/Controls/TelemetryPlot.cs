@@ -153,31 +153,21 @@ public sealed class TelemetryPlot : ContentControl
         var (bottom, top) = model.InvertY ? (limits.Top, limits.Bottom) : (limits.Bottom, limits.Top);
         var withData = model.Series.Where(s => s.X.Length > 0).ToList();
         var (left, right) = withData.Count > 0 ? (withData.Min(s => s.X.Min()), withData.Max(s => s.X.Max())) : (limits.Left, limits.Right);
+        IReadOnlyList<ChartBand> bands = model.InvertY ? [] : model.Bands ?? [];
+        if (bands.Count > 0)
+        {
+            left = Math.Min(left, bands.Min(b => b.X0));
+            right = Math.Max(right, bands.Max(b => b.X1));
+        }
+
         if (right <= left)
         {
             right = left + 1;
         }
 
-        // Tags sit in a band of headroom above the data, one row per line, so they never cover a trace.
-        IReadOnlyList<ChartLabel> labels = model.InvertY ? [] : model.Labels ?? [];
-        if (labels.Count > 0)
+        if (bands.Count > 0)
         {
-            var rows = labels.Max(l => l.Row) + 1;
-            top += (top - bottom) * 0.13 * rows;
-            foreach (var label in labels)
-            {
-                var text = plot.Add.Text(label.Text, label.X, top);
-                text.LabelFontName = LabelFont;
-                text.LabelFontSize = 12;
-                text.LabelBold = true;
-                text.LabelFontColor = Panel;
-                text.LabelBackgroundColor = Color.FromHex(label.Color);
-                text.LabelBorderRadius = 3;
-                text.LabelPadding = 3;
-                text.LabelAlignment = Alignment.UpperLeft;
-                text.LabelOffsetX = 3;
-                text.LabelOffsetY = 6 + label.Row * 24;
-            }
+            top = AddBandStrip(plot, bands, bottom, top, right - left);
         }
 
         plot.Axes.SetLimits(left, right, bottom, top);
@@ -187,6 +177,47 @@ public sealed class TelemetryPlot : ContentControl
             new AxisLimits(left, right, Math.Min(bottom, top), Math.Max(bottom, top))));
 
         _plot.Refresh();
+    }
+
+    /// <summary>
+    /// Draws the bars in a strip of headroom above the data (one row each, a divider below), so they line up with
+    /// the data underneath without covering it. Value ticks stop at the data. Returns the new top of the value axis.
+    /// </summary>
+    private static double AddBandStrip(Plot plot, IReadOnlyList<ChartBand> bands, double bottom, double dataTop, double xSpan)
+    {
+        var rows = bands.Max(b => b.Row) + 1;
+        var rowHeight = (dataTop - bottom) * 0.16;
+        var divider = dataTop + rowHeight * 0.25;
+        var top = divider + rowHeight * rows;
+
+        var line = plot.Add.HorizontalLine(divider, 1, Line);
+        line.ExcludeFromLegend = true;
+        if (plot.Axes.Left.TickGenerator is TimeTickGenerator ticks)
+        {
+            ticks.Max = dataTop;
+        }
+
+        foreach (var band in bands)
+        {
+            var rowTop = top - band.Row * rowHeight;
+            var (y0, y1) = (rowTop - rowHeight * 0.85, rowTop - rowHeight * 0.1);
+            var bar = plot.Add.Rectangle(band.X0, band.X1, y0, y1);
+            bar.FillColor = Color.FromHex(band.Fill);
+            bar.LineColor = Color.FromHex(band.Edge);
+            bar.LineWidth = 2;
+
+            // Roughly 7 px a character against a ~1100 px wide plot: narrow bars get the short text.
+            var narrow = (band.X1 - band.X0) / xSpan * 1100 < band.Text.Length * 7 + 12;
+            var text = plot.Add.Text(narrow ? band.ShortText : band.Text, band.X0, (y0 + y1) / 2);
+            text.LabelFontName = LabelFont;
+            text.LabelFontSize = 12;
+            text.LabelBold = true;
+            text.LabelFontColor = Panel;
+            text.LabelAlignment = Alignment.MiddleLeft;
+            text.LabelOffsetX = 6;
+        }
+
+        return top;
     }
 
     private static void ApplyStyle(Plot plot)
@@ -222,6 +253,9 @@ public sealed class TelemetryPlot : ContentControl
         public Tick[] Ticks { get; set; } = [];
         public int MaxTickCount { get; set; } = 1000;
 
+        /// <summary>No ticks above this value (the strip of bars above the data has no values).</summary>
+        public double Max { get; set; } = double.PositiveInfinity;
+
         public void Regenerate(CoordinateRange range, Edge edge, PixelLength size, Paint paint, LabelStyle labelStyle)
         {
             var span = range.Max - range.Min;
@@ -236,7 +270,7 @@ public sealed class TelemetryPlot : ContentControl
             var step = Steps.FirstOrDefault(s => span / s <= maxTicks, Steps[^1]);
             var first = Math.Ceiling(range.Min / step);
             var ticks = new List<Tick>();
-            for (var i = first; i * step <= range.Max && ticks.Count < MaxTickCount; i++)
+            for (var i = first; i * step <= Math.Min(range.Max, Max) && ticks.Count < MaxTickCount; i++)
             {
                 var value = i * step;
                 ticks.Add(Tick.Major(value, LapAxis.FormatTime(value)));

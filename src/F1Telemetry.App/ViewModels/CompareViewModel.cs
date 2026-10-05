@@ -239,51 +239,61 @@ public sealed partial class CompareViewModel(TelemetryRuntime runtime) : Observa
 
     /// <summary>
     /// Clean laps with the fuel effect taken out, coloured by race (A blue rings, B orange dots), with each stint's
-    /// tyre-wear trend as a line (A dashed) and its compound and wear rate tagged along the top.
+    /// tyre-wear trend as a line (A dashed). Above the plot, a strategy strip per race: one bar per stint in its
+    /// compound colour, spanning the stint's laps (in-lap and out-lap included), with its wear rate. The break
+    /// between two bars is the pit stop, so the plot itself needs no stop markers.
     /// </summary>
     private static ChartModel BuildPaceChart(RaceInput a, RaceInput b, RaceComparisonResult r)
     {
         var k = r.FuelEffect.SecondsPerKg;
         var series = new List<ChartSeries>();
-        var labels = new List<ChartLabel>();
+        var bands = new List<ChartBand>();
 
         void Race(RaceInput race, IReadOnlyList<StintPaceFit> fits, string name, string color, bool isA)
         {
-            // One legend entry per race: its first trend line, or its first dots when no stint has a fit.
+            var paceLaps = race.Analysis.PaceLaps.ToLookup(l => l.StintNumber);
             var named = false;
-            var stints = race.Analysis.PaceLaps.GroupBy(l => l.StintNumber)
-                .Select(g => (Laps: g.OrderBy(l => l.LapNumber).ToList(), Fit: fits.FirstOrDefault(f => f.StintNumber == g.Key && f.Laps >= 2)))
-                .ToList();
-            var anyTrend = stints.Any(s => s.Fit is not null && s.Laps.Count >= 2);
-            foreach (var (laps, fit) in stints)
+            foreach (var stint in race.Analysis.Stints)
             {
-                var compound = laps[0].Compound;
-                series.Add(new ChartSeries($"Race {name}", color,
-                    laps.Select(l => (double)l.LapNumber).ToArray(), laps.Select(l => l.LapSeconds - k * l.FuelKg).ToArray(),
-                    Line: ChartLine.None, MarkerSize: 8, OpenMarkers: isA, InLegend: !anyTrend && !named));
-                named |= !anyTrend;
+                var laps = paceLaps[stint.StintNumber].OrderBy(l => l.LapNumber).ToList();
+                var fit = fits.FirstOrDefault(f => f.StintNumber == stint.StintNumber && f.Laps >= 2);
+                var hasTrend = fit is not null && laps.Count >= 2;
+                if (laps.Count > 0)
+                {
+                    series.Add(new ChartSeries($"Race {name}", color,
+                        laps.Select(l => (double)l.LapNumber).ToArray(), laps.Select(l => l.LapSeconds - k * l.FuelKg).ToArray(),
+                        Line: ChartLine.None, MarkerSize: 8, OpenMarkers: isA, InLegend: false));
+                }
 
-                var wear = "";
-                if (fit is not null && laps.Count >= 2)
+                if (hasTrend)
                 {
                     var (first, last) = (laps[0], laps[^1]);
                     series.Add(new ChartSeries($"Race {name}", color,
-                        [first.LapNumber, last.LapNumber], [fit.Predict(first.TyreAge, 0, k), fit.Predict(last.TyreAge, 0, k)],
+                        [first.LapNumber, last.LapNumber], [fit!.Predict(first.TyreAge, 0, k), fit.Predict(last.TyreAge, 0, k)],
                         Line: isA ? ChartLine.Dashed : ChartLine.Solid, LineWidth: 2.5f, MarkerSize: 0, InLegend: !named));
                     named = true;
-                    wear = $"  {fit.DegradationPerLap:+0.00;−0.00} s/lap";
                 }
 
-                labels.Add(new ChartLabel(laps[0].LapNumber, isA ? 0 : 1, $"{name} · {compound.ToUpperInvariant()}{wear}", Hex(Palette.Compound(compound))));
+                // A small gap either side, so back-to-back stints read as two bars with the stop between them.
+                var compound = stint.Compound;
+                var wear = hasTrend ? $"  {fit!.DegradationPerLap:+0.00;−0.00} s/lap" : "";
+                bands.Add(new ChartBand(stint.StartLap - 0.5 + 0.08, stint.EndLap + 0.5 - 0.08, isA ? 0 : 1,
+                    $"{name} · {compound.ToUpperInvariant()}{wear}", $"{name} {Palette.CompoundLetter(compound)}",
+                    Hex(Palette.Compound(compound)), color));
+            }
+
+            // No stint had a trend line: the dots carry the race's legend entry.
+            if (!named && series.FindIndex(s => s.Color == color) is var i and >= 0)
+            {
+                series[i] = series[i] with { InLegend = true };
             }
         }
 
         Race(a, r.StintsA, "A", ColorA, isA: true);
         Race(b, r.StintsB, "B", ColorB, isA: false);
 
-        // Every stop of both races here, not only those inside the laps both completed.
         return new ChartModel("Fuel-corrected lap time · clean laps · lines = tyre wear per stint", series,
-            XLabel: "Lap", Markers: StopMarkers(a.Analysis.PitStops, b.Analysis.PitStops), IntegerX: true, Labels: labels, YIsTime: true);
+            XLabel: "Lap", IntegerX: true, Bands: bands, YIsTime: true);
     }
 
     private static ChartModel BuildPositionChart(RaceInput a, RaceInput b)
