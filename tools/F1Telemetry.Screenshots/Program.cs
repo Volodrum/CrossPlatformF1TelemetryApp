@@ -53,6 +53,11 @@ var settings = services.GetRequiredService<SettingsService>();
 settings.Load();
 settings.Current.ListenOnStartup = false;
 settings.Current.TelemetryMode = GameFormat.F1_26;
+// Sample controller bindings, drawn as DualSense icons (no pad is opened here).
+settings.Current.StartStopPadButton = "Touchpad+Start";
+settings.Current.ToggleOverlaysPadButton = "Touchpad+Back";
+settings.Current.StrategyPagePadButton = "Misc1+DPadRight";
+services.GetRequiredService<GamepadService>().Family = F1Telemetry.Core.Input.PadFamily.DualSense;
 
 var runtime = services.GetRequiredService<TelemetryRuntime>();
 Pump(runtime.InitializeAsync());
@@ -126,6 +131,12 @@ vm.SelectedTab = MainTab.Position;
 Capture(window, "05-position");
 vm.SelectedTab = MainTab.Settings;
 Capture(window, "06-settings");
+if (window.GetVisualDescendants().OfType<SettingsView>().FirstOrDefault()?.GetVisualDescendants().OfType<ScrollViewer>().FirstOrDefault() is { } settingsScroll)
+{
+    settingsScroll.Offset = settingsScroll.Offset.WithY(400);
+    Capture(window, "12-controller");
+    settingsScroll.Offset = default;
+}
 
 // Race vs race: the one-stop race as A, the two-stop race as B; the second shot scrolls down to the charts.
 vm.SelectedRecording = vm.Recordings.First(r => r.Description == "One stop");
@@ -136,7 +147,7 @@ vm.Compare.SelectedB = vm.Compare.RecordingsB.First(r => r.Description == "Two s
 Capture(window, "09-compare");
 if (window.GetVisualDescendants().OfType<CompareView>().FirstOrDefault()?.GetVisualDescendants().OfType<ScrollViewer>().FirstOrDefault() is { } compareScroll)
 {
-    compareScroll.Offset = compareScroll.Offset.WithY(560);
+    compareScroll.Offset = compareScroll.Offset.WithY(880);
     Capture(window, "10-compare-charts");
 }
 

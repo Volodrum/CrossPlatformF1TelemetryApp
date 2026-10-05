@@ -201,7 +201,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         _hotkeys = hotkeys;
         _gamepads = gamepads;
         gamepads.Captured += OnPadCaptured;
-        gamepads.ControllersChanged += RefreshPadTexts;
+        gamepads.ControllersChanged += RefreshPadBindings;
         _paths = paths;
         _overlays = overlays;
         var s = settings.Current;
@@ -213,7 +213,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         ToggleOverlaysHotkey = s.ToggleOverlaysHotkey;
         StrategyPageHotkey = s.StrategyPageHotkey;
         StrategyPageUdpAction = Math.Clamp(s.StrategyPageUdpAction, 0, F1Telemetry.Protocol.Packets.EventPacket.UdpActionCount);
-        RefreshPadTexts();
+        RefreshPadBindings();
 
         Overlays =
         [
@@ -270,23 +270,26 @@ public sealed partial class SettingsViewModel : ObservableObject
     [ObservableProperty] public partial string PadCaptureHint { get; set; } = "";
     [ObservableProperty] public partial string SaveStatus { get; set; } = "";
 
-    /// <summary>Controller bindings as button names of the connected pad, e.g. "Touchpad + D-pad Right".</summary>
-    [ObservableProperty] public partial string StartStopPadText { get; set; } = "";
-    [ObservableProperty] public partial string ToggleOverlaysPadText { get; set; } = "";
-    [ObservableProperty] public partial string StrategyPagePadText { get; set; } = "";
+    /// <summary>Controller bindings as saved ("Touchpad+DPadRight"), drawn as icons of <see cref="PadFamily"/>.</summary>
+    [ObservableProperty] public partial string StartStopPad { get; set; } = "";
+    [ObservableProperty] public partial string ToggleOverlaysPad { get; set; } = "";
+    [ObservableProperty] public partial string StrategyPagePad { get; set; } = "";
+
+    /// <summary>Icon style: that of the controller connected or used last.</summary>
+    [ObservableProperty] public partial PadFamily PadFamily { get; set; }
 
     /// <summary>Which controllers are connected, or why none can be read.</summary>
     [ObservableProperty] public partial string ControllerStatus { get; set; } = "";
 
     public bool IsCapturingHotkey => _capturingFor is not null;
 
-    private void RefreshPadTexts()
+    private void RefreshPadBindings()
     {
         var s = _settings.Current;
-        string Text(string binding) => PadBinding.TryParse(binding)?.Describe(_gamepads.Family) ?? "—";
-        StartStopPadText = Text(s.StartStopPadButton);
-        ToggleOverlaysPadText = Text(s.ToggleOverlaysPadButton);
-        StrategyPagePadText = Text(s.StrategyPagePadButton);
+        StartStopPad = s.StartStopPadButton;
+        ToggleOverlaysPad = s.ToggleOverlaysPadButton;
+        StrategyPagePad = s.StrategyPagePadButton;
+        PadFamily = _gamepads.Family;
         ControllerStatus = _gamepads switch
         {
             { Error: { } error } => $"Controller input unavailable: {error}",
@@ -341,7 +344,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         }
 
         _settings.Save();
-        RefreshPadTexts();
+        RefreshPadBindings();
     }
 
     [RelayCommand]

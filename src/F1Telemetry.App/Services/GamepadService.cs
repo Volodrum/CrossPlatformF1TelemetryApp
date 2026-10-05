@@ -45,7 +45,7 @@ public sealed class GamepadService : IDisposable
     public IReadOnlyList<string> Controllers { get; private set; } = [];
 
     /// <summary>Button names to show: those of the controller connected or used last.</summary>
-    public PadFamily Family { get; private set; } = PadFamily.Generic;
+    public PadFamily Family { get; internal set; } = PadFamily.Generic;
 
     /// <summary>Set when controller support could not start (no SDL for this platform, no input access, …).</summary>
     public string? Error { get; private set; }

@@ -93,13 +93,13 @@
           <StackPanel Grid.Column="1" Spacing="16">
             <Border Classes="panel" Padding="18">
               <StackPanel Spacing="10">
-                <TextBlock Classes="label strong" Text="{Binding StrategyA}" TextWrapping="Wrap" />
+                <TextBlock Classes="label strong" Text="{Binding StrategyA}" TextWrapping="Wrap" Foreground="{x:Static vm:Palette.RaceA}" />
                 <ItemsControl ItemsSource="{Binding StintsA}" ItemTemplate="{StaticResource CompareStintTemplate}" />
               </StackPanel>
             </Border>
             <Border Classes="panel" Padding="18">
               <StackPanel Spacing="10">
-                <TextBlock Classes="label strong" Text="{Binding StrategyB}" TextWrapping="Wrap" Foreground="{StaticResource SlowerBrush}" />
+                <TextBlock Classes="label strong" Text="{Binding StrategyB}" TextWrapping="Wrap" Foreground="{x:Static vm:Palette.RaceB}" />
                 <ItemsControl ItemsSource="{Binding StintsB}" ItemTemplate="{StaticResource CompareStintTemplate}" />
               </StackPanel>
             </Border>
@@ -109,13 +109,13 @@
         <Border Classes="panel" Padding="0" Height="280">
           <controls:TelemetryPlot Model="{Binding GapChart}" />
         </Border>
-        <Border Classes="panel" Padding="0" Height="280">
+        <Border Classes="panel" Padding="0" Height="320">
           <controls:TelemetryPlot Model="{Binding PaceChart}" />
         </Border>
         <Border Classes="panel" Padding="0" Height="240">
           <controls:TelemetryPlot Model="{Binding PositionChart}" />
         </Border>
-        <TextBlock Classes="body" Text="Scroll to move down the page. Ctrl + scroll zooms a chart, drag pans. Dotted lines are pit stops; dashed traces are race A." />
+        <TextBlock Classes="body" Text="Scroll to move down the page. Ctrl + scroll zooms a chart, drag pans. Race A is blue and dashed (rings on the pace chart), race B orange and solid. Pace chart: each mark is a clean lap with the fuel weight taken out, each line a stint's tyre-wear trend; the tags along the top give the compound and how much time it lost per lap. Dotted lines are pit stops." TextWrapping="Wrap" />
       </StackPanel>
     </StackPanel>
   </ScrollViewer>

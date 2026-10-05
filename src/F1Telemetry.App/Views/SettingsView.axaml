@@ -2,6 +2,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:F1Telemetry.App.ViewModels"
              xmlns:services="using:F1Telemetry.App.Services"
+             xmlns:controls="using:F1Telemetry.App.Controls"
              xmlns:models="using:F1Telemetry.Core.Models"
              xmlns:engine="using:F1Telemetry.Core.Engine"
              x:Class="F1Telemetry.App.Views.SettingsView"
@@ -51,15 +52,15 @@
             <TextBlock Classes="mono" Text="{Binding ControllerStatus}" FontSize="13" Foreground="{StaticResource TextLoBrush}" TextWrapping="Wrap" />
             <Grid ColumnDefinitions="260,220,Auto,Auto" RowDefinitions="Auto,Auto,Auto" RowSpacing="10" ColumnSpacing="12">
               <TextBlock Classes="h2" Text="Start / stop recording" VerticalAlignment="Center" />
-              <TextBlock Grid.Column="1" Classes="data-s" Text="{Binding StartStopPadText}" VerticalAlignment="Center" />
+              <controls:PadBindingView Grid.Column="1" BindingText="{Binding StartStopPad}" Family="{Binding PadFamily}" HorizontalAlignment="Left" VerticalAlignment="Center" />
               <Button Grid.Column="2" Theme="{StaticResource SecondaryButton}" Content="SET…" Command="{Binding BeginPadCaptureCommand}" CommandParameter="startStop" />
               <Button Grid.Column="3" Theme="{StaticResource SecondaryButton}" Content="CLEAR" Command="{Binding ClearPadBindingCommand}" CommandParameter="startStop" />
               <TextBlock Grid.Row="1" Classes="h2" Text="Toggle overlays" VerticalAlignment="Center" />
-              <TextBlock Grid.Row="1" Grid.Column="1" Classes="data-s" Text="{Binding ToggleOverlaysPadText}" VerticalAlignment="Center" />
+              <controls:PadBindingView Grid.Row="1" Grid.Column="1" BindingText="{Binding ToggleOverlaysPad}" Family="{Binding PadFamily}" HorizontalAlignment="Left" VerticalAlignment="Center" />
               <Button Grid.Row="1" Grid.Column="2" Theme="{StaticResource SecondaryButton}" Content="SET…" Command="{Binding BeginPadCaptureCommand}" CommandParameter="toggleOverlays" />
               <Button Grid.Row="1" Grid.Column="3" Theme="{StaticResource SecondaryButton}" Content="CLEAR" Command="{Binding ClearPadBindingCommand}" CommandParameter="toggleOverlays" />
               <TextBlock Grid.Row="2" Classes="h2" Text="Strategy / damage page" VerticalAlignment="Center" />
-              <TextBlock Grid.Row="2" Grid.Column="1" Classes="data-s" Text="{Binding StrategyPagePadText}" VerticalAlignment="Center" />
+              <controls:PadBindingView Grid.Row="2" Grid.Column="1" BindingText="{Binding StrategyPagePad}" Family="{Binding PadFamily}" HorizontalAlignment="Left" VerticalAlignment="Center" />
               <Button Grid.Row="2" Grid.Column="2" Theme="{StaticResource SecondaryButton}" Content="SET…" Command="{Binding BeginPadCaptureCommand}" CommandParameter="strategyPage" />
               <Button Grid.Row="2" Grid.Column="3" Theme="{StaticResource SecondaryButton}" Content="CLEAR" Command="{Binding ClearPadBindingCommand}" CommandParameter="strategyPage" />
             </Grid>

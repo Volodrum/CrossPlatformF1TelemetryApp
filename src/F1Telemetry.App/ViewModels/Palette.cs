@@ -25,6 +25,12 @@ public static class Palette
     public static readonly IBrush Selected = Brush("#1E2129");
     public static readonly IBrush Orange = Brush("#FF8A3D");
 
+    /// <summary>Race A / race B in the comparison tab (validated colour-blind safe on the dark panel).</summary>
+    public const string RaceAHex = "#3593DA";
+    public const string RaceBHex = "#E06A1F";
+    public static readonly IBrush RaceA = Brush(RaceAHex);
+    public static readonly IBrush RaceB = Brush(RaceBHex);
+
     private static readonly Dictionary<uint, IBrush> TeamBrushes = [];
 
     /// <summary>Car damage page bands for bodywork and gearbox/engine: &lt;10 green, 10–29 amber, 30–49 orange, 50+ red.</summary>

@@ -108,11 +108,14 @@ public sealed class TelemetryPlot : ContentControl
             }
 
             var scatter = plot.Add.Scatter(series.X, series.Y);
-            scatter.LegendText = series.Name;
+            scatter.LegendText = series.InLegend ? series.Name : "";
             scatter.Color = series.IsReference ? TextLo : Color.FromHex(series.Color);
-            scatter.MarkerSize = series.X.Length < 3 ? 7 : 0; // a line of one or two points would be invisible or easy to miss
-            scatter.LineWidth = series.IsReference ? 2 : 3;
-            if (series.IsReference)
+            // A line of one or two points would be invisible or easy to miss.
+            scatter.MarkerSize = series.MarkerSize ?? (series.X.Length < 3 ? 7 : 0);
+            scatter.MarkerShape = series.OpenMarkers ? MarkerShape.OpenCircle : MarkerShape.FilledCircle;
+            scatter.MarkerLineWidth = 2;
+            scatter.LineWidth = series.IsReference ? 2 : series.Line == ChartLine.None ? 0 : series.LineWidth;
+            if (series.IsReference || series.Line == ChartLine.Dashed)
             {
                 scatter.LinePattern = LinePattern.Dashed;
             }
@@ -136,8 +139,8 @@ public sealed class TelemetryPlot : ContentControl
             line.ExcludeFromLegend = marker.Label.Length == 0;
         }
 
-        plot.Axes.Left.TickGenerator = model.IntegerY
-            ? new ScottPlot.TickGenerators.NumericAutomatic { IntegerTicksOnly = true, LabelFormatter = v => model.YPrefix + v.ToString("0") }
+        plot.Axes.Left.TickGenerator = model.YIsTime ? new TimeTickGenerator()
+            : model.IntegerY ? new ScottPlot.TickGenerators.NumericAutomatic { IntegerTicksOnly = true, LabelFormatter = v => model.YPrefix + v.ToString("0") }
             : new ScottPlot.TickGenerators.NumericAutomatic();
         plot.Axes.Bottom.TickGenerator = model.XIsTime
             ? new TimeTickGenerator()
@@ -153,6 +156,28 @@ public sealed class TelemetryPlot : ContentControl
         if (right <= left)
         {
             right = left + 1;
+        }
+
+        // Tags sit in a band of headroom above the data, one row per line, so they never cover a trace.
+        IReadOnlyList<ChartLabel> labels = model.InvertY ? [] : model.Labels ?? [];
+        if (labels.Count > 0)
+        {
+            var rows = labels.Max(l => l.Row) + 1;
+            top += (top - bottom) * 0.13 * rows;
+            foreach (var label in labels)
+            {
+                var text = plot.Add.Text(label.Text, label.X, top);
+                text.LabelFontName = LabelFont;
+                text.LabelFontSize = 12;
+                text.LabelBold = true;
+                text.LabelFontColor = Panel;
+                text.LabelBackgroundColor = Color.FromHex(label.Color);
+                text.LabelBorderRadius = 3;
+                text.LabelPadding = 3;
+                text.LabelAlignment = Alignment.UpperLeft;
+                text.LabelOffsetX = 3;
+                text.LabelOffsetY = 6 + label.Row * 24;
+            }
         }
 
         plot.Axes.SetLimits(left, right, bottom, top);
@@ -206,8 +231,8 @@ public sealed class TelemetryPlot : ContentControl
                 return;
             }
 
-            // Roughly one label per 90 px keeps m:ss.t labels from colliding.
-            var maxTicks = Math.Max(2, size.Length / 90);
+            // Roughly one label per 90 px keeps m:ss.t labels from colliding side by side; stacked, 40 px is enough.
+            var maxTicks = Math.Max(2, size.Length / (edge is Edge.Left or Edge.Right ? 40 : 90));
             var step = Steps.FirstOrDefault(s => span / s <= maxTicks, Steps[^1]);
             var first = Math.Ceiling(range.Min / step);
             var ticks = new List<Tick>();
