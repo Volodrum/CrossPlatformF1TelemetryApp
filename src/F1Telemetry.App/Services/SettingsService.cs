@@ -65,6 +65,11 @@ public sealed class AppSettings
     /// </summary>
     public int StrategyPageUdpAction { get; set; }
 
+    /// <summary>Controller buttons read directly from the pad (DualSense, Xbox, …), e.g. "Touchpad+DPadRight". Empty = none.</summary>
+    public string StartStopPadButton { get; set; } = "";
+    public string ToggleOverlaysPadButton { get; set; } = "";
+    public string StrategyPagePadButton { get; set; } = "";
+
     /// <summary>What the sector box's gap chips compare against.</summary>
     public SectorReference SectorBoxReference { get; set; } = SectorReference.SessionBest;
 

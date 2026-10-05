@@ -7,6 +7,7 @@ using CommunityToolkit.Mvvm.Input;
 using F1Telemetry.App.Infrastructure;
 using F1Telemetry.App.Services;
 using F1Telemetry.Core.Engine;
+using F1Telemetry.Core.Input;
 using F1Telemetry.Core.Models;
 
 namespace F1Telemetry.App.ViewModels;
@@ -186,15 +187,21 @@ public sealed partial class OverlaySettingsViewModel : ObservableObject
 public sealed partial class SettingsViewModel : ObservableObject
 {
     private readonly SettingsService _settings;
+    private const string PadPrefix = "pad:";
+
     private readonly HotkeyService _hotkeys;
+    private readonly GamepadService _gamepads;
     private readonly AppPaths _paths;
     private readonly OverlayManager _overlays;
     private string? _capturingFor;
 
-    public SettingsViewModel(SettingsService settings, HotkeyService hotkeys, OverlayManager overlays, AppPaths paths)
+    public SettingsViewModel(SettingsService settings, HotkeyService hotkeys, GamepadService gamepads, OverlayManager overlays, AppPaths paths)
     {
         _settings = settings;
         _hotkeys = hotkeys;
+        _gamepads = gamepads;
+        gamepads.Captured += OnPadCaptured;
+        gamepads.ControllersChanged += RefreshPadTexts;
         _paths = paths;
         _overlays = overlays;
         var s = settings.Current;
@@ -206,6 +213,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         ToggleOverlaysHotkey = s.ToggleOverlaysHotkey;
         StrategyPageHotkey = s.StrategyPageHotkey;
         StrategyPageUdpAction = Math.Clamp(s.StrategyPageUdpAction, 0, F1Telemetry.Protocol.Packets.EventPacket.UdpActionCount);
+        RefreshPadTexts();
 
         Overlays =
         [
@@ -259,13 +267,87 @@ public sealed partial class SettingsViewModel : ObservableObject
         }
     }
     [ObservableProperty] public partial string CaptureHint { get; set; } = "";
+    [ObservableProperty] public partial string PadCaptureHint { get; set; } = "";
     [ObservableProperty] public partial string SaveStatus { get; set; } = "";
 
+    /// <summary>Controller bindings as button names of the connected pad, e.g. "Touchpad + D-pad Right".</summary>
+    [ObservableProperty] public partial string StartStopPadText { get; set; } = "";
+    [ObservableProperty] public partial string ToggleOverlaysPadText { get; set; } = "";
+    [ObservableProperty] public partial string StrategyPagePadText { get; set; } = "";
+
+    /// <summary>Which controllers are connected, or why none can be read.</summary>
+    [ObservableProperty] public partial string ControllerStatus { get; set; } = "";
+
     public bool IsCapturingHotkey => _capturingFor is not null;
+
+    private void RefreshPadTexts()
+    {
+        var s = _settings.Current;
+        string Text(string binding) => PadBinding.TryParse(binding)?.Describe(_gamepads.Family) ?? "—";
+        StartStopPadText = Text(s.StartStopPadButton);
+        ToggleOverlaysPadText = Text(s.ToggleOverlaysPadButton);
+        StrategyPagePadText = Text(s.StrategyPagePadButton);
+        ControllerStatus = _gamepads switch
+        {
+            { Error: { } error } => $"Controller input unavailable: {error}",
+            { Controllers.Count: > 0 } => "Connected: " + string.Join(", ", _gamepads.Controllers),
+            _ => "No controller found. Connect it by USB or Bluetooth (it shows up here as soon as it is detected).",
+        };
+    }
+
+    /// <summary>Waits for a controller press (one button, or hold one and press another) for the given action.</summary>
+    [RelayCommand]
+    private void BeginPadCapture(string target)
+    {
+        EndCapture();
+        _capturingFor = PadPrefix + target;
+        _gamepads.BeginCapture();
+        PadCaptureHint = "Press a controller button, or hold one and press another for a combo (Esc to cancel)…";
+    }
+
+    [RelayCommand]
+    private void ClearPadBinding(string target)
+    {
+        EndCapture();
+        SetPadBinding(target, "");
+    }
+
+    private void OnPadCaptured(PadBinding binding)
+    {
+        if (_capturingFor?.StartsWith(PadPrefix, StringComparison.Ordinal) != true)
+        {
+            return;
+        }
+
+        var target = _capturingFor[PadPrefix.Length..];
+        EndCapture();
+        SetPadBinding(target, binding.ToString());
+    }
+
+    private void SetPadBinding(string target, string binding)
+    {
+        var s = _settings.Current;
+        switch (target)
+        {
+            case "startStop":
+                s.StartStopPadButton = binding;
+                break;
+            case "strategyPage":
+                s.StrategyPagePadButton = binding;
+                break;
+            default:
+                s.ToggleOverlaysPadButton = binding;
+                break;
+        }
+
+        _settings.Save();
+        RefreshPadTexts();
+    }
 
     [RelayCommand]
     private void BeginCapture(string target)
     {
+        EndCapture();
         _capturingFor = target;
         _hotkeys.Suspended = true;
         CaptureHint = "Press the new key combination (Esc to cancel)…";
@@ -285,7 +367,8 @@ public sealed partial class SettingsViewModel : ObservableObject
             return true;
         }
 
-        if (Hotkey.FromAvalonia(key, modifiers) is not { } hotkey)
+        // Waiting for a controller button: the keyboard only cancels.
+        if (_capturingFor.StartsWith(PadPrefix, StringComparison.Ordinal) || Hotkey.FromAvalonia(key, modifiers) is not { } hotkey)
         {
             return true;
         }
@@ -312,7 +395,9 @@ public sealed partial class SettingsViewModel : ObservableObject
     {
         _capturingFor = null;
         _hotkeys.Suspended = false;
+        _gamepads.CancelCapture();
         CaptureHint = "";
+        PadCaptureHint = "";
     }
 
     [RelayCommand]

@@ -27,6 +27,7 @@ public partial class App : Application
             var runtime = _services.GetRequiredService<TelemetryRuntime>();
             var overlays = _services.GetRequiredService<OverlayManager>();
             var hotkeys = _services.GetRequiredService<HotkeyService>();
+            var gamepads = _services.GetRequiredService<GamepadService>();
             var viewModel = _services.GetRequiredService<MainWindowViewModel>();
 
             var window = new MainWindow { DataContext = viewModel };
@@ -42,6 +43,7 @@ public partial class App : Application
                     await runtime.InitializeAsync();
                     overlays.Initialize();
                     hotkeys.Start();
+                    gamepads.Start();
                     await viewModel.InitializeAsync();
                     await options.ApplyAsync(runtime, viewModel, desktop);
                 }
@@ -90,6 +92,7 @@ public partial class App : Application
         services.AddSingleton<LiveDataHub>();
         services.AddSingleton<OverlayManager>();
         services.AddSingleton<HotkeyService>();
+        services.AddSingleton<GamepadService>();
 
         services.AddSingleton<LiveViewModel>();
         services.AddSingleton<SessionViewModel>();

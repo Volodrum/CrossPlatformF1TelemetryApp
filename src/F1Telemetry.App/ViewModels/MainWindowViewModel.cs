@@ -35,6 +35,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
         LiveDataHub hub,
         OverlayManager overlays,
         HotkeyService hotkeys,
+        GamepadService gamepads,
         LiveViewModel live,
         SessionViewModel session,
         LapDetailViewModel lapDetail,
@@ -70,6 +71,9 @@ public sealed partial class MainWindowViewModel : ObservableObject
         hotkeys.StartStopPressed += () => ToggleRecording();
         hotkeys.ToggleOverlaysPressed += () => overlays.GloballyVisible = !overlays.GloballyVisible;
         hotkeys.StrategyPagePressed += overlays.ToggleStrategyPage;
+        gamepads.StartStopPressed += () => ToggleRecording();
+        gamepads.ToggleOverlaysPressed += () => overlays.GloballyVisible = !overlays.GloballyVisible;
+        gamepads.StrategyPagePressed += overlays.ToggleStrategyPage;
         overlays.StateChanged += () => OnPropertyChanged(nameof(OverlaysEnabled));
         runtime.ModeChanged += _ => Dispatcher.UIThread.Post(() =>
         {

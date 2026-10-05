@@ -45,6 +45,30 @@
 
         <Border Classes="panel" Padding="18">
           <StackPanel Spacing="12">
+            <TextBlock Classes="label strong" Text="CONTROLLER BUTTONS" FontSize="14" />
+            <TextBlock Classes="body" TextWrapping="Wrap"
+                       Text="Read straight from the pad (DualSense over USB or Bluetooth, DualShock, Xbox, Switch Pro…), also while the game has focus. Press SET, then a button, or hold one button and press another for a combo such as Touchpad + D-pad Right. The game still sees the press, so pick a button or combo it doesn't use." />
+            <TextBlock Classes="mono" Text="{Binding ControllerStatus}" FontSize="13" Foreground="{StaticResource TextLoBrush}" TextWrapping="Wrap" />
+            <Grid ColumnDefinitions="260,220,Auto,Auto" RowDefinitions="Auto,Auto,Auto" RowSpacing="10" ColumnSpacing="12">
+              <TextBlock Classes="h2" Text="Start / stop recording" VerticalAlignment="Center" />
+              <TextBlock Grid.Column="1" Classes="data-s" Text="{Binding StartStopPadText}" VerticalAlignment="Center" />
+              <Button Grid.Column="2" Theme="{StaticResource SecondaryButton}" Content="SET…" Command="{Binding BeginPadCaptureCommand}" CommandParameter="startStop" />
+              <Button Grid.Column="3" Theme="{StaticResource SecondaryButton}" Content="CLEAR" Command="{Binding ClearPadBindingCommand}" CommandParameter="startStop" />
+              <TextBlock Grid.Row="1" Classes="h2" Text="Toggle overlays" VerticalAlignment="Center" />
+              <TextBlock Grid.Row="1" Grid.Column="1" Classes="data-s" Text="{Binding ToggleOverlaysPadText}" VerticalAlignment="Center" />
+              <Button Grid.Row="1" Grid.Column="2" Theme="{StaticResource SecondaryButton}" Content="SET…" Command="{Binding BeginPadCaptureCommand}" CommandParameter="toggleOverlays" />
+              <Button Grid.Row="1" Grid.Column="3" Theme="{StaticResource SecondaryButton}" Content="CLEAR" Command="{Binding ClearPadBindingCommand}" CommandParameter="toggleOverlays" />
+              <TextBlock Grid.Row="2" Classes="h2" Text="Strategy / damage page" VerticalAlignment="Center" />
+              <TextBlock Grid.Row="2" Grid.Column="1" Classes="data-s" Text="{Binding StrategyPagePadText}" VerticalAlignment="Center" />
+              <Button Grid.Row="2" Grid.Column="2" Theme="{StaticResource SecondaryButton}" Content="SET…" Command="{Binding BeginPadCaptureCommand}" CommandParameter="strategyPage" />
+              <Button Grid.Row="2" Grid.Column="3" Theme="{StaticResource SecondaryButton}" Content="CLEAR" Command="{Binding ClearPadBindingCommand}" CommandParameter="strategyPage" />
+            </Grid>
+            <TextBlock Text="{Binding PadCaptureHint}" Foreground="{StaticResource DangerBrush}" FontWeight="SemiBold" />
+          </StackPanel>
+        </Border>
+
+        <Border Classes="panel" Padding="18">
+          <StackPanel Spacing="12">
             <TextBlock Classes="label strong" Text="HUD OVERLAYS" FontSize="14" />
             <TextBlock Classes="body" Text="Always = always visible · Session = only while recording · Never = hidden. Turn on PREVIEW OVERLAYS above to see them with sample data and drag them into place." />
             <ItemsControl ItemsSource="{Binding Overlays}">

@@ -19,6 +19,7 @@
     <PackageReference Include="CommunityToolkit.Mvvm" />
     <PackageReference Include="ScottPlot.Avalonia" />
     <PackageReference Include="SharpHook" />
+    <PackageReference Include="ppy.SDL3-CS" />
     <PackageReference Include="Microsoft.Extensions.Hosting" />
   </ItemGroup>
   <ItemGroup>
