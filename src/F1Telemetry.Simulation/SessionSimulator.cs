@@ -58,6 +58,12 @@ public sealed class SessionSimulator
     // Speed used to turn the distance between cars into a time gap.
     private const double GapSpeed = 70;
 
+    private static readonly CarSetup BaseSetup = new(
+        FrontWing: 24, RearWing: 18, OnThrottle: 100, OffThrottle: 25, FrontCamber: -3.4f, RearCamber: -1.9f, FrontToe: 0.03f,
+        RearToe: 0.13f, FrontSuspension: 32, RearSuspension: 10, FrontAntiRollBar: 5, RearAntiRollBar: 15, FrontSuspensionHeight: 22,
+        RearSuspensionHeight: 49, BrakePressure: 99, BrakeBias: 56, EngineBraking: 50,
+        TyresPressure: new Tyres<float>(24.1f, 24.1f, 28.2f, 28.2f), Ballast: 6, FuelLoad: 10);
+
     private static readonly (string Name, ushort Team)[] Drivers =
     [
         ("RUSSELL", 0), ("LECLERC", 1), ("PIASTRI", 8), ("ALONSO", 4), ("VERSTAPPEN", 2), ("NORRIS", 8), ("HAMILTON", 1),
@@ -108,6 +114,8 @@ public sealed class SessionSimulator
         var stints = new List<TyreStint> { new(TyreStint.Current, 18, 17) }; // C3 medium
         uint frame = 0;
         var historyCar = 0;
+        var ers = new ErsModel(_writer.Layout.Format);
+        var setup = BaseSetup;
 
         yield return Emit(t, EventPacket(uid, t, frame, "SSTA"));
 
@@ -145,6 +153,8 @@ public sealed class SessionSimulator
             var accel = (v - prevV) / dt;
             prevV = v;
             var ds = v * dt;
+            var (throttle, brake) = Pedals(accel);
+            ers.Step(dt, v * 3.6, throttle, brake, fraction);
 
             // Consumption
             fuel = Math.Max(0, fuel - ds / L * 1.75);
@@ -170,9 +180,15 @@ public sealed class SessionSimulator
                 yield return Emit(t, ParticipantsPacket(uid, sessionTime, frame));
             }
 
+            // Like the game: the setups twice a second, the next front wing being the one the stop will fit.
+            if (tick % Math.Max(1, _o.TickRateHz / 2) == 0)
+            {
+                yield return Emit(t, SetupsPacket(uid, sessionTime, frame, setup));
+            }
+
             if (tick % 6 == 0)
             {
-                yield return Emit(t, StatusPacket(uid, sessionTime, frame, fuel, stints[^1], lap - StintStartLap(stints), lap));
+                yield return Emit(t, StatusPacket(uid, sessionTime, frame, fuel, stints[^1], lap - StintStartLap(stints), lap, ers, throttle));
                 yield return Emit(t, DamagePacket(uid, sessionTime, frame, wear, lap, fraction));
             }
 
@@ -180,7 +196,7 @@ public sealed class SessionSimulator
             yield return Emit(t, LapDataPacket(uid, sessionTime, frame, s, lap, position, status, driverStatus, pitStops,
                 (uint)((t - lapStart) * 1000), completed.LastOrDefault().LapTimeMs, s1, s2, L, t,
                 (ushort)Math.Min(ushort.MaxValue, pitLaneTime * 1000), (ushort)Math.Min(ushort.MaxValue, pitStopTime * 1000)));
-            yield return Emit(t, TelemetryPacket(uid, sessionTime, frame, s, v, accel, lap));
+            yield return Emit(t, TelemetryPacket(uid, sessionTime, frame, s, v, throttle, brake, lap));
             if (_writer.Layout.Format == GameFormat.F1_26)
             {
                 yield return Emit(t, Telemetry2Packet(uid, sessionTime, frame, v, lap));
@@ -224,12 +240,14 @@ public sealed class SessionSimulator
             s -= L;
             lapStart = t;
             s1 = s2 = 0;
+            ers.StartLap();
 
             if (_pitLaps.Contains(lap))
             {
                 stints[^1] = stints[^1] with { EndLap = (byte)lap };
                 stints.Add(stints.Count % 2 == 1 ? new TyreStint(TyreStint.Current, 19, 18) : new TyreStint(TyreStint.Current, 18, 17)); // C2 hard / C3 medium
                 Array.Clear(wear);
+                setup = setup with { FrontWing = NextFrontWing(setup) };
                 pitStops++;
                 position = 7;
                 stationaryLeft = _o.PitStopSeconds;
@@ -250,7 +268,7 @@ public sealed class SessionSimulator
                 var final = completed[^1];
                 yield return Emit(t, LapDataPacket(uid, (float)t, frame, 0, _o.Laps, position, PitStatus.None, DriverStatus.OnTrack,
                     pitStops, 0, final.LapTimeMs, 0, 0, L, t, 0, 0, ResultStatus.Finished));
-                yield return Emit(t, TelemetryPacket(uid, (float)t, frame, 0, prevV, 0, _o.Laps));
+                yield return Emit(t, TelemetryPacket(uid, (float)t, frame, 0, prevV, 0.35, 0, _o.Laps));
                 yield return Emit(t, HistoryPacket(uid, (float)t, frame, PlayerIndex,
                     [.. completed[..^1], final with { LapTimeMs = 0, Sector3Ms = 0 }], stints));
                 yield return Emit(t, EventPacket(uid, t, frame, "SEND"));
@@ -293,7 +311,7 @@ public sealed class SessionSimulator
         return p;
     }
 
-    private byte[] StatusPacket(ulong uid, float t, uint frame, double fuel, TyreStint stint, int tyreAge, int lap)
+    private byte[] StatusPacket(ulong uid, float t, uint frame, double fuel, TyreStint stint, int tyreAge, int lap, ErsModel ers, double throttle)
     {
         var p = _writer.Create(PacketId.CarStatus, uid, t, frame, PlayerIndex);
         for (var i = 1; i < CarCount; i++)
@@ -315,10 +333,11 @@ public sealed class SessionSimulator
             FuelInTank: (float)fuel, FuelCapacity: 110, FuelRemainingLaps: (float)(fuel / 1.75 - 1),
             MaxRpm: 12500, IdleRpm: 4000, MaxGears: 8, DrsAllowed: true, DrsActivationDistance: 0,
             ActualTyreCompound: stint.ActualCompound, VisualTyreCompound: stint.VisualCompound, TyresAgeLaps: (byte)Math.Max(0, tyreAge),
-            VehicleFiaFlags: 0, EnginePowerIce: 600_000, EnginePowerMguk: 120_000,
-            ErsStoreEnergy: (float)(2_000_000 + 1_000_000 * Math.Sin(t / 20)), ErsDeployMode: 1,
-            ErsHarvestedThisLapMguk: 500_000, ErsHarvestedThisLapMguh: 250_000, ErsHarvestLimitPerLap: 6_000_000,
-            ErsDeployedThisLap: 400_000, NetworkPaused: false));
+            VehicleFiaFlags: 0, EnginePowerIce: (float)(ers.IcePower * throttle), EnginePowerMguk: (float)ers.MgukPower,
+            ErsStoreEnergy: (float)ers.Store, ErsDeployMode: ers.Mode,
+            ErsHarvestedThisLapMguk: (float)ers.HarvestedThisLap, ErsHarvestedThisLapMguh: 0,
+            ErsHarvestLimitPerLap: _writer.Layout.HasErsHarvestLimit ? (float)ers.HarvestLimit : null,
+            ErsDeployedThisLap: (float)ers.DeployedThisLap, NetworkPaused: false));
         return p;
     }
 
@@ -480,13 +499,13 @@ public sealed class SessionSimulator
         return p;
     }
 
-    private byte[] TelemetryPacket(ulong uid, float t, uint frame, double s, double v, double accel, int lap)
+    private static (double Throttle, double Brake) Pedals(double accel) =>
+        accel < -3 ? (0, Math.Min(1, -accel / 35)) : (accel > 0.3 ? 1 : 0.35, 0);
+
+    private byte[] TelemetryPacket(ulong uid, float t, uint frame, double s, double v, double throttle, double brake, int lap)
     {
         var p = _writer.Create(PacketId.CarTelemetry, uid, t, frame, PlayerIndex);
         var kmh = v * 3.6;
-        var braking = accel < -3;
-        var throttle = braking ? 0 : accel > 0.3 ? 1 : 0.35;
-        var brake = braking ? Math.Min(1, -accel / 35) : 0;
         var gear = (sbyte)Math.Clamp(1 + (int)(kmh / 42), 1, 8);
         var rpm = (ushort)(9500 + kmh % 42 / 42 * 2500);
         var steer = (float)Math.Clamp(_profile.Sample(s).Curvature * 60, -1, 1);
@@ -508,6 +527,21 @@ public sealed class SessionSimulator
             ActiveAeroMode: v > 75 ? (byte)1 : (byte)0, ActiveAeroAvailable: true, ActiveAeroActivationDistance: 0,
             OvertakeAvailable: lap > 1, OvertakeActive: lap > 1 && v > 80, OvertakeActivationDistance: 0,
             Regulations2026Applicable: true, IsDrivingWrongWay: false));
+        return p;
+    }
+
+    private static byte NextFrontWing(CarSetup setup) => (byte)(setup.FrontWing + 1);
+
+    private byte[] SetupsPacket(ulong uid, float t, uint frame, CarSetup player)
+    {
+        var p = _writer.Create(PacketId.CarSetups, uid, t, frame, PlayerIndex);
+        _writer.WriteCarSetup(p, PlayerIndex, player);
+        for (var i = 1; i < CarCount; i++)
+        {
+            _writer.WriteCarSetup(p, i, BaseSetup with { RearWing = (byte)(BaseSetup.RearWing + i % 3) });
+        }
+
+        _writer.WriteNextFrontWingValue(p, NextFrontWing(player));
         return p;
     }
 

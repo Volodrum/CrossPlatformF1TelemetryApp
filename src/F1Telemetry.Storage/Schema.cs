@@ -51,6 +51,12 @@ internal static class Schema
             "ALTER TABLE laps ADD COLUMN IF NOT EXISTS pit_lane_ms BIGINT",
             "ALTER TABLE laps ADD COLUMN IF NOT EXISTS pit_stop_ms BIGINT",
         ],
+
+        // v3: ERS power and 2026 availability flags per sample; the player's setups per recording
+        [
+            .. TelemetryColumns.AddColumnsSql("engine_power_ice", "engine_power_mguk", "ers_harvest_limit", "active_aero_available", "overtake_available"),
+            SetupColumns.CreateTableSql,
+        ],
     ];
 
     public static int LatestVersion => Migrations.Length;

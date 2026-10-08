@@ -15,11 +15,15 @@ public interface ITelemetryStore : IAsyncDisposable
 
     void EndRecording(long recordingId);
 
-    void UpdateRecording(long recordingId, string? sessionUid = null, int? trackId = null, string? trackName = null, int? sessionType = null);
+    void UpdateRecording(long recordingId, string? sessionUid = null, int? trackId = null, string? trackName = null, int? sessionType = null,
+        DateTimeOffset? startTime = null, DateTimeOffset? endTime = null);
 
     void AppendSample(TelemetrySample sample);
 
     void UpsertLap(long recordingId, LapRecord lap);
+
+    /// <summary>Records that the player drove <paramref name="setup"/> from its lap and session time on.</summary>
+    void AppendSetup(long recordingId, SetupChange setup);
 
     /// <summary>Completes once every write enqueued so far is durable.</summary>
     Task FlushAsync(CancellationToken cancellationToken = default);
@@ -38,6 +42,9 @@ public interface ITelemetryStore : IAsyncDisposable
     Task<IReadOnlyList<LapAggregate>> GetLapAggregatesAsync(long recordingId, CancellationToken cancellationToken = default);
 
     Task<WheelValues> GetLatestWearAsync(long recordingId, CancellationToken cancellationToken = default);
+
+    /// <summary>The setups driven in a recording, in the order they arrived.</summary>
+    Task<IReadOnlyList<SetupChange>> GetSetupsAsync(long recordingId, CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<PositionPoint>> GetPositionHistoryAsync(long recordingId, int maxPoints = 500, CancellationToken cancellationToken = default);
 }

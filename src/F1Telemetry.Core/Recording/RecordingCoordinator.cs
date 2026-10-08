@@ -21,7 +21,8 @@ public sealed record RecordingState(RecordingChange Change, long? RecordingId);
 /// <item>samples are stored only while recording, never on a formation lap, and only when session time
 /// moves forward (flashbacks rewind time; the rewound segment is skipped until time catches up);</item>
 /// <item>a new game session during an active recording auto-splits it (or re-tags an empty recording);</item>
-/// <item>lap summaries are upserted only when they actually change.</item>
+/// <item>lap summaries are upserted only when they actually change;</item>
+/// <item>the player's setup is stored when a recording starts and whenever it changes.</item>
 /// </list>
 /// Engine events arrive on the ingest thread; all store calls here are non-blocking enqueues.
 /// </summary>
@@ -51,6 +52,7 @@ public sealed class RecordingCoordinator : IDisposable
         _engine.SessionInfoUpdated += OnSessionInfoUpdated;
         _engine.SampleCaptured += OnSample;
         _engine.LapsUpdated += OnLapsUpdated;
+        _engine.SetupChanged += OnSetupChanged;
     }
 
     public event Action<RecordingState>? StateChanged;
@@ -133,6 +135,11 @@ public sealed class RecordingCoordinator : IDisposable
         _trackTagged = session is { TrackId: >= 0 };
         _recordingSessionUid = session?.SessionUid ?? 0;
         _writtenLaps.Clear();
+        if (_engine.CurrentSetup is { } setup)
+        {
+            _store.AppendSetup(id, setup);
+        }
+
         _log.LogInformation("Recording {Id} started ({Description})", id, description);
         return id;
     }
@@ -206,6 +213,17 @@ public sealed class RecordingCoordinator : IDisposable
         }
     }
 
+    private void OnSetupChanged(SetupChange setup)
+    {
+        lock (_gate)
+        {
+            if (_recordingId is { } id)
+            {
+                _store.AppendSetup(id, setup);
+            }
+        }
+    }
+
     private void OnLapsUpdated(IReadOnlyList<LapRecord> laps)
     {
         lock (_gate)
@@ -234,5 +252,6 @@ public sealed class RecordingCoordinator : IDisposable
         _engine.SessionInfoUpdated -= OnSessionInfoUpdated;
         _engine.SampleCaptured -= OnSample;
         _engine.LapsUpdated -= OnLapsUpdated;
+        _engine.SetupChanged -= OnSetupChanged;
     }
 }

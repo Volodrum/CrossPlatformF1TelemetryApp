@@ -53,7 +53,7 @@ It is a rewrite of the Electron + React + DuckDB app on **.NET 10 + Avalonia 12*
 | `F1Telemetry.Ingest` | Packet sources (UDP, replay, simulator), `.f1rec` capture format, `TelemetryPipeline` | Core, Simulation |
 | `F1Telemetry.Storage` | DuckDB schema and migrations, batched writer, analytics queries | Core |
 | `F1Telemetry.App` | Avalonia desktop app: dashboard, overlays, hotkeys, settings | all |
-| `tools/F1Telemetry.Cli` (`f1tel`) | Capture, replay, simulate, inspect and seed data without the game | Ingest, Storage |
+| `tools/F1Telemetry.Cli` (`f1tel`) | Capture, replay, simulate, inspect, seed and re-import data without the game | Ingest, Storage |
 | `tests/F1Telemetry.Tests` | Protocol round-trips for both formats, analytics, end-to-end simulator → DuckDB | all |
 
 ### Telemetry modes: F1 25 and F1 26
@@ -67,7 +67,9 @@ The layout differences between the two formats are handled in `FormatLayout`:
 - `engineTemperature` in car telemetry is `u8` instead of `u16`, so the slot is 59 bytes instead of 60.
 - Car status gains `ersHarvestLimitPerLap`, so the slot is 59 bytes instead of 55.
 - The session packet gains active-aero zones, DRS zones and assist flags (753 → 926 bytes).
-- New packet 16, **CarTelemetry2**: active aero mode and overtake mode. These are recorded as `active_aero_mode` and `overtake_active`.
+- New packet 16, **CarTelemetry2**: active aero mode and overtake mode. These are recorded as `active_aero_mode`, `active_aero_available`, `overtake_active` and `overtake_available`.
+
+Both formats also record ICE and MGU-K power (`engine_power_ice`, `engine_power_mguk`, in W) with the battery, and the player's **car setup** (packet 5) in `recording_setups`: the setup in use when a recording starts, then one row per change, such as a new front wing at a stop. Fuel load alone doesn't count as a change.
 
 Packets whose length doesn't match their format are rejected and counted, never misread. The Live view shows the count.
 
@@ -116,6 +118,13 @@ dotnet run --project tools/F1Telemetry.Cli -- replay race.f1rec --speed 2       
 dotnet run --project tools/F1Telemetry.Cli -- inspect race.f1rec                                                  # packet/format breakdown
 dotnet run --project tools/F1Telemetry.Cli -- seed --db test.duckdb --laps 8 --track Spa                          # offline database seeding
 dotnet run --project tools/F1Telemetry.Cli -- seed --db test.duckdb --laps 20 --pits 7,14 --track Spa             # a two-stop race (Medium → Hard → Medium)
+dotnet run --project tools/F1Telemetry.Cli -- list --db test.duckdb                                               # recordings with laps and setups
+```
+
+`reimport` rebuilds recordings from the app's raw captures (`captures/recording-<id>-….f1rec` in the data folder), so data that a newer version records, such as setups and ERS power, can be added to older sessions. With `--replace` it deletes the original recording once the new one is in, and keeps its date and description. Close the app first: it locks the database.
+
+```bash
+dotnet run --project tools/F1Telemetry.Cli -- reimport --db telemetry.duckdb captures/recording-18-20261006-164715.f1rec --replace
 ```
 
 ### Tests

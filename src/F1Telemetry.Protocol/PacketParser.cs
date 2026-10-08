@@ -55,6 +55,7 @@ public static class PacketParser
             PacketId.LapData => LapDataPacket.Read(ref reader, header, layout),
             PacketId.Event => EventPacket.Read(datagram, header),
             PacketId.Participants => ParticipantsPacket.Read(ref reader, datagram, header, layout),
+            PacketId.CarSetups => CarSetupsPacket.Read(ref reader, header, layout),
             PacketId.CarTelemetry => CarTelemetryPacket.Read(ref reader, header, layout),
             PacketId.CarStatus => CarStatusPacket.Read(ref reader, header, layout),
             PacketId.CarDamage => CarDamagePacket.Read(ref reader, header, layout),

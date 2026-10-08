@@ -86,12 +86,15 @@ public sealed class DuckDbTelemetryStore(string databasePath, ILogger<DuckDbTele
 
     public void EndRecording(long recordingId) => Enqueue(new EndOp(recordingId, DateTime.UtcNow));
 
-    public void UpdateRecording(long recordingId, string? sessionUid = null, int? trackId = null, string? trackName = null, int? sessionType = null) =>
-        Enqueue(new UpdateOp(recordingId, sessionUid, trackId, trackName, sessionType));
+    public void UpdateRecording(long recordingId, string? sessionUid = null, int? trackId = null, string? trackName = null, int? sessionType = null,
+        DateTimeOffset? startTime = null, DateTimeOffset? endTime = null) =>
+        Enqueue(new UpdateOp(recordingId, sessionUid, trackId, trackName, sessionType, startTime?.UtcDateTime, endTime?.UtcDateTime));
 
     public void AppendSample(TelemetrySample sample) => Enqueue(new SampleOp(sample));
 
     public void UpsertLap(long recordingId, LapRecord lap) => Enqueue(new LapOp(recordingId, lap));
+
+    public void AppendSetup(long recordingId, SetupChange setup) => Enqueue(new SetupOp(recordingId, setup));
 
     public Task FlushAsync(CancellationToken cancellationToken = default)
     {
@@ -224,6 +227,10 @@ public sealed class DuckDbTelemetryStore(string databasePath, ILogger<DuckDbTele
                     UpsertLapRow(l.RecordingId, l.Lap);
                     break;
 
+                case SetupOp s:
+                    NonQuery(SetupColumns.InsertSql, SetupColumns.InsertArgs(s.RecordingId, s.Setup));
+                    break;
+
                 case FlushOp f:
                     f.Done.TrySetResult();
                     break;
@@ -233,6 +240,7 @@ public sealed class DuckDbTelemetryStore(string databasePath, ILogger<DuckDbTele
                     {
                         NonQuery("DELETE FROM telemetry WHERE recording_id = $id", ("id", d.Id));
                         NonQuery("DELETE FROM laps WHERE recording_id = $id", ("id", d.Id));
+                        NonQuery("DELETE FROM recording_setups WHERE recording_id = $id", ("id", d.Id));
                         NonQuery("DELETE FROM recordings WHERE id = $id", ("id", d.Id));
                         tx.Commit();
                     }
@@ -282,6 +290,18 @@ public sealed class DuckDbTelemetryStore(string databasePath, ILogger<DuckDbTele
         {
             sets.Add("session_type = $sessionType");
             args.Add(("sessionType", u.SessionType));
+        }
+
+        if (u.StartUtc is not null)
+        {
+            sets.Add("start_time = $start");
+            args.Add(("start", u.StartUtc));
+        }
+
+        if (u.EndUtc is not null)
+        {
+            sets.Add("end_time = $end");
+            args.Add(("end", u.EndUtc));
         }
 
         if (sets.Count > 0)
@@ -384,6 +404,9 @@ public sealed class DuckDbTelemetryStore(string databasePath, ILogger<DuckDbTele
             r => new WheelValues(r.GetDouble(0), r.GetDouble(1), r.GetDouble(2), r.GetDouble(3)),
             cancellationToken, ("id", recordingId))).FirstOrDefault();
 
+    public Task<IReadOnlyList<SetupChange>> GetSetupsAsync(long recordingId, CancellationToken cancellationToken = default) =>
+        QueryAsync(SetupColumns.SelectSql, SetupColumns.ReadRow, cancellationToken, ("id", recordingId));
+
     public Task<IReadOnlyList<PositionPoint>> GetPositionHistoryAsync(long recordingId, int maxPoints = 500, CancellationToken cancellationToken = default) =>
         QueryAsync("""
             WITH p AS (
@@ -482,9 +505,10 @@ public sealed class DuckDbTelemetryStore(string databasePath, ILogger<DuckDbTele
     private abstract record WriteOp;
     private sealed record BeginOp(long Id, NewRecording Recording, DateTime StartUtc) : WriteOp;
     private sealed record EndOp(long Id, DateTime EndUtc) : WriteOp;
-    private sealed record UpdateOp(long Id, string? SessionUid, int? TrackId, string? TrackName, int? SessionType) : WriteOp;
+    private sealed record UpdateOp(long Id, string? SessionUid, int? TrackId, string? TrackName, int? SessionType, DateTime? StartUtc, DateTime? EndUtc) : WriteOp;
     private sealed record SampleOp(TelemetrySample Sample) : WriteOp;
     private sealed record LapOp(long RecordingId, LapRecord Lap) : WriteOp;
+    private sealed record SetupOp(long RecordingId, SetupChange Setup) : WriteOp;
     private sealed record FlushOp(TaskCompletionSource Done) : WriteOp;
     private sealed record DeleteOp(long Id, TaskCompletionSource Done) : WriteOp;
 }

@@ -157,7 +157,28 @@ public sealed class EndToEndTests : IAsyncLifetime
         if (format == GameFormat.F1_26)
         {
             Assert.Contains(samples, s => s.OvertakeActive == 1);
+            Assert.Contains(samples, s => s.OvertakeAvailable == 1 && s.ActiveAeroAvailable == 1);
         }
+
+        // Energy: the battery stays within its 4 MJ, the MGU-K deploys by mode, the harvest limit only exists in 2026.
+        var race = new List<TelemetrySample>();
+        foreach (var lap in laps)
+        {
+            race.AddRange(await store.GetLapSamplesAsync(recording.Id, lap.LapNumber, TestContext.Current.CancellationToken));
+        }
+
+        Assert.All(race, s => Assert.InRange(s.ErsStoreEnergy, 0, 4_000_000));
+        Assert.Contains(race, s => s.ErsDeployMode == 1 && s.EnginePowerMguk > 0);
+        Assert.Contains(race, s => s.ErsDeployMode == 3);
+        Assert.Contains(race, s => s.EnginePowerIce > 0);
+        Assert.Contains(race, s => s.ErsHarvestedMguk > 0);
+        Assert.All(race, s => Assert.Equal(format == GameFormat.F1_26 ? 7_100_000 : 0, s.ErsHarvestLimit));
+
+        // Setups: the one the race started on, then the new front wing fitted at the stop on lap 2.
+        var setups = await store.GetSetupsAsync(recording.Id, TestContext.Current.CancellationToken);
+        Assert.Equal(2, setups.Count);
+        Assert.Equal(setups[0].Setup.FrontWing + 1, setups[1].Setup.FrontWing);
+        Assert.Equal(3, setups[1].LapNumber);
 
         var result2 = (await analysis.AnalyzeAsync(recording, laps, TestContext.Current.CancellationToken))!;
         Assert.Equal(2, result2.Stints.Count);

@@ -1,4 +1,5 @@
 using F1Telemetry.Protocol;
+using F1Telemetry.Protocol.Packets;
 
 namespace F1Telemetry.Core.Models;
 
@@ -54,6 +55,12 @@ public sealed record RecordingInfo(
     GameFormat Format,
     DateTimeOffset StartTime,
     DateTimeOffset? EndTime);
+
+/// <summary>
+/// The setup the player drove from a point in the session on.
+/// </summary>
+/// <param name="LapNumber">Lap the car was on when the setup arrived; 0 before the first lap (garage, formation).</param>
+public sealed record SetupChange(int LapNumber, double SessionTime, CarSetup Setup);
 
 public sealed record NewRecording(
     string SessionUid,

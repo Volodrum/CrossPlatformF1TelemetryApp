@@ -107,7 +107,17 @@ public sealed class SessionEngine
     /// <summary>The player's car took new bodywork / gearbox / engine damage or a new fault (see <see cref="DamageMonitor"/>).</summary>
     public event Action<CarDamage>? DamageTaken;
 
+    /// <summary>
+    /// The player's setup became known or changed (fuel load aside, see <see cref="CarSetup.SameSettings"/>): a setup
+    /// loaded or edited in the garage, or a new front wing at a pit stop.
+    /// </summary>
+    public event Action<SetupChange>? SetupChanged;
+
     public SessionInfo? Session { get; private set; }
+
+    /// <summary>The player's latest setup this session, or null until the game has sent one.</summary>
+    public SetupChange? CurrentSetup { get; private set; }
+
     public int CurrentLap => _currentLap;
     public byte SafetyCarStatus => _sessionData?.SafetyCarStatus ?? 0;
     public StrategyOptions StrategyOptions => _consumption.Options;
@@ -149,6 +159,9 @@ public sealed class SessionEngine
                 break;
             case ParticipantsPacket participants:
                 _field.OnParticipants(participants);
+                break;
+            case CarSetupsPacket setups:
+                OnSetups(setups);
                 break;
             case CarTelemetry2Packet telemetry2:
                 _telemetry2 = telemetry2.Player;
@@ -210,6 +223,7 @@ public sealed class SessionEngine
         _lastBoxFinished = false;
         _lastBoxSplit = null;
         _buttons = 0;
+        CurrentSetup = null;
 
         Session = new SessionInfo(header.SessionUid, header.Format, -1, "Unknown", 0, SessionTypes.Name(0), "", 0, header.PlayerCarIndex);
         _log.LogInformation("New session {Uid} ({Format})", header.SessionUid, header.Format);
@@ -498,6 +512,18 @@ public sealed class SessionEngine
         }
     }
 
+    private void OnSetups(CarSetupsPacket packet)
+    {
+        var setup = packet.Player;
+        if (setup.IsEmpty || CurrentSetup?.Setup.SameSettings(setup) == true)
+        {
+            return;
+        }
+
+        CurrentSetup = new SetupChange(_currentLap, packet.Header.SessionTime, setup);
+        SetupChanged?.Invoke(CurrentSetup);
+    }
+
     private void OnDamage(CarDamage damage)
     {
         _damage = damage;
@@ -661,6 +687,9 @@ public sealed class SessionEngine
             ErsHarvestedMguk = s.ErsHarvestedThisLapMguk,
             ErsHarvestedMguh = s.ErsHarvestedThisLapMguh,
             ErsDeployed = s.ErsDeployedThisLap,
+            EnginePowerIce = s.EnginePowerIce,
+            EnginePowerMguk = s.EnginePowerMguk,
+            ErsHarvestLimit = s.ErsHarvestLimitPerLap ?? 0,
             BrakesTempFl = t.BrakesTemperature.FrontLeft,
             BrakesTempFr = t.BrakesTemperature.FrontRight,
             BrakesTempRl = t.BrakesTemperature.RearLeft,
@@ -719,6 +748,8 @@ public sealed class SessionEngine
             GForceVert = m?.GForceVertical ?? 0,
             ActiveAeroMode = _telemetry2?.ActiveAeroMode ?? 0,
             OvertakeActive = _telemetry2?.OvertakeActive == true ? 1 : 0,
+            ActiveAeroAvailable = _telemetry2?.ActiveAeroAvailable == true ? 1 : 0,
+            OvertakeAvailable = _telemetry2?.OvertakeAvailable == true ? 1 : 0,
         };
     }
 
