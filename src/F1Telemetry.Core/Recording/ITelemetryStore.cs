@@ -1,4 +1,6 @@
+using F1Telemetry.Core.Energy;
 using F1Telemetry.Core.Models;
+using F1Telemetry.Protocol;
 using F1Telemetry.Core.Setups;
 
 namespace F1Telemetry.Core.Recording;
@@ -45,6 +47,9 @@ public interface ITelemetryStore : IAsyncDisposable
     /// fields (battery, deploy mode, per-lap harvest and deploy counters, harvest limit, MGU-K power) filled in.
     /// </summary>
     Task<IReadOnlyList<TelemetrySample>> GetEnergySamplesAsync(long recordingId, CancellationToken cancellationToken = default);
+
+    /// <summary>Every sample of every recording at a track in one game format, for the ERS car model; by recording, then time.</summary>
+    Task<IReadOnlyList<ModelSample>> GetModelSamplesAsync(GameFormat format, int trackId, CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<LapAggregate>> GetLapAggregatesAsync(long recordingId, CancellationToken cancellationToken = default);
 

@@ -2,6 +2,7 @@ using System.Data.Common;
 using System.Diagnostics;
 using System.Threading.Channels;
 using DuckDB.NET.Data;
+using F1Telemetry.Core.Energy;
 using F1Telemetry.Core.Models;
 using F1Telemetry.Core.Recording;
 using F1Telemetry.Protocol;
@@ -412,6 +413,23 @@ public sealed partial class DuckDbTelemetryStore(string databasePath, ILogger<Du
     public Task<IReadOnlyList<TelemetrySample>> GetEnergySamplesAsync(long recordingId, CancellationToken cancellationToken = default) =>
         QueryAsync($"SELECT {string.Join(", ", EnergyColumns.Select(c => c.Name))} FROM telemetry WHERE recording_id = $id ORDER BY session_time",
             r => TelemetryColumns.ReadRow(r, EnergyColumns), cancellationToken, ("id", recordingId));
+
+    public Task<IReadOnlyList<ModelSample>> GetModelSamplesAsync(GameFormat format, int trackId, CancellationToken cancellationToken = default) =>
+        QueryAsync("""
+            SELECT t.recording_id, t.lap_number, t.session_time, t.lap_distance, t.speed, t.throttle, t.brake, t.steer, t.ers_store_energy,
+                   t.ers_deploy_mode, t.ers_harvested_mguk, t.ers_deployed, t.engine_power_ice, t.engine_power_mguk, t.g_force_lon,
+                   t.fuel_in_tank, CASE WHEN r.game_format = 2026 THEN t.active_aero_mode ELSE t.drs END
+            FROM telemetry t JOIN recordings r ON r.id = t.recording_id
+            WHERE r.game_format = $format AND r.track_id = $track AND t.lap_number >= 1
+            ORDER BY t.recording_id, t.session_time
+            """,
+            r => new ModelSample(
+                r.GetInt64(0), r.GetInt32(1), r.GetDouble(2), F(r, 3), r.GetInt32(4), F(r, 5), F(r, 6), F(r, 7), F(r, 8),
+                (byte)(r.IsDBNull(9) ? 0 : r.GetInt32(9)), F(r, 10), F(r, 11), F(r, 12), F(r, 13), F(r, 14), F(r, 15),
+                (byte)(r.IsDBNull(16) ? 0 : r.GetInt32(16))),
+            cancellationToken, ("format", (int)format), ("track", trackId));
+
+    private static float F(DbDataReader r, int i) => r.IsDBNull(i) ? 0 : (float)r.GetDouble(i);
 
     public Task<IReadOnlyList<LapAggregate>> GetLapAggregatesAsync(long recordingId, CancellationToken cancellationToken = default) =>
         QueryAsync("""

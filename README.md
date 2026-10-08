@@ -201,7 +201,13 @@ The **ENERGY** tab shows what the battery did on every lap of a recording:
 
 - a **battery map**: the lap's racing line coloured by ERS deploy mode, or by battery level in the ERS charge bands (MODE / BATTERY switch). None is a thin grey line, the deploy modes a wider ribbon;
 - the **battery trace** along the lap, with the deploy modes as a strip under it and a marker where the harvest limit was reached;
-- a **lap table**: battery at the start and end of the lap, MJ harvested and deployed, where the harvest limit was reached (2026 format), and waste flags. **FLAT** is time at full throttle with an empty battery, so no electric power. **FULL** is time braking with a full battery, so the energy is lost. **CAP** is time braking after the lap's harvest limit, so nothing more could be stored.
+- a **lap table**: battery at the start and end of the lap, MJ harvested and deployed, where the harvest limit was reached (2026 format), and waste flags. **FLAT** is time at full throttle with an empty battery, so no electric power. **FULL** is time braking with a full battery, so the energy is lost. **CAP** is time braking after the lap's harvest limit, so nothing more could be stored. **FADE** is time deploying above the speed where the mode's MGU-K output drops;
+- the **car model**, learned from every lap recorded at the track in that game format (`ErsModelBuilder`):
+  - a **deploy map**: MGU-K output by deploy mode and speed (median of full-throttle samples with charge in the battery, 10 km/h bands), and the speed where each mode fades. In a 2026 race at Spa, Overtake gave 315 kW from 220 to 260 km/h and 135 kW from 270 km/h; Medium a flat 126 kW, nothing below about 100 km/h;
+  - **energy along the lap**: kJ harvested and deployed per 50 m on an average lap (counter resets at the line are not counted as harvest);
+  - a **straight-line fit** per active-aero mode (DRS in 2025): *a = efficiency · P / (m · v) − drag · v² / m − resistance*, by least squares over full-throttle straight-line samples, with P the ICE plus MGU-K output and m the minimum car mass plus fuel. It reports the drag area C<sub>d</sub>A, the share of power that reaches the road and the fit's R². At Spa the low-drag active-aero mode fitted C<sub>d</sub>A 0.86 m² against 1.26 m², with R² 0.94 and 0.92.
+
+  The deploy map and the fit need ICE and MGU-K power, recorded from this version on; `f1tel reimport` adds it to older captures. They are the basis for the qualifying and race lap plans that come next.
 
 The game resets its per-lap harvest and deploy counters at the line, but not always on the same packet as the lap number. `EnergyAnalyzer` takes each lap's totals from after the last reset, so a lap never inherits the previous lap's figures. Lap detail's ENERGY charts add the battery difference to the comparison lap, the deploy mode and ICE / MGU-K power.
 
@@ -264,7 +270,7 @@ Switch on **PREVIEW OVERLAYS** at the top of the Settings tab to show every over
 ## Next steps
 
 - Setup autopilot: dial a library setup into the game's setup screen with simulated key presses, checked against the live setup packet.
-- ERS planner: a car model learned from each track's laps (MGU-K power by mode and speed, harvest, drag), then qualifying and race deploy plans per zone on the battery map, and a live ERS PLAN overlay.
+- ERS planner: qualifying and race deploy plans per zone on the battery map, simulated on the learned car model, and a live ERS PLAN overlay.
 - Strategy optimiser: a per-track compound library from every recording, then 1-, 2- and 3-stop plans ranked with pit windows and undercut values.
 - Driver names on the radar.
 - Installer and auto-update (e.g. Velopack), plus CI builds for all three OSes.

@@ -43,6 +43,12 @@ public enum EnergyWaste
 
     /// <summary>Braking after the lap's harvest limit was reached: nothing more can be harvested this lap.</summary>
     Capped,
+
+    /// <summary>
+    /// Deploying above the speed where the mode's MGU-K output fades (see <see cref="DeployMap"/>): the energy buys
+    /// less there than lower down the straight.
+    /// </summary>
+    Fade,
 }
 
 /// <summary>Time spent in a <see cref="EnergyWaste"/> situation on one lap.</summary>
@@ -86,6 +92,7 @@ public static class EnergyAnalyzer
         [EnergyWaste.Flat] = 0.2,
         [EnergyWaste.Full] = 0.5,
         [EnergyWaste.Capped] = 1.0,
+        [EnergyWaste.Fade] = 1.0,
     };
 
     // Longer gaps between samples are pauses or dropped packets, not driving.
@@ -94,18 +101,21 @@ public static class EnergyAnalyzer
     private const double FullThrottle = 0.98;
     private const double Braking = 0.05;
 
-    /// <summary>Every lap of a recording, from its samples in session-time order (any lap order is fine).</summary>
-    public static IReadOnlyList<LapEnergy> AnalyzeLaps(IEnumerable<TelemetrySample> samples) =>
+    /// <summary>
+    /// Every lap of a recording, from its samples in session-time order (any lap order is fine). With a
+    /// <paramref name="deploy"/> map, deployment above each mode's fade speed is reported too.
+    /// </summary>
+    public static IReadOnlyList<LapEnergy> AnalyzeLaps(IEnumerable<TelemetrySample> samples, DeployMap? deploy = null) =>
         samples.GroupBy(s => s.LapNumber)
             .Where(g => g.Key > 0)
             .OrderBy(g => g.Key)
-            .Select(g => Analyze(g.Key, g.ToList()))
+            .Select(g => Analyze(g.Key, g.ToList(), deploy))
             .Where(e => e is not null)
             .Select(e => e!)
             .ToList();
 
     /// <summary>One lap, from its samples in session-time order. Null without samples.</summary>
-    public static LapEnergy? Analyze(int lapNumber, IReadOnlyList<TelemetrySample> lap)
+    public static LapEnergy? Analyze(int lapNumber, IReadOnlyList<TelemetrySample> lap, DeployMap? deploy = null)
     {
         if (lap.Count == 0)
         {
@@ -133,7 +143,7 @@ public static class EnergyAnalyzer
             }
         }
 
-        double flat = 0, full = 0, capped = 0;
+        double flat = 0, full = 0, capped = 0, fade = 0;
         for (var i = 0; i < lap.Count - 1; i++)
         {
             var s = lap[i];
@@ -158,10 +168,15 @@ public static class EnergyAnalyzer
             {
                 capped += dt;
             }
+
+            if (!braking && s.EnginePowerMguk > 0 && deploy?.FadeSpeed(s.ErsDeployMode) is { } fadeFrom && s.Speed >= fadeFrom)
+            {
+                fade += dt;
+            }
         }
 
         List<EnergyIssue> issues = [];
-        foreach (var (kind, seconds) in new[] { (EnergyWaste.Flat, flat), (EnergyWaste.Full, full), (EnergyWaste.Capped, capped) })
+        foreach (var (kind, seconds) in new[] { (EnergyWaste.Flat, flat), (EnergyWaste.Full, full), (EnergyWaste.Capped, capped), (EnergyWaste.Fade, fade) })
         {
             if (seconds >= ReportFrom[kind])
             {

@@ -153,7 +153,46 @@
             </ListBox>
           </DockPanel>
         </Border>
-        <TextBlock Classes="body" Text="All values in MJ. START and END are the battery at the line, in the ERS charge bands. FLAT: full throttle with an empty battery. FULL: braking with a full battery, so that energy is lost. CAP: braking after the lap's harvest limit." TextWrapping="Wrap" />
+        <TextBlock Classes="body" Text="All values in MJ. START and END are the battery at the line, in the ERS charge bands. FLAT: full throttle with an empty battery. FULL: braking with a full battery, so that energy is lost. CAP: braking after the lap's harvest limit. FADE: deploying above the speed where the mode's power drops." TextWrapping="Wrap" />
+
+        <!-- Car model learned from every lap at this track -->
+        <StackPanel Spacing="4" Margin="0,16,0,0" IsVisible="{Binding Model, Converter={x:Static ObjectConverters.IsNotNull}}">
+          <TextBlock Classes="label strong" Text="{Binding ModelHeader}" />
+          <TextBlock Classes="body" Text="{Binding ModelNote}" TextWrapping="Wrap" />
+        </StackPanel>
+        <ItemsControl ItemsSource="{Binding Fits}">
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate>
+              <UniformGrid Rows="1" />
+            </ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:FitTile">
+              <Border Classes="panel" Padding="18,14" Margin="0,0,12,0">
+                <StackPanel Spacing="8">
+                  <TextBlock Classes="label strong" Text="{Binding Title}" />
+                  <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+                    <StackPanel Spacing="2">
+                      <TextBlock Classes="label" Text="DRAG AREA · CdA · M²" />
+                      <TextBlock Classes="data-m" Text="{Binding DragArea}" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" Spacing="2">
+                      <TextBlock Classes="label" Text="POWER TO ROAD · %" />
+                      <TextBlock Classes="data-m" Text="{Binding Efficiency}" />
+                    </StackPanel>
+                  </Grid>
+                  <TextBlock Classes="mono" FontSize="13" Text="{Binding Quality}" Foreground="{StaticResource TextMidBrush}" />
+                </StackPanel>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+        <Border Classes="panel" Padding="0" Height="280" IsVisible="{Binding HasDeployChart}">
+          <controls:TelemetryPlot Model="{Binding DeployChart}" />
+        </Border>
+        <Border Classes="panel" Padding="0" Height="280" IsVisible="{Binding HasAlongLapChart}">
+          <controls:TelemetryPlot Model="{Binding AlongLapChart}" />
+        </Border>
       </StackPanel>
     </ScrollViewer>
   </DockPanel>

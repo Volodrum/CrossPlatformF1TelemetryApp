@@ -19,6 +19,9 @@ public sealed record ModeShare(string Letter, string Name, string Distance, IBru
 /// <summary>An entry of the map legend: a sample of the ribbon (<paramref name="Thickness"/> px) and its label.</summary>
 public sealed record LegendEntry(string Label, IBrush Swatch, double Thickness = 6);
 
+/// <summary>A straight-line fit of the car model, as a tile.</summary>
+public sealed record FitTile(string Title, string DragArea, string Efficiency, string Quality);
+
 /// <summary>One lap in the energy table.</summary>
 public sealed record EnergyLapRow(LapEnergy Energy, LapRecord? Lap)
 {
@@ -68,6 +71,7 @@ public static class EnergyText
             {
                 EnergyWaste.Flat => Chip.Filled("FLAT " + seconds, Palette.Danger),
                 EnergyWaste.Full => Chip.Outlined("FULL " + seconds, Palette.Slower),
+                EnergyWaste.Fade => Chip.Outlined("FADE " + seconds, Palette.Slower),
                 _ => Chip.Outlined("CAP " + seconds, Palette.Slower),
             };
         }),
@@ -80,6 +84,7 @@ public static class EnergyText
         {
             EnergyWaste.Flat => $"FLAT · {seconds} s at full throttle with an empty battery, so no electric power.",
             EnergyWaste.Full => $"FULL · {seconds} s braking with a full battery: that energy could not be stored.",
+            EnergyWaste.Fade => $"FADE · {seconds} s deploying above the speed where the mode's power drops (see the car model).",
             _ => $"CAP · {seconds} s braking after the harvest limit: nothing more could be harvested this lap.",
         };
     }
@@ -114,11 +119,23 @@ public sealed partial class EnergyViewModel(TelemetryRuntime runtime) : Observab
     [ObservableProperty] public partial string HarvestNote { get; set; } = "";
     [ObservableProperty] public partial string Deployed { get; set; } = "—";
     [ObservableProperty] public partial string DeployNote { get; set; } = "";
+    [ObservableProperty] public partial ErsCarModel? Model { get; set; }
+    [ObservableProperty] public partial string ModelHeader { get; set; } = "";
+    [ObservableProperty] public partial string ModelNote { get; set; } = "";
+    [ObservableProperty] public partial ChartModel? DeployChart { get; set; }
+    [ObservableProperty] public partial ChartModel? AlongLapChart { get; set; }
 
     public ObservableCollection<EnergyLapRow> Laps { get; } = [];
     public ObservableCollection<ModeShare> Modes { get; } = [];
     public ObservableCollection<string> Issues { get; } = [];
     public ObservableCollection<LegendEntry> Legend { get; } = [];
+    public ObservableCollection<FitTile> Fits { get; } = [];
+
+    public bool HasDeployChart => DeployChart is not null;
+    public bool HasAlongLapChart => AlongLapChart is not null;
+
+    partial void OnDeployChartChanged(ChartModel? value) => OnPropertyChanged(nameof(HasDeployChart));
+    partial void OnAlongLapChartChanged(ChartModel? value) => OnPropertyChanged(nameof(HasAlongLapChart));
 
     public bool IsModeLayer => Layer == MapColoring.DeployMode;
     public bool IsBatteryLayer => Layer == MapColoring.Battery;
@@ -160,11 +177,17 @@ public sealed partial class EnergyViewModel(TelemetryRuntime runtime) : Observab
 
         var laps = await runtime.Analysis.GetClassifiedLapsAsync(recording);
         var samples = await runtime.Store.GetEnergySamplesAsync(recording.Id);
-        var energies = EnergyAnalyzer.AnalyzeLaps(samples);
+        var model = recording.TrackId >= 0
+            ? await Task.Run(async () => ErsModelBuilder.Build(recording.Format, recording.TrackId,
+                await runtime.Store.GetModelSamplesAsync(recording.Format, recording.TrackId)))
+            : null;
+        var energies = EnergyAnalyzer.AnalyzeLaps(samples, model?.Deploy);
         if (version != _loadVersion)
         {
             return;
         }
+
+        ShowModel(model, recording);
 
         Header = $"{recording.TrackName} · {SessionTypes.Name(recording.SessionType)} · {energies.Count} laps";
         TrackName = recording.TrackName.ToUpperInvariant();
@@ -188,6 +211,53 @@ public sealed partial class EnergyViewModel(TelemetryRuntime runtime) : Observab
                       ?? Laps.FirstOrDefault(r => r.Lap?.IsBestLap == true)
                       ?? Laps.FirstOrDefault(r => r.Lap?.HasTime == true)
                       ?? Laps[0];
+    }
+
+    /// <summary>The car model learned from every lap at this track: deploy map, energy along the lap, straight-line fits.</summary>
+    private void ShowModel(ErsCarModel? model, RecordingInfo recording)
+    {
+        Model = model;
+        Fits.Clear();
+        if (model is null || model.Laps == 0)
+        {
+            ModelHeader = "";
+            ModelNote = "";
+            DeployChart = null;
+            AlongLapChart = null;
+            return;
+        }
+
+        var format = model.Format == Protocol.GameFormat.F1_26 ? "F1 26" : "F1 25";
+        ModelHeader = $"CAR MODEL · {recording.TrackName.ToUpperInvariant()} · {format} · LEARNED FROM {model.Laps} LAPS";
+        ModelNote = model.HasPowerData
+            ? "What each deploy mode delivers by speed, where the lap harvests and spends energy, and how the car accelerates on the straights. "
+              + "The lap plans are built on this model, and it gets better with every lap you record here."
+            : "The deploy map and straight-line fit need ICE and MGU-K power, recorded from this version on. Re-import older captures with f1tel reimport to add it.";
+
+        DeployChart = model.Deploy.Curves.Count == 0 ? null : new ChartModel("MGU-K output by speed (kW) · full throttle, charge in the battery",
+            [.. model.Deploy.Curves.Select(c => new ChartSeries($"{DeployModes.Letter(c.Mode)} · {DeployModes.Name(c.Mode)}", Palette.DeployModeHex[Math.Clamp(c.Mode, 0, 3)],
+                [.. c.Points.Select(p => p.SpeedKmh + ErsModelBuilder.SpeedBand / 2.0)], [.. c.Points.Select(p => p.PowerW / 1000)], MarkerSize: 6))],
+            XLabel: "Speed (km/h)",
+            Markers: [.. model.Deploy.Curves.Where(c => c.FadeFromKmh is not null)
+                .Select(c => new ChartMarker(c.FadeFromKmh!.Value, Palette.DeployModeHex[Math.Clamp(c.Mode, 0, 3)], $"{DeployModes.Name(c.Mode)} fades from {c.FadeFromKmh} km/h"))]);
+
+        AlongLapChart = model.AlongLap.Count == 0 ? null : new ChartModel("Energy along the lap (kJ per 50 m) · average lap",
+        [
+            new ChartSeries("Harvested", "#2EE88F", [.. model.AlongLap.Select(b => b.From)], [.. model.AlongLap.Select(b => b.HarvestedJ / 1000)], Step: true),
+            new ChartSeries("Deployed", "#4DB5FF", [.. model.AlongLap.Select(b => b.From)], [.. model.AlongLap.Select(b => b.DeployedJ / 1000)], Step: true),
+        ]);
+
+        var lowestDrag = model.StraightLine.Count > 1 ? model.StraightLine.MinBy(f => f.DragArea) : null;
+        foreach (var fit in model.StraightLine)
+        {
+            var title = model.Format == Protocol.GameFormat.F1_26
+                ? $"ACTIVE AERO {fit.Aero}" + (fit == lowestDrag ? " · LOW DRAG" : "")
+                : fit.Aero == 0 ? "DRS CLOSED" : "DRS OPEN";
+            Fits.Add(new FitTile(title,
+                fit.DragArea.ToString("0.00", CultureInfo.InvariantCulture),
+                (fit.Efficiency * 100).ToString("0", CultureInfo.InvariantCulture),
+                $"R² {fit.RSquared.ToString("0.00", CultureInfo.InvariantCulture)} · ±{fit.RmsError.ToString("0.0", CultureInfo.InvariantCulture)} m/s² · {fit.Samples:N0} samples"));
+        }
     }
 
     private void Clear(string reason)

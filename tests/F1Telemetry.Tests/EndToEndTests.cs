@@ -182,6 +182,13 @@ public sealed class EndToEndTests : IAsyncLifetime
         Assert.Contains(energy, e => e.Modes.Any(m => m.Mode == DeployModes.Overtake));
         Assert.Equal(race.First().ErsStoreEnergy, energy[0].StartStore);
 
+        // The car model learned from the race: the simulator's deploy map and where it harvests.
+        var model = ErsModelBuilder.Build(format, recording.TrackId, await store.GetModelSamplesAsync(format, recording.TrackId, TestContext.Current.CancellationToken));
+        Assert.Equal(5, model.Laps);
+        Assert.True(model.HasPowerData);
+        Assert.Equal(format == GameFormat.F1_26 ? 126_000 : 60_000, model.Deploy.Curve(DeployModes.Medium)!.PeakW, 1_000.0);
+        Assert.Contains(model.AlongLap, b => b.HarvestedJ > 0);
+
         // Setups: the one the race started on, then the new front wing fitted at the stop on lap 2.
         var setups = await store.GetSetupsAsync(recording.Id, TestContext.Current.CancellationToken);
         Assert.Equal(2, setups.Count);
