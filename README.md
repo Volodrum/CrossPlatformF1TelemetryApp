@@ -233,7 +233,7 @@ The game can't load a setup from outside: its setups live in the encrypted, sign
 
 ## Overlays
 
-There are eight HUD windows: **lap timing**, **lap/sector delta**, **proximity radar**, **conditions & strategy**, **input trace**, **sector box**, **timing tower** and **ERS plan**. Each can be set to *Always*, *Session* (only while recording) or *Never*. The last two, plus the damage page, are meant to replace the game's own HUD.
+There are eight HUD windows: **lap timing**, **lap/sector delta**, **proximity radar**, **conditions & strategy**, **input trace**, **sector box**, **timing tower** and **ERS plan**. Each can be set to *Always*, *Session* (only while recording) or *Never*. The sector box and timing tower, plus the damage page, are meant to replace the game's own HUD.
 
 The **sector box** (top right by default) works like the TV qualifying graphic. It shows your position, team colour and the reference lap, then three colour-only sector bars: purple = fastest of anyone this session, green = your personal best, yellow = slower. The live sector fills as you drive through it, using the session's sector boundaries. Below the bars is the lap time. For 4 s after each split, that sector's time replaces it, in the same large type, with the cumulative gap to the reference lap at that split in coloured text (green ahead, amber behind). The reference is the session's fastest lap (P1) or your personal best, chosen in Settings. Colours and gaps are fixed when you cross the split. A finished lap is held for 4 s, with the lap time filled in its colour and the lap gap beside it (purple when it beats the session best). An invalid lap turns grey with a red strike-through.
 
