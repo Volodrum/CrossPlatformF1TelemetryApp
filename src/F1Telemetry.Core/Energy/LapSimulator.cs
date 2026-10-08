@@ -14,31 +14,46 @@ public sealed record PlanSegment(int Index, double From, bool FullThrottle, int 
 
 /// <summary>
 /// A lap cut into <see cref="Step"/> m segments for the <see cref="LapSimulator"/>: speeds at every boundary, where it
-/// was flat out, what it harvested where, and the speed cap ahead of every braking zone.
+/// was flat out, what it harvested where, and the speed cap ahead of every braking zone. Either one lap as driven
+/// (<see cref="From"/>) or the average of several (<see cref="Average"/>).
 /// </summary>
 public sealed class LapProfile
 {
     public const double Step = 25;
 
-    private LapProfile(int lapNumber, IReadOnlyList<PlanSegment> segments, double[] speed, double[] envelope, double massKg, double actualSeconds,
-        double coveredSeconds, double startStore, double endStore)
+    private LapProfile(int lapNumber, int lapCount, IReadOnlyList<PlanSegment> segments, double[] speed, double[] level, double braking, double massKg,
+        double actualSeconds)
     {
         LapNumber = lapNumber;
+        LapCount = lapCount;
         Segments = segments;
         Speed = speed;
-        Envelope = envelope;
+        Level = level;
+        Braking = braking;
+        Envelope = BrakingEnvelope(segments, speed, braking);
         MassKg = massKg;
         ActualSeconds = actualSeconds;
-        CoveredSeconds = coveredSeconds;
-        StartStore = startStore;
-        EndStore = endStore;
+        CoveredSeconds = segments.Sum(s => s.ReferenceSeconds);
+        StartStore = level[0];
+        EndStore = level[^1];
     }
 
+    /// <summary>The lap's number; 0 for an average of several laps.</summary>
     public int LapNumber { get; }
+
+    /// <summary>How many laps the profile stands for (1 for a single lap).</summary>
+    public int LapCount { get; }
+
     public IReadOnlyList<PlanSegment> Segments { get; }
 
     /// <summary>Reference speed at each segment boundary, m/s (one more than the segments).</summary>
     public double[] Speed { get; }
+
+    /// <summary>Battery at each segment boundary, J.</summary>
+    public double[] Level { get; }
+
+    /// <summary>The braking capability the lap showed, m/s².</summary>
+    public double Braking { get; }
 
     /// <summary>Highest speed at each boundary that still makes the next braking zone, m/s.</summary>
     public double[] Envelope { get; }
@@ -137,6 +152,64 @@ public sealed class LapProfile
         // The braking capability the lap showed: 80th percentile of its deceleration under braking.
         var decelerations = samples.Where(s => s.Brake > 0.5).Select(s => -s.GForceLon * 9.81).Where(a => a > 0).Order().ToList();
         var braking = Math.Clamp(decelerations.Count > 10 ? decelerations[(int)(decelerations.Count * 0.8)] : 35, 15, 60);
+
+        static double CounterStep(double step) => step is >= 0 and <= 200_000 ? step : 0; // resets and flashbacks aren't energy
+
+        var fuel = samples.Average(s => s.FuelInTank);
+        return new LapProfile(samples[0].LapNumber, 1, segments, speed, level, braking, ErsModelBuilder.CarMass(format) + fuel,
+            lapSeconds is > 0 ? lapSeconds.Value : segments.Sum(s => s.ReferenceSeconds));
+    }
+
+    /// <summary>
+    /// The typical lap of a session: speeds, power, harvest, deployment and battery level averaged segment by segment,
+    /// flat-out stretches, aero and deploy mode by majority. A race plan built on it holds for every lap of the stint,
+    /// not just the one that happened to be fastest. Null for no laps.
+    /// </summary>
+    public static LapProfile? Average(IReadOnlyList<LapProfile> laps)
+    {
+        if (laps.Count == 0)
+        {
+            return null;
+        }
+
+        if (laps.Count == 1)
+        {
+            return laps[0];
+        }
+
+        var count = laps.Min(l => l.Segments.Count);
+        var speed = new double[count + 1];
+        var level = new double[count + 1];
+        for (var i = 0; i <= count; i++)
+        {
+            speed[i] = laps.Average(l => l.Speed[i]);
+            level[i] = laps.Average(l => l.Level[i]);
+        }
+
+        var segments = new List<PlanSegment>(count);
+        for (var i = 0; i < count; i++)
+        {
+            var at = laps.Select(l => l.Segments[i]).ToList();
+            segments.Add(new PlanSegment(
+                i, i * Step,
+                FullThrottle: at.Count(s => s.FullThrottle) * 2 > at.Count,
+                Aero: at.GroupBy(s => s.Aero).MaxBy(g => g.Count())!.Key,
+                IcePower: at.Average(s => s.IcePower),
+                MgukPower: at.Average(s => s.MgukPower),
+                Harvest: at.Average(s => s.Harvest),
+                Deploy: at.Average(s => s.Deploy),
+                Mode: at.GroupBy(s => s.Mode).MaxBy(g => g.Count())!.Key,
+                ReferenceSeconds: 2 * Step / (speed[i] + speed[i + 1])));
+        }
+
+        return new LapProfile(0, laps.Count, segments, speed, level, laps.Average(l => l.Braking), laps.Average(l => l.MassKg),
+            laps.Average(l => l.ActualSeconds));
+    }
+
+    /// <summary>Highest speed at each boundary that still makes the next braking zone, braking at <paramref name="braking"/> m/s².</summary>
+    private static double[] BrakingEnvelope(IReadOnlyList<PlanSegment> segments, double[] speed, double braking)
+    {
+        var count = segments.Count;
         var envelope = new double[count + 1];
         for (var i = 0; i <= count; i++)
         {
@@ -148,12 +221,7 @@ public sealed class LapProfile
             envelope[i] = Math.Max(speed[i], Math.Min(envelope[i], Math.Sqrt(envelope[i + 1] * envelope[i + 1] + 2 * braking * Step)));
         }
 
-        static double CounterStep(double step) => step is >= 0 and <= 200_000 ? step : 0; // resets and flashbacks aren't energy
-
-        var fuel = samples.Average(s => s.FuelInTank);
-        var coveredSeconds = segments.Sum(s => s.ReferenceSeconds);
-        return new LapProfile(samples[0].LapNumber, segments, speed, envelope, ErsModelBuilder.CarMass(format) + fuel,
-            lapSeconds is > 0 ? lapSeconds.Value : coveredSeconds, coveredSeconds, level[0], level[count]);
+        return envelope;
     }
 }
 

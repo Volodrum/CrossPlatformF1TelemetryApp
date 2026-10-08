@@ -2,27 +2,39 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:F1Telemetry.App.ViewModels"
              xmlns:controls="using:F1Telemetry.App.Controls"
+             xmlns:services="using:F1Telemetry.App.Services"
              xmlns:energy="using:F1Telemetry.Core.Energy"
              x:Class="F1Telemetry.App.Views.EnergyView"
              x:DataType="vm:EnergyViewModel">
   <DockPanel Margin="0,16,0,0">
-    <StackPanel DockPanel.Dock="Top" Spacing="4" Margin="0,0,0,12">
-      <TextBlock Classes="label" Text="ENERGY · BATTERY, HARVEST AND DEPLOYMENT PER LAP · CLICK A LAP TO MAP IT" />
-      <TextBlock Classes="h1" Text="{Binding Header}" />
-    </StackPanel>
+    <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="0,0,8,12">
+      <StackPanel Spacing="4">
+        <TextBlock Classes="label" Text="ENERGY · BATTERY, HARVEST AND DEPLOYMENT OVER THE SESSION" />
+        <TextBlock Classes="h1" Text="{Binding Header}" />
+      </StackPanel>
+      <!-- Units for every energy on the tab -->
+      <Border Grid.Column="1" Classes="segmented" VerticalAlignment="Bottom" ToolTip.Tip="Show energy in megajoules or in percent of the 4 MJ battery">
+        <StackPanel Orientation="Horizontal">
+          <Button Theme="{StaticResource ModeToggle}" Content="MJ" Classes.selected="{Binding IsMj}"
+                  Command="{Binding SetUnitCommand}" CommandParameter="{x:Static services:EnergyUnit.Mj}" />
+          <Button Theme="{StaticResource ModeToggle}" Content="% BATTERY" Classes.selected="{Binding IsPercent}"
+                  Command="{Binding SetUnitCommand}" CommandParameter="{x:Static services:EnergyUnit.Percent}" />
+        </StackPanel>
+      </Border>
+    </Grid>
 
     <TextBlock DockPanel.Dock="Top" Classes="body" Text="{Binding EmptyText}" IsVisible="{Binding !HasData}" />
 
     <ScrollViewer IsVisible="{Binding HasData}">
       <StackPanel Spacing="12" Margin="0,0,8,0">
         <Grid ColumnDefinitions="*,340" ColumnSpacing="12" Height="440">
-          <!-- Battery map -->
+          <!-- Battery map: the session as driven, or the plan -->
           <Border Classes="panel" Padding="0" ClipToBounds="True">
             <Panel>
               <controls:TrackMapControl Outline="{Binding Outline}" ActiveLap="{Binding Samples}" ColorByInputs="True" Coloring="{Binding Layer}" />
               <StackPanel Margin="16,14" HorizontalAlignment="Left" VerticalAlignment="Top" Spacing="2" IsHitTestVisible="False">
                 <TextBlock Classes="h2" Text="{Binding TrackName}" FontSize="20" />
-                <TextBlock Classes="label" Text="{Binding LapTitle}" />
+                <TextBlock Classes="label" Text="{Binding MapTitle}" />
               </StackPanel>
               <StackPanel Margin="14" HorizontalAlignment="Right" VerticalAlignment="Top" Spacing="8">
                 <Border Classes="segmented" HorizontalAlignment="Right">
@@ -35,10 +47,12 @@
                 </Border>
                 <Border Classes="segmented" HorizontalAlignment="Right" IsVisible="{Binding Plan.HasPlan}">
                   <StackPanel Orientation="Horizontal">
-                    <Button Theme="{StaticResource ModeToggle}" Content="YOUR LAP" Classes.selected="{Binding IsDrivenOnMap}"
-                            Command="{Binding SetMapSourceCommand}" CommandParameter="driven" />
+                    <Button Theme="{StaticResource ModeToggle}" Content="SESSION" Classes.selected="{Binding IsDrivenOnMap}"
+                            Command="{Binding SetMapSourceCommand}" CommandParameter="driven"
+                            ToolTip.Tip="What you ran: the session's laps averaged" />
                     <Button Theme="{StaticResource ModeToggle}" Content="PLAN" Classes.selected="{Binding ShowPlanOnMap}"
-                            Command="{Binding SetMapSourceCommand}" CommandParameter="plan" />
+                            Command="{Binding SetMapSourceCommand}" CommandParameter="plan"
+                            ToolTip.Tip="The race or qualifying plan chosen below" />
                   </StackPanel>
                 </Border>
               </StackPanel>
@@ -60,12 +74,15 @@
             </Panel>
           </Border>
 
-          <!-- Lap summary -->
+          <!-- Session summary -->
           <Border Grid.Column="1" Classes="panel" Padding="18">
             <StackPanel Spacing="14">
-              <TextBlock Classes="h2" Text="{Binding LapTitle}" />
               <StackPanel Spacing="4">
-                <TextBlock Classes="label" Text="BATTERY · START → END · MJ" />
+                <TextBlock Classes="h2" Text="{Binding SessionTitle}" />
+                <TextBlock Classes="body" FontSize="13" Text="{Binding SessionNote}" TextWrapping="Wrap" />
+              </StackPanel>
+              <StackPanel Spacing="4">
+                <TextBlock Classes="label" Text="{Binding UnitLabel, StringFormat='BATTERY AT THE LINE · START → END · {0}'}" />
                 <StackPanel Orientation="Horizontal" Spacing="10">
                   <TextBlock Classes="data-l" Text="{Binding StartLevel}" Foreground="{Binding StartBrush}" />
                   <TextBlock Classes="data-m" Text="→" Foreground="{StaticResource TextLoBrush}" VerticalAlignment="Center" />
@@ -75,17 +92,17 @@
               </StackPanel>
               <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
                 <StackPanel Spacing="4">
-                  <TextBlock Classes="label" Text="HARVESTED · MJ" />
+                  <TextBlock Classes="label" Text="{Binding UnitLabel, StringFormat='HARVESTED / LAP · {0}'}" />
                   <TextBlock Classes="data-m" Text="{Binding Harvested}" />
                 </StackPanel>
                 <StackPanel Grid.Column="1" Spacing="4">
-                  <TextBlock Classes="label" Text="DEPLOYED · MJ" />
+                  <TextBlock Classes="label" Text="{Binding UnitLabel, StringFormat='DEPLOYED / LAP · {0}'}" />
                   <TextBlock Classes="data-m" Text="{Binding Deployed}" />
                 </StackPanel>
               </Grid>
               <TextBlock Classes="body" FontSize="13" Text="{Binding HarvestNote}" TextWrapping="Wrap" />
               <StackPanel Spacing="6">
-                <TextBlock Classes="label" Text="DEPLOY MODES · DISTANCE" />
+                <TextBlock Classes="label" Text="DEPLOY MODES · DISTANCE PER LAP" />
                 <ItemsControl ItemsSource="{Binding Modes}">
                   <ItemsControl.ItemsPanel>
                     <ItemsPanelTemplate>
@@ -116,53 +133,52 @@
           </Border>
         </Grid>
 
-        <!-- Battery along the lap, deploy modes underneath -->
+        <!-- Battery along the lap: every lap, their average and the plan; deploy modes underneath -->
         <Border Classes="panel" Padding="0" Height="300">
           <controls:TelemetryPlot Model="{Binding Trace}" />
         </Border>
 
-        <!-- ERS plan for the chosen lap -->
+        <!-- ERS plan for the session -->
         <Border Classes="panel" Padding="18,14" DataContext="{Binding Plan}">
           <StackPanel Spacing="14">
-            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="16">
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
               <StackPanel Spacing="4" VerticalAlignment="Center">
-                <TextBlock Classes="label strong" Text="LAP PLAN · DEPLOY MODE PER ZONE, SIMULATED ON THE CAR MODEL" />
-                <TextBlock Classes="body" FontSize="13" Text="Corners and braking keep your speeds; on the straights the plan changes what the MGU-K gives. Gains are against this lap as you drove it." TextWrapping="Wrap" />
+                <TextBlock Classes="label strong" Text="ERS PLAN · DEPLOY MODE PER ZONE, SIMULATED ON THE CAR MODEL" />
+                <TextBlock Classes="body" FontSize="13" TextWrapping="Wrap"
+                           Text="RACE: a lap that deploys exactly what it harvests, so it ends with the charge it started with and every race lap can run it. QUALIFYING: one push lap from a full battery. Corners and braking keep your speeds; on the straights the plan changes what the MGU-K gives." />
+                <TextBlock Classes="body" FontSize="13" Text="{Binding Basis}" TextWrapping="Wrap" Foreground="{StaticResource TextHiBrush}"
+                           IsVisible="{Binding Basis, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
               </StackPanel>
-              <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center" IsVisible="{Binding IsRace}">
-                <TextBlock Classes="label strong" Text="RESERVE · MJ" VerticalAlignment="Center" />
-                <ComboBox ItemsSource="{x:Static vm:EnergyPlanViewModel.Reserves}" SelectedItem="{Binding ReserveMj}" MinWidth="90">
-                  <ComboBox.ItemTemplate>
-                    <DataTemplate>
-                      <TextBlock Text="{Binding StringFormat='{}{0:0.0}'}" />
-                    </DataTemplate>
-                  </ComboBox.ItemTemplate>
-                </ComboBox>
-              </StackPanel>
-              <Border Grid.Column="2" Classes="segmented" VerticalAlignment="Center">
+              <Border Grid.Column="1" Classes="segmented" VerticalAlignment="Top" IsVisible="{Binding CanPlan}">
                 <StackPanel Orientation="Horizontal">
-                  <Button Theme="{StaticResource ModeToggle}" Content="QUALIFYING" Classes.selected="{Binding IsQualifying}"
-                          Command="{Binding SetKindCommand}" CommandParameter="{x:Static energy:PlanKind.Qualifying}" />
                   <Button Theme="{StaticResource ModeToggle}" Content="RACE" Classes.selected="{Binding IsRace}"
                           Command="{Binding SetKindCommand}" CommandParameter="{x:Static energy:PlanKind.Race}" />
+                  <Button Theme="{StaticResource ModeToggle}" Content="QUALIFYING" Classes.selected="{Binding IsQualifying}"
+                          Command="{Binding SetKindCommand}" CommandParameter="{x:Static energy:PlanKind.Qualifying}" />
                 </StackPanel>
               </Border>
             </Grid>
 
-            <TextBlock Classes="body" Text="{Binding Note}" TextWrapping="Wrap" IsVisible="{Binding Note, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+            <TextBlock Classes="body" Text="{Binding Note}" TextWrapping="Wrap" Foreground="{StaticResource SlowerBrush}"
+                       IsVisible="{Binding Note, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
             <TextBlock Classes="muted" Text="Planning…" IsVisible="{Binding IsBusy}" />
 
             <StackPanel Spacing="14" IsVisible="{Binding HasPlan}">
-              <UniformGrid Columns="4">
+              <UniformGrid Columns="5">
                 <StackPanel Spacing="4" Margin="0,0,16,0">
                   <TextBlock Classes="label" Text="PREDICTED LAP" />
                   <TextBlock Classes="data-m" Text="{Binding Predicted}" />
                   <TextBlock Classes="data-s" Text="{Binding Gain}" Foreground="{StaticResource FasterBrush}" />
                 </StackPanel>
                 <StackPanel Spacing="4" Margin="0,0,16,0">
-                  <TextBlock Classes="label" Text="BATTERY AT THE LINE · MJ" />
+                  <TextBlock Classes="label" Text="{Binding UnitLabel, StringFormat='BATTERY AT THE LINE · {0}'}" />
                   <TextBlock Classes="data-m" Text="{Binding Battery}" />
                   <TextBlock Classes="body" FontSize="13" Text="{Binding BatteryNote}" TextWrapping="Wrap" />
+                </StackPanel>
+                <StackPanel Spacing="4" Margin="0,0,16,0">
+                  <TextBlock Classes="label" Text="{Binding UnitLabel, StringFormat='HARVEST / DEPLOY PER LAP · {0}'}" />
+                  <TextBlock Classes="data-m" Text="{Binding Energy}" />
+                  <TextBlock Classes="body" FontSize="13" Text="{Binding EnergyNote}" TextWrapping="Wrap" />
                 </StackPanel>
                 <StackPanel Spacing="4" Margin="0,0,16,0">
                   <TextBlock Classes="label" Text="BATTLE BUDGET" />
@@ -181,7 +197,7 @@
                 <TextBlock Grid.Column="1" Classes="label" Text="LAP DISTANCE" />
                 <TextBlock Grid.Column="2" Classes="label" Text="YOU RAN" />
                 <TextBlock Grid.Column="3" Classes="label" Text="PLAN" />
-                <TextBlock Grid.Column="4" Classes="label" Text="BATTERY · MJ" HorizontalAlignment="Right" />
+                <TextBlock Grid.Column="4" Classes="label" Text="{Binding UnitLabel, StringFormat='BATTERY · {0}'}" HorizontalAlignment="Right" />
                 <TextBlock Grid.Column="5" Classes="label" Text="Δ TIME · S" HorizontalAlignment="Right" />
               </Grid>
               <ItemsControl ItemsSource="{Binding Zones}">
@@ -238,10 +254,13 @@
           </StackPanel>
         </Border>
 
-        <!-- Every lap -->
+        <!-- Every lap: a breakdown of the session, not a selector -->
         <Border Classes="panel" Padding="8">
           <DockPanel>
-            <Grid DockPanel.Dock="Top" ColumnDefinitions="60,110,72,72,72,96,96,96,*" ColumnSpacing="12" Margin="12,6,12,8">
+            <StackPanel DockPanel.Dock="Top" Spacing="2" Margin="12,6,12,10">
+              <TextBlock Classes="label strong" Text="LAP BY LAP" />
+            </StackPanel>
+            <Grid DockPanel.Dock="Top" ColumnDefinitions="60,110,72,72,72,96,96,96,*" ColumnSpacing="12" Margin="12,0,12,8">
               <TextBlock Classes="label" Text="LAP" />
               <TextBlock Grid.Column="1" Classes="label" Text="TIME" HorizontalAlignment="Center" />
               <TextBlock Grid.Column="2" Classes="label" Text="START" HorizontalAlignment="Right" />
@@ -252,36 +271,37 @@
               <TextBlock Grid.Column="7" Classes="label" Text="LIMIT AT" HorizontalAlignment="Right" />
               <TextBlock Grid.Column="8" Classes="label" Text="WASTE" Margin="8,0,0,0" />
             </Grid>
-            <!-- The page scrolls, not the list: selecting a lap must not jump the page down to it. -->
-            <ListBox Classes="rows" ItemsSource="{Binding Laps}" SelectedItem="{Binding SelectedLap}" AutoScrollToSelectedItem="False">
-              <ListBox.ItemTemplate>
+            <ItemsControl ItemsSource="{Binding Laps}">
+              <ItemsControl.ItemTemplate>
                 <DataTemplate x:DataType="vm:EnergyLapRow">
-                  <Grid ColumnDefinitions="60,110,72,72,72,96,96,96,*" ColumnSpacing="12">
-                    <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-                      <TextBlock Classes="h2" Text="{Binding Label}" />
-                      <TextBlock Text="{Binding Kind}" FontFamily="{StaticResource DisplayFont}" FontSize="12" FontWeight="Bold" Foreground="{StaticResource SlowerBrush}" VerticalAlignment="Center" />
-                    </StackPanel>
-                    <ContentControl Grid.Column="1" Content="{Binding Time}" HorizontalAlignment="Center" />
-                    <TextBlock Grid.Column="2" Classes="data-s" Text="{Binding Start}" Foreground="{Binding StartBrush}" HorizontalAlignment="Right" VerticalAlignment="Center" />
-                    <TextBlock Grid.Column="3" Classes="data-s" Text="{Binding End}" Foreground="{Binding EndBrush}" HorizontalAlignment="Right" VerticalAlignment="Center" />
-                    <TextBlock Grid.Column="4" Classes="data-s" Text="{Binding Net}" HorizontalAlignment="Right" VerticalAlignment="Center" />
-                    <TextBlock Grid.Column="5" Classes="data-s" Text="{Binding Harvested}" HorizontalAlignment="Right" VerticalAlignment="Center" />
-                    <TextBlock Grid.Column="6" Classes="data-s" Text="{Binding Deployed}" HorizontalAlignment="Right" VerticalAlignment="Center" />
-                    <TextBlock Grid.Column="7" Classes="data-s" Text="{Binding LimitAt}" HorizontalAlignment="Right" VerticalAlignment="Center" />
-                    <ItemsControl Grid.Column="8" ItemsSource="{Binding Flags}" Margin="8,0,0,0" VerticalAlignment="Center">
-                      <ItemsControl.ItemsPanel>
-                        <ItemsPanelTemplate>
-                          <WrapPanel ItemSpacing="8" LineSpacing="6" />
-                        </ItemsPanelTemplate>
-                      </ItemsControl.ItemsPanel>
-                    </ItemsControl>
-                  </Grid>
+                  <Border Padding="12,6" MinHeight="44" Opacity="{Binding Opacity}" ToolTip.Tip="{Binding Tip}" Background="Transparent">
+                    <Grid ColumnDefinitions="60,110,72,72,72,96,96,96,*" ColumnSpacing="12">
+                      <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                        <TextBlock Classes="h2" Text="{Binding Label}" />
+                        <TextBlock Text="{Binding Kind}" FontFamily="{StaticResource DisplayFont}" FontSize="12" FontWeight="Bold" Foreground="{StaticResource SlowerBrush}" VerticalAlignment="Center" />
+                      </StackPanel>
+                      <ContentControl Grid.Column="1" Content="{Binding Time}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                      <TextBlock Grid.Column="2" Classes="data-s" Text="{Binding Start}" Foreground="{Binding StartBrush}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                      <TextBlock Grid.Column="3" Classes="data-s" Text="{Binding End}" Foreground="{Binding EndBrush}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                      <TextBlock Grid.Column="4" Classes="data-s" Text="{Binding Net}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                      <TextBlock Grid.Column="5" Classes="data-s" Text="{Binding Harvested}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                      <TextBlock Grid.Column="6" Classes="data-s" Text="{Binding Deployed}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                      <TextBlock Grid.Column="7" Classes="data-s" Text="{Binding LimitAt}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                      <ItemsControl Grid.Column="8" ItemsSource="{Binding Flags}" Margin="8,0,0,0" VerticalAlignment="Center">
+                        <ItemsControl.ItemsPanel>
+                          <ItemsPanelTemplate>
+                            <WrapPanel ItemSpacing="8" LineSpacing="6" />
+                          </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                      </ItemsControl>
+                    </Grid>
+                  </Border>
                 </DataTemplate>
-              </ListBox.ItemTemplate>
-            </ListBox>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
           </DockPanel>
         </Border>
-        <TextBlock Classes="body" Text="All values in MJ. START and END are the battery at the line, in the ERS charge bands. FLAT: full throttle with an empty battery. FULL: braking with a full battery, so that energy is lost. CAP: braking after the lap's harvest limit. FADE: deploying above the speed where the mode's power drops." TextWrapping="Wrap" />
+        <TextBlock Classes="body" Text="{Binding TableNote}" TextWrapping="Wrap" />
 
         <!-- Car model learned from every lap at this track -->
         <StackPanel Spacing="4" Margin="0,16,0,0" IsVisible="{Binding Model, Converter={x:Static ObjectConverters.IsNotNull}}">

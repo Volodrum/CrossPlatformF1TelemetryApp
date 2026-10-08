@@ -137,6 +137,45 @@ public class ErsPlanTests
         var qualifying = ErsOptimizer.Plan(simulator, PlanKind.Qualifying);
         Assert.True(qualifying.Plan.Seconds < race.Plan.Seconds); // spending everything is faster than holding it
     }
+
+    [Fact]
+    public void A_race_lap_deploys_what_it_harvests_so_every_lap_can_run_it()
+    {
+        var race = ErsOptimizer.Plan(Simulator(2_000_000), PlanKind.Race).Plan;
+
+        Assert.True(race.Deployed > 0);
+        Assert.Equal(race.Harvested, race.Deployed, 2 * ErsOptimizer.Quantum);
+        Assert.Equal(race.StartStore, race.EndStore, 2 * ErsOptimizer.Quantum);
+
+        var qualifying = ErsOptimizer.Plan(Simulator(2_000_000), PlanKind.Qualifying).Plan;
+        Assert.True(qualifying.Deployed > race.Deployed); // the full battery on top of the harvest
+        Assert.Equal(qualifying.StartStore - qualifying.EndStore, qualifying.Deployed - qualifying.Harvested, 1.0);
+    }
+
+    [Fact]
+    public void The_typical_lap_averages_the_session_and_plans_like_its_laps()
+    {
+        var low = LapProfile.From(DriveLap(1_000_000), GameFormat.F1_26)!;
+        var high = LapProfile.From(DriveLap(3_000_000), GameFormat.F1_26)!;
+        var typical = LapProfile.Average([low, high])!;
+
+        Assert.Equal(2, typical.LapCount);
+        Assert.Equal(0, typical.LapNumber);
+        Assert.Equal((low.StartStore + high.StartStore) / 2, typical.StartStore, 1.0);
+        Assert.Equal((low.ActualSeconds + high.ActualSeconds) / 2, typical.ActualSeconds, 1e-6);
+        Assert.Equal(Math.Min(low.Segments.Count, high.Segments.Count), typical.Segments.Count);
+        Assert.Equal(low.Segments.Count(s => s.FullThrottle), typical.Segments.Count(s => s.FullThrottle), 2.0);
+        Assert.Same(low, LapProfile.Average([low]));
+        Assert.Null(LapProfile.Average([]));
+
+        // Driven the same way, the average replays and plans like either lap.
+        var simulator = LapSimulator.Create(typical, Model)!;
+        Assert.True(ErsOptimizer.Check(simulator).IsTrusted);
+        var race = ErsOptimizer.Plan(simulator, PlanKind.Race);
+        var single = ErsOptimizer.Plan(LapSimulator.Create(low, Model)!, PlanKind.Race);
+        Assert.Equal(single.Plan.Seconds, race.Plan.Seconds, 0.1);
+    }
+
     [Fact]
     public void Live_replans_aim_for_the_steady_level_from_whatever_the_battery_has()
     {

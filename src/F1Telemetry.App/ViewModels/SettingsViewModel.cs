@@ -32,7 +32,6 @@ public sealed partial class OverlaySettingsViewModel : ObservableObject
         GapMode = settings.Current.TowerGap;
         DamagePopup = settings.Current.DamagePopup;
         DamagePopupSeconds = Math.Clamp(settings.Current.DamagePopupSeconds, 1, 60);
-        ErsReserveMj = settings.Current.ErsReserveMj;
         overlays.StateChanged += UpdatePosition;
         UpdatePosition();
     }
@@ -164,23 +163,6 @@ public sealed partial class OverlaySettingsViewModel : ObservableObject
         {
             _settings.Current.DamagePopupSeconds = Math.Clamp(value, 1, 60);
             _settings.SaveSoon();
-        }
-    }
-
-    /// <summary>Only the ERS PLAN overlay has a reserve.</summary>
-    public bool HasErsReserve => Kind == OverlayKind.ErsPlan;
-
-    public static IReadOnlyList<double> ErsReserves { get; } = [0, 0.5, 1.0];
-
-    /// <summary>Charge the overlay's race plans keep back for fights, MJ.</summary>
-    [ObservableProperty] public partial double ErsReserveMj { get; set; }
-
-    partial void OnErsReserveMjChanged(double value)
-    {
-        if (HasErsReserve && Math.Abs(_settings.Current.ErsReserveMj - value) > 1e-6)
-        {
-            _settings.Current.ErsReserveMj = value;
-            _settings.Save();
         }
     }
 

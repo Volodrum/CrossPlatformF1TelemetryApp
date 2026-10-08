@@ -17,6 +17,15 @@ public enum OverlayVisibility
     Always,
 }
 
+public enum EnergyUnit
+{
+    /// <summary>Megajoules.</summary>
+    Mj,
+
+    /// <summary>Percent of the battery's capacity.</summary>
+    Percent,
+}
+
 public enum OverlayKind
 {
     LapTiming,
@@ -75,8 +84,8 @@ public sealed class AppSettings
     public string StrategyPagePadButton { get; set; } = "";
     public string ErsPlanPadButton { get; set; } = "";
 
-    /// <summary>Charge the ERS PLAN overlay's race plans never deploy below, MJ.</summary>
-    public double ErsReserveMj { get; set; } = 0.5;
+    /// <summary>How the energy tab shows battery energy: megajoules or percent of the battery.</summary>
+    public EnergyUnit EnergyUnit { get; set; } = EnergyUnit.Mj;
 
     /// <summary>What the sector box's gap chips compare against.</summary>
     public SectorReference SectorBoxReference { get; set; } = SectorReference.SessionBest;

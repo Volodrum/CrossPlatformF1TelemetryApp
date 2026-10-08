@@ -22,23 +22,25 @@ public sealed record LegendEntry(string Label, IBrush Swatch, double Thickness =
 /// <summary>A straight-line fit of the car model, as a tile.</summary>
 public sealed record FitTile(string Title, string DragArea, string Efficiency, string Quality);
 
-/// <summary>One lap in the energy table.</summary>
-public sealed record EnergyLapRow(LapEnergy Energy, LapRecord? Lap)
+/// <summary>One lap in the energy table; <paramref name="InSession"/> when it is one of the laps the session analysis averages.</summary>
+public sealed record EnergyLapRow(LapEnergy Energy, LapRecord? Lap, EnergyUnit Unit, bool InSession)
 {
     public int LapNumber => Energy.LapNumber;
     public string Label => $"L{LapNumber}";
     public Chip Time => Lap is not { HasTime: true } lap ? Chip.Empty
         : lap.IsBestLap ? Chip.Filled(TimeFormat.Lap(lap.LapTimeMs), Palette.SessionBest)
         : Chip.Plain(TimeFormat.Lap(lap.LapTimeMs), Palette.TextHi);
-    public string Start => EnergyText.Mj(Energy.StartStore);
+    public string Start => EnergyText.Format(Energy.StartStore, Unit);
     public IBrush StartBrush => EnergyText.Band(Energy.StartStore);
-    public string End => EnergyText.Mj(Energy.EndStore);
+    public string End => EnergyText.Format(Energy.EndStore, Unit);
     public IBrush EndBrush => EnergyText.Band(Energy.EndStore);
-    public string Net => EnergyText.SignedMj(Energy.NetChange);
-    public string Harvested => EnergyText.Mj(Energy.Harvested);
-    public string Deployed => EnergyText.Mj(Energy.Deployed);
+    public string Net => EnergyText.Signed(Energy.NetChange, Unit);
+    public string Harvested => EnergyText.Format(Energy.Harvested, Unit);
+    public string Deployed => EnergyText.Format(Energy.Deployed, Unit);
     public string LimitAt => Energy.LimitReachedAt is { } d ? EnergyText.Km(d) : "—";
     public IReadOnlyList<Chip> Flags { get; } = EnergyText.Flags(Energy);
+    public double Opacity => InSession ? 1 : 0.45;
+    public string Tip => InSession ? "One of the laps the session analysis is built on." : "Not a typical lap: left out of the session analysis and the race plan.";
     public string Kind => Lap?.LapType switch
     {
         LapType.Pit => "PIT",
@@ -54,8 +56,24 @@ public static class EnergyText
     public static string Mj(double joules) => (joules / 1_000_000).ToString("0.00", CultureInfo.InvariantCulture);
 
     /// <summary>+0.42 / −0.42, with a real minus sign.</summary>
-    public static string SignedMj(double joules) =>
-        (joules < -5_000 ? "−" : "+") + Math.Abs(joules / 1_000_000).ToString("0.00", CultureInfo.InvariantCulture);
+    public static string SignedMj(double joules) => Signed(joules, EnergyUnit.Mj);
+
+    /// <summary>An energy as a number in <paramref name="unit"/>: 2.40 (MJ) or 60 (% of the battery).</summary>
+    public static string Format(double joules, EnergyUnit unit) => unit == EnergyUnit.Percent
+        ? (joules / EnergyAnalyzer.Capacity * 100).ToString("0", CultureInfo.InvariantCulture)
+        : Mj(joules);
+
+    /// <summary><see cref="Format"/> with a sign: +0.42 / −0.42, or +11 / −11.</summary>
+    public static string Signed(double joules, EnergyUnit unit) => (joules < -5_000 ? "−" : "+") + Format(Math.Abs(joules), unit);
+
+    /// <summary><see cref="Format"/> with the unit: 2.40 MJ or 60%.</summary>
+    public static string WithUnit(double joules, EnergyUnit unit) =>
+        unit == EnergyUnit.Percent ? Format(joules, unit) + "%" : Format(joules, unit) + " MJ";
+
+    public static string Unit(EnergyUnit unit) => unit == EnergyUnit.Percent ? "%" : "MJ";
+
+    /// <summary>Multiplier from J to chart values in <paramref name="unit"/>.</summary>
+    public static double Scale(EnergyUnit unit) => unit == EnergyUnit.Percent ? 100 / EnergyAnalyzer.Capacity : 1e-6;
 
     public static string Km(double metres) => (metres / 1000).ToString("0.00", CultureInfo.InvariantCulture) + " km";
 
@@ -77,56 +95,71 @@ public static class EnergyText
         }),
     ];
 
-    public static string Explain(EnergyIssue issue)
+    /// <summary>A kind of waste added up over the session: <paramref name="seconds"/> in all, on <paramref name="laps"/> laps.</summary>
+    public static string Explain(EnergyWaste kind, double seconds, int laps)
     {
-        var seconds = issue.Seconds.ToString("0.0", CultureInfo.InvariantCulture);
-        return issue.Kind switch
+        var total = seconds.ToString("0.0", CultureInfo.InvariantCulture) + " s";
+        var on = laps == 1 ? "1 lap" : $"{laps} laps";
+        return kind switch
         {
-            EnergyWaste.Flat => $"FLAT · {seconds} s at full throttle with an empty battery, so no electric power.",
-            EnergyWaste.Full => $"FULL · {seconds} s braking with a full battery: that energy could not be stored.",
-            EnergyWaste.Fade => $"FADE · {seconds} s deploying above the speed where the mode's power drops (see the car model).",
-            _ => $"CAP · {seconds} s braking after the harvest limit: nothing more could be harvested this lap.",
+            EnergyWaste.Flat => $"FLAT · {total} on {on} at full throttle with an empty battery, so no electric power.",
+            EnergyWaste.Full => $"FULL · {total} on {on} braking with a full battery: that energy could not be stored.",
+            EnergyWaste.Fade => $"FADE · {total} on {on} deploying above the speed where the mode's power drops (see the car model).",
+            _ => $"CAP · {total} on {on} braking after the harvest limit: nothing more could be harvested on those laps.",
         };
     }
 }
 
 /// <summary>
-/// Energy tab: for every lap of the selected recording, what the battery did (start and end level, MJ harvested and
-/// deployed, where the harvest limit was reached, wasted energy), and for the chosen lap a battery map on the track,
-/// the battery trace along the lap with the deploy modes under it, and a summary.
+/// Energy tab: what the battery did over the selected session. The map, the battery trace and the summary describe the
+/// session as a whole: its typical lap (the laps without pit stops, safety cars or big mistakes, averaged), or the ERS
+/// plan built on it. The table lists what the battery did on every lap.
 /// </summary>
 public sealed partial class EnergyViewModel : ObservableObject
 {
     private readonly TelemetryRuntime runtime;
+    private readonly SettingsService settings;
     private int _loadVersion;
-    private int _lapVersion;
-    private IReadOnlyList<TelemetrySample>? _lapSamples;
-    private LapEnergy? _lapEnergy;
 
-    public EnergyViewModel(TelemetryRuntime runtime, EnergyPlanViewModel plan)
+    // The loaded session: per-lap energy, the laps it is analysed on, and their average along the lap.
+    private IReadOnlyList<LapEnergy> _energies = [];
+    private IReadOnlyList<LapRecord> _records = [];
+    private IReadOnlyList<TelemetrySample> _energySamples = [];
+    private HashSet<int> _sessionLaps = [];
+    private TypicalLap? _typical;
+
+    // The racing line the map draws on: the session's fastest lap (or a typical one).
+    private IReadOnlyList<TelemetrySample>? _line;
+
+    public EnergyViewModel(TelemetryRuntime runtime, EnergyPlanViewModel plan, SettingsService settings)
     {
         this.runtime = runtime;
+        this.settings = settings;
         Plan = plan;
-        plan.PlanChanged += _ => ShowLapGraphics();
+        Unit = settings.Current.EnergyUnit;
+        Plan.Unit = Unit;
+        plan.PlanChanged += _ => ShowGraphics();
     }
 
-    /// <summary>The ERS plan for the chosen lap.</summary>
+    /// <summary>The ERS plan for the session.</summary>
     public EnergyPlanViewModel Plan { get; }
 
     [ObservableProperty] public partial RecordingInfo? Recording { get; set; }
     [ObservableProperty] public partial string Header { get; set; } = "Select a recording";
     [ObservableProperty] public partial bool HasData { get; set; }
     [ObservableProperty] public partial string EmptyText { get; set; } = "Select a recording in the sidebar.";
-    [ObservableProperty] public partial EnergyLapRow? SelectedLap { get; set; }
     [ObservableProperty] public partial MapColoring Layer { get; set; } = MapColoring.DeployMode;
+    [ObservableProperty] public partial EnergyUnit Unit { get; set; }
 
-    /// <summary>The map shows the plan instead of the lap as driven.</summary>
-    [ObservableProperty] public partial bool ShowPlanOnMap { get; set; }
+    /// <summary>The map and trace show the plan (when there is one) rather than the session as driven.</summary>
+    [ObservableProperty] public partial bool ShowPlanOnMap { get; set; } = true;
     [ObservableProperty] public partial TrackOutline? Outline { get; set; }
     [ObservableProperty] public partial IReadOnlyList<TelemetrySample>? Samples { get; set; }
     [ObservableProperty] public partial ChartModel? Trace { get; set; }
-    [ObservableProperty] public partial string LapTitle { get; set; } = "";
+    [ObservableProperty] public partial string MapTitle { get; set; } = "";
     [ObservableProperty] public partial string TrackName { get; set; } = "";
+    [ObservableProperty] public partial string SessionTitle { get; set; } = "";
+    [ObservableProperty] public partial string SessionNote { get; set; } = "";
     [ObservableProperty] public partial string StartLevel { get; set; } = "—";
     [ObservableProperty] public partial IBrush StartBrush { get; set; } = Palette.TextHi;
     [ObservableProperty] public partial string EndLevel { get; set; } = "—";
@@ -156,6 +189,15 @@ public sealed partial class EnergyViewModel : ObservableObject
     public bool IsModeLayer => Layer == MapColoring.DeployMode;
     public bool IsBatteryLayer => Layer == MapColoring.Battery;
     public bool HasIssues => Issues.Count > 0;
+    public bool IsMj => Unit == EnergyUnit.Mj;
+    public bool IsPercent => Unit == EnergyUnit.Percent;
+    public string UnitLabel => EnergyText.Unit(Unit);
+
+    /// <summary>The table's footnote, in the current unit.</summary>
+    public string TableNote => $"All values in {(IsPercent ? "% of the battery" : "MJ")}. Faded laps are left out of the session analysis "
+        + "(pit and safety car laps, and laps more than 3% off the median). START and END are the battery at the line, in the ERS charge bands. "
+        + "FLAT: full throttle with an empty battery. FULL: braking with a full battery, so that energy is lost. CAP: braking after the lap's harvest limit. "
+        + "FADE: deploying above the speed where the mode's power drops.";
 
     partial void OnLayerChanged(MapColoring value)
     {
@@ -164,12 +206,34 @@ public sealed partial class EnergyViewModel : ObservableObject
         FillLegend();
     }
 
+    partial void OnUnitChanged(EnergyUnit value)
+    {
+        OnPropertyChanged(nameof(IsMj));
+        OnPropertyChanged(nameof(IsPercent));
+        OnPropertyChanged(nameof(UnitLabel));
+        OnPropertyChanged(nameof(TableNote));
+        Plan.Unit = value;
+        if (settings.Current.EnergyUnit != value)
+        {
+            settings.Current.EnergyUnit = value;
+            settings.SaveSoon();
+        }
+
+        if (HasData)
+        {
+            FillRows();
+            FillSummary();
+            FillLegend();
+            ShowGraphics();
+        }
+    }
+
     public bool IsDrivenOnMap => !ShowPlanOnMap;
 
     partial void OnShowPlanOnMapChanged(bool value)
     {
         OnPropertyChanged(nameof(IsDrivenOnMap));
-        ShowLapGraphics();
+        ShowGraphics();
     }
 
     [RelayCommand]
@@ -178,7 +242,8 @@ public sealed partial class EnergyViewModel : ObservableObject
     [RelayCommand]
     private void SetMapSource(string source) => ShowPlanOnMap = source == "plan";
 
-    partial void OnSelectedLapChanged(EnergyLapRow? value) => _ = ShowLapAsync(value);
+    [RelayCommand]
+    private void SetUnit(EnergyUnit unit) => Unit = unit;
 
     /// <summary>Shows <paramref name="recording"/>, unless it is already shown and finished (a live one is reloaded).</summary>
     public async Task LoadAsync(RecordingInfo? recording)
@@ -195,6 +260,7 @@ public sealed partial class EnergyViewModel : ObservableObject
     public async Task RefreshAsync()
     {
         var version = ++_loadVersion;
+        Plan.Clear();
         if (Recording is not { } recording)
         {
             Clear("Select a recording in the sidebar.");
@@ -225,19 +291,80 @@ public sealed partial class EnergyViewModel : ObservableObject
             return;
         }
 
-        var previous = SelectedLap?.LapNumber;
-        Laps.Clear();
-        foreach (var energy in energies)
+        // The laps the session is analysed on: its typical laps, or every lap when none is timed.
+        var withEnergy = energies.Select(e => e.LapNumber).ToHashSet();
+        var representative = SessionLaps.Representative(laps).Where(l => withEnergy.Contains(l.LapNumber)).ToList();
+        var sessionLaps = representative.Count > 0 ? representative.Select(l => l.LapNumber).ToHashSet() : withEnergy;
+        var fastest = SessionLaps.Fastest(laps.Where(l => withEnergy.Contains(l.LapNumber)));
+        var line = await runtime.Store.GetLapSamplesAsync(recording.Id, fastest?.LapNumber ?? sessionLaps.Min());
+        if (version != _loadVersion)
         {
-            Laps.Add(new EnergyLapRow(energy, laps.FirstOrDefault(l => l.LapNumber == energy.LapNumber)));
+            return;
         }
 
+        (_energies, _records, _energySamples, _sessionLaps, _line) = (energies, laps, samples, sessionLaps, line);
+        _typical = SessionLaps.Typical(samples, sessionLaps);
         HasData = true;
+        FillRows();
+        FillSummary();
         FillLegend();
-        SelectedLap = Laps.FirstOrDefault(r => r.LapNumber == previous)
-                      ?? Laps.FirstOrDefault(r => r.Lap?.IsBestLap == true)
-                      ?? Laps.FirstOrDefault(r => r.Lap?.HasTime == true)
-                      ?? Laps[0];
+        ShowGraphics();
+
+        Plan.Clear(loading: true);
+        var (inputs, unavailable) = await PlanInputsAsync(recording, model, representative, fastest, line);
+        if (version == _loadVersion)
+        {
+            await Plan.SetSessionAsync(inputs, unavailable);
+        }
+    }
+
+    /// <summary>
+    /// The laps the plans are built on: race plans on the session's typical laps averaged, qualifying plans on its fastest
+    /// lap. Null, with the reason, when the session can't be planned.
+    /// </summary>
+    private async Task<(PlanInputs? Inputs, string Unavailable)> PlanInputsAsync(RecordingInfo recording, ErsCarModel? model,
+        IReadOnlyList<LapRecord> representative, LapRecord? fastest, IReadOnlyList<TelemetrySample> fastestSamples)
+    {
+        const string reimport = "Recordings made before the app stored engine power can get it from their raw capture: close the app and run "
+            + "f1tel reimport --db <telemetry.duckdb> <capture.f1rec> --replace (see the README). New recordings have it.";
+        if (model is not { HasPowerData: true })
+        {
+            return (null, "No plan: no lap at this track has ICE and MGU-K power data, so there is no car model to plan with. " + reimport);
+        }
+
+        if (model.StraightLine.Count == 0 || model.Deploy.Curves.Count == 0)
+        {
+            return (null, "No plan yet: the car model needs a straight-line fit and a deploy map first. Record a few more laps at this track.");
+        }
+
+        if (fastest is null)
+        {
+            return (null, "No plan: this session has no timed lap to build one on.");
+        }
+
+        var profiles = new List<(LapRecord Lap, LapProfile Profile)>();
+        foreach (var lap in representative)
+        {
+            var samples = lap.LapNumber == fastest.LapNumber ? fastestSamples : await runtime.Store.GetLapSamplesAsync(recording.Id, lap.LapNumber);
+            if (await Task.Run(() => LapProfile.From(samples, recording.Format, lap.LapTimeMs / 1000.0)) is { } profile)
+            {
+                profiles.Add((lap, profile));
+            }
+        }
+
+        var qualifying = LapProfile.From(fastestSamples, recording.Format, fastest.LapTimeMs / 1000.0);
+        var race = await Task.Run(() => LapProfile.Average([.. profiles.Select(p => p.Profile)]));
+        if (race is null || qualifying is null)
+        {
+            return (null, "No plan: this session has no ICE and MGU-K power data. " + reimport);
+        }
+
+        var average = TimeFormat.Lap(profiles.Average(p => (double)p.Lap.LapTimeMs));
+        var raceBasis = profiles.Count == 1
+            ? $"Built on the session's only typical lap, L{profiles[0].Lap.LapNumber} · {average}."
+            : $"Built on the session's typical lap: {profiles.Count} laps averaged ({average} on average).";
+        var qualifyingBasis = $"Built on the session's fastest lap, L{fastest.LapNumber} · {TimeFormat.Lap(fastest.LapTimeMs)}.";
+        return (new PlanInputs(model, race, raceBasis, qualifying, qualifyingBasis), "");
     }
 
     /// <summary>The car model learned from every lap at this track: deploy map, energy along the lap, straight-line fits.</summary>
@@ -293,114 +420,136 @@ public sealed partial class EnergyViewModel : ObservableObject
         Modes.Clear();
         Issues.Clear();
         OnPropertyChanged(nameof(HasIssues));
-        SelectedLap = null;
+        (_energies, _records, _energySamples, _sessionLaps, _typical, _line) = ([], [], [], [], null, null);
         Samples = null;
         Trace = null;
         HasData = false;
         EmptyText = reason;
     }
 
-    private async Task ShowLapAsync(EnergyLapRow? row)
+    private void FillRows()
     {
-        var version = ++_lapVersion;
-        if (row is null || Recording is not { } recording)
+        Laps.Clear();
+        foreach (var energy in _energies)
+        {
+            Laps.Add(new EnergyLapRow(energy, _records.FirstOrDefault(l => l.LapNumber == energy.LapNumber), Unit, _sessionLaps.Contains(energy.LapNumber)));
+        }
+    }
+
+    /// <summary>The session's laps added up: battery at the line, energy per lap, deploy modes and waste.</summary>
+    private void FillSummary()
+    {
+        var laps = _energies.Where(e => _sessionLaps.Contains(e.LapNumber)).ToList();
+        if (laps.Count == 0)
         {
             return;
         }
 
-        var samples = await runtime.Store.GetLapSamplesAsync(recording.Id, row.LapNumber);
-        if (version != _lapVersion)
-        {
-            return;
-        }
+        var unit = Unit;
+        SessionTitle = laps.Count == 1 ? "SESSION · 1 LAP" : $"SESSION · {laps.Count} LAPS";
+        SessionNote = laps.Count == _energies.Count
+            ? "Every lap of the session, averaged."
+            : $"{laps.Count} of {_energies.Count} laps, averaged: pit and safety car laps, and laps more than 3% off the median, are left out.";
 
-        var energy = row.Energy;
-        LapTitle = $"Lap {row.LapNumber}" + (row.Lap is { HasTime: true } lap ? $" · {TimeFormat.Lap(lap.LapTimeMs)}" : "");
-        StartLevel = EnergyText.Mj(energy.StartStore);
-        StartBrush = EnergyText.Band(energy.StartStore);
-        EndLevel = EnergyText.Mj(energy.EndStore);
-        EndBrush = EnergyText.Band(energy.EndStore);
-        Harvested = EnergyText.Mj(energy.Harvested);
-        HarvestNote = energy.HarvestLimit <= 0 ? "No harvest limit reported (F1 25 format)."
-            : energy.LimitReachedAt is { } at ? $"Limit {EnergyText.Mj(energy.HarvestLimit)} MJ, reached at {EnergyText.Km(at)}."
-            : $"Limit {EnergyText.Mj(energy.HarvestLimit)} MJ, not reached.";
-        Deployed = EnergyText.Mj(energy.Deployed);
-        DeployNote = $"Battery {EnergyText.Mj(energy.MinStore)}–{EnergyText.Mj(energy.MaxStore)} MJ over the lap, {EnergyText.SignedMj(energy.NetChange)} MJ net.";
+        var start = laps.Average(e => e.StartStore);
+        var end = laps.Average(e => e.EndStore);
+        (StartLevel, StartBrush, EndLevel, EndBrush) = (EnergyText.Format(start, unit), EnergyText.Band(start), EnergyText.Format(end, unit), EnergyText.Band(end));
+        Harvested = EnergyText.Format(laps.Average(e => e.Harvested), unit);
+        Deployed = EnergyText.Format(laps.Average(e => e.Deployed), unit);
+        DeployNote = $"Session total: {EnergyText.WithUnit(laps.Sum(e => e.Harvested), unit)} harvested, {EnergyText.WithUnit(laps.Sum(e => e.Deployed), unit)} deployed. "
+            + $"The battery moved {EnergyText.Signed(end - start, unit)}{(unit == EnergyUnit.Percent ? "%" : " MJ")} per lap on average.";
+
+        var limited = laps.Where(e => e.LimitReachedAt is not null).ToList();
+        HarvestNote = laps.All(e => e.HarvestLimit <= 0) ? "No harvest limit reported (F1 25 format)."
+            : limited.Count == 0 ? $"Limit {EnergyText.WithUnit(laps.Average(e => e.HarvestLimit), unit)} per lap, never reached."
+            : $"Limit {EnergyText.WithUnit(laps.Average(e => e.HarvestLimit), unit)} per lap, reached on {limited.Count} of {laps.Count} laps, "
+              + $"at {EnergyText.Km(limited.Average(e => e.LimitReachedAt!.Value))} on average.";
 
         Modes.Clear();
-        foreach (var group in energy.Modes.GroupBy(m => m.Mode).OrderBy(g => g.Key))
+        foreach (var group in laps.SelectMany(e => e.Modes).GroupBy(m => m.Mode).OrderBy(g => g.Key))
         {
-            var metres = group.Sum(m => m.To - m.From);
+            var metres = group.Sum(m => m.To - m.From) / laps.Count;
             Modes.Add(new ModeShare(DeployModes.Letter(group.Key), DeployModes.Name(group.Key).ToUpperInvariant(), EnergyText.Km(metres),
                 Palette.DeployMode(group.Key), Palette.OnDeployMode(group.Key)));
         }
 
         Issues.Clear();
-        foreach (var issue in energy.Issues)
+        foreach (var kind in laps.SelectMany(e => e.Issues).GroupBy(i => i.Kind).OrderBy(g => g.Key))
         {
-            Issues.Add(EnergyText.Explain(issue));
+            var on = laps.Count(e => e.Issues.Any(i => i.Kind == kind.Key));
+            Issues.Add(EnergyText.Explain(kind.Key, kind.Sum(i => i.Seconds), on));
         }
 
         OnPropertyChanged(nameof(HasIssues));
-        _lapSamples = samples;
-        _lapEnergy = energy;
-        Plan.Clear();
-        ShowLapGraphics();
-
-        // Plan the lap on the track's car model (in the background; the plan's result redraws the map and trace).
-        var reference = Model is { HasPowerData: true }
-            ? LapProfile.From(samples, recording.Format, row.Lap is { HasTime: true } timed ? timed.LapTimeMs / 1000.0 : null)
-            : null;
-        await Plan.SetLapAsync(reference, Model, reference?.ActualSeconds ?? 0);
     }
 
-    /// <summary>The map and trace for the chosen lap, with the plan when there is one.</summary>
-    private void ShowLapGraphics()
+    /// <summary>The map and trace: the session as driven, or the plan when it is chosen and there is one.</summary>
+    private void ShowGraphics()
     {
-        if (_lapSamples is not { } samples || _lapEnergy is not { } energy)
+        if (!HasData || _line is not { } line || _typical is not { } typical)
         {
             return;
         }
 
         var plan = Plan.Result?.Plan;
-        Samples = ShowPlanOnMap && plan is not null ? PlannedSamples(samples, plan) : samples;
-        Trace = BuildTrace(samples, energy, plan);
+        var onPlan = ShowPlanOnMap && plan is not null;
+        Samples = onPlan
+            ? Recolour(line, d => Math.Clamp((int)(d / LapProfile.Step), 0, plan!.Modes.Length - 1), i => plan!.Modes[i], i => plan!.Stores[i])
+            : Recolour(line, typical.IndexAt, i => typical.Mode[i], i => typical.Level[i]);
+        MapTitle = onPlan
+            ? $"{(plan!.Kind == PlanKind.Race ? "RACE" : "QUALIFYING")} PLAN · {Plan.Predicted}"
+            : $"YOUR SESSION · {(typical.LapCount == 1 ? "1 LAP" : $"{typical.LapCount} LAPS AVERAGED")}";
+        Trace = BuildTrace(plan);
     }
 
-    /// <summary>The lap's racing line with the plan's mode and battery level at every point.</summary>
-    private static List<TelemetrySample> PlannedSamples(IReadOnlyList<TelemetrySample> samples, LapPlan plan) =>
+    /// <summary>The racing line with a deploy mode and battery level at every point (by the index of its distance).</summary>
+    private static List<TelemetrySample> Recolour(IReadOnlyList<TelemetrySample> line, Func<double, int> index, Func<int, int> mode, Func<int, double> level) =>
     [
-        .. samples.Where(s => s.LapDistance >= 0).Select(s =>
+        .. line.Where(s => s.LapDistance >= 0).Select(s =>
         {
-            var i = Math.Clamp((int)(s.LapDistance / LapProfile.Step), 0, plan.Modes.Length - 1);
+            var i = index(s.LapDistance);
             return new TelemetrySample
             {
                 LapNumber = s.LapNumber, SessionTime = s.SessionTime, LapDistance = s.LapDistance, WorldPosX = s.WorldPosX, WorldPosZ = s.WorldPosZ,
-                ErsDeployMode = plan.Modes[i], ErsStoreEnergy = plan.Stores[i],
+                ErsDeployMode = mode(i), ErsStoreEnergy = level(i),
             };
         }),
     ];
 
     /// <summary>
-    /// Battery level along the lap, the deploy modes under it, and where the harvest limit was reached; with a plan, its
-    /// battery level dashed and its modes on a second row.
+    /// Battery along the lap: every lap of the session faintly, their average, and the plan dashed when there is one; the
+    /// session's deploy modes (and the plan's) under the trace.
     /// </summary>
-    private static ChartModel BuildTrace(IReadOnlyList<TelemetrySample> samples, LapEnergy energy, LapPlan? plan)
+    private ChartModel BuildTrace(LapPlan? plan)
     {
-        var lap = samples.Where(s => s.LapDistance >= 0).ToList();
-        List<ChartSeries> series = [new ChartSeries("Your lap", "#F4F6F9", [.. lap.Select(s => s.LapDistance)], [.. lap.Select(s => s.ErsStoreEnergy / 1_000_000)])];
-        IReadOnlyList<ChartMarker> markers = energy.LimitReachedAt is { } at ? [new ChartMarker(at, "#4DB5FF", "Harvest limit reached")] : [];
-        var driven = Row(energy.Modes);
-        if (plan is null)
+        var scale = EnergyText.Scale(Unit);
+        var unit = EnergyText.Unit(Unit);
+        var typical = _typical!;
+        var series = new List<ChartSeries>();
+        var first = true;
+        foreach (var lap in _energySamples.Where(s => s.LapDistance >= 0 && _sessionLaps.Contains(s.LapNumber)).GroupBy(s => s.LapNumber))
         {
-            return new ChartModel("Battery (MJ) · deploy mode under the trace", series, Markers: markers,
-                Timeline: driven.Count > 0 ? [new ChartTimelineRow("", "#C3CAD5", driven, [])] : null);
+            series.Add(new ChartSeries(first ? "Each lap" : "", "#4A5363", [.. lap.Select(s => s.LapDistance)], [.. lap.Select(s => s.ErsStoreEnergy * scale)],
+                LineWidth: 1, InLegend: first));
+            first = false;
         }
 
-        series.Add(new ChartSeries("Plan", "#4DB5FF", [.. Enumerable.Range(0, plan.Stores.Length).Select(i => (i + 1) * LapProfile.Step)],
-            [.. plan.Stores.Select(j => j / 1_000_000)], Line: ChartLine.Dashed));
-        return new ChartModel("Battery (MJ) · your deploy modes and the plan's under the trace", series, Markers: markers,
-            Timeline: [new ChartTimelineRow("YOU", "#C3CAD5", driven, []), new ChartTimelineRow("PLAN", "#4DB5FF", Row(PlanRuns(plan)), [])]);
+        series.Add(new ChartSeries("Session average", "#F4F6F9", [.. Enumerable.Range(0, typical.Level.Length).Select(i => i * typical.Step)],
+            [.. typical.Level.Select(j => j * scale)]));
+
+        var limits = _energies.Where(e => _sessionLaps.Contains(e.LapNumber) && e.LimitReachedAt is not null).Select(e => e.LimitReachedAt!.Value).ToList();
+        IReadOnlyList<ChartMarker> markers = limits.Count > 0 ? [new ChartMarker(limits.Average(), "#4DB5FF", "Harvest limit reached (average)")] : [];
+        var driven = Row(typical.Runs());
+        if (plan is null)
+        {
+            return new ChartModel($"Battery ({unit}) over the lap · every lap of the session and their average · deploy modes under the trace", series,
+                Markers: markers, Timeline: driven.Count > 0 ? [new ChartTimelineRow("YOU", "#C3CAD5", driven, [])] : null);
+        }
+
+        series.Add(new ChartSeries($"{(plan.Kind == PlanKind.Race ? "Race" : "Qualifying")} plan", "#4DB5FF",
+            [.. Enumerable.Range(0, plan.Stores.Length).Select(i => (i + 1) * LapProfile.Step)], [.. plan.Stores.Select(j => j * scale)], Line: ChartLine.Dashed));
+        return new ChartModel($"Battery ({unit}) over the lap · the session and the plan · your deploy modes and the plan's under the trace", series,
+            Markers: markers, Timeline: [new ChartTimelineRow("YOU", "#C3CAD5", driven, []), new ChartTimelineRow("PLAN", "#4DB5FF", Row(PlanRuns(plan)), [])]);
 
         static List<ChartTimelineSegment> Row(IEnumerable<ModeRun> runs) =>
         [
@@ -436,6 +585,12 @@ public sealed partial class EnergyViewModel : ObservableObject
             {
                 Legend.Add(new LegendEntry($"{DeployModes.Letter(mode)} · {DeployModes.Name(mode).ToUpperInvariant()}", Palette.DeployMode(mode)));
             }
+        }
+        else if (Unit == EnergyUnit.Percent)
+        {
+            Legend.Add(new LegendEntry("50% AND UP", Palette.Faster));
+            Legend.Add(new LegendEntry("20–50%", Palette.Slower));
+            Legend.Add(new LegendEntry("BELOW 20%", Palette.Danger));
         }
         else
         {

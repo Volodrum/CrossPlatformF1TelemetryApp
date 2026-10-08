@@ -5,7 +5,10 @@ public enum PlanKind
     /// <summary>One fast lap: starts with a full battery, may end empty.</summary>
     Qualifying,
 
-    /// <summary>A lap to repeat: ends with at least the charge it started with.</summary>
+    /// <summary>
+    /// A lap to repeat every lap of the race: deploys what it harvests, so it ends with the charge it started with and the
+    /// next lap can run the same plan.
+    /// </summary>
     Race,
 }
 
@@ -22,7 +25,13 @@ public sealed record ZonePlan(int Number, double From, double To, DeployOption C
 /// A deploy plan for a lap: a <see cref="DeployOption"/> per zone, with the simulated lap time and the battery level
 /// and mode of every segment.
 /// </summary>
-public sealed record LapPlan(PlanKind Kind, double StartStore, double EndStore, double Seconds, IReadOnlyList<ZonePlan> Zones, int[] Modes, double[] Stores);
+/// <param name="Deployed">Energy the MGU-K deploys over the lap, J.</param>
+public sealed record LapPlan(PlanKind Kind, double StartStore, double EndStore, double Seconds, IReadOnlyList<ZonePlan> Zones, int[] Modes, double[] Stores,
+    double Deployed = 0)
+{
+    /// <summary>Energy that goes into the battery over the lap, J (harvest that doesn't fit in a full battery is lost).</summary>
+    public double Harvested => EndStore - StartStore + Deployed;
+}
 
 /// <summary>
 /// The reference lap replayed through the simulator. <see cref="DrivenSeconds"/> uses the MGU-K output it really had:
@@ -213,7 +222,7 @@ public static class ErsOptimizer
         var zones = new List<ZonePlan>();
         var store = start * Quantum;
         var driven = simulator.Lap.StartStore;
-        double seconds = 0;
+        double seconds = 0, deployed = 0;
         for (var k = 0; k < stages.Count; k++)
         {
             var stage = stages[k];
@@ -224,6 +233,7 @@ public static class ErsOptimizer
             driven = reference.ExitStore;
             store = result.ExitStore;
             seconds += result.Seconds;
+            deployed += result.Deployed;
             if (stage.HasZone)
             {
                 zones.Add(new ZonePlan(zones.Count + 1, stage.From * LapProfile.Step, stage.DeployEnd * LapProfile.Step, option, entry, store,
@@ -231,7 +241,7 @@ public static class ErsOptimizer
             }
         }
 
-        return new LapPlan(kind, start * Quantum, store, seconds, zones, modes, stores);
+        return new LapPlan(kind, start * Quantum, store, seconds, zones, modes, stores, deployed);
     }
 
     /// <summary>The reference lap with its own modes, from its own starting level.</summary>

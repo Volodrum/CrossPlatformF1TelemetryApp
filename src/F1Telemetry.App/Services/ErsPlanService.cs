@@ -24,32 +24,20 @@ public sealed class ErsPlanService
 
     private readonly TelemetryRuntime _runtime;
     private readonly LiveDataHub _hub;
-    private readonly SettingsService _settings;
     private readonly ILogger _log;
     private (GameFormat Format, int TrackId)? _track;
     private int _sessionType = -1;
-    private double _reserveMj;
     private ErsPlanner? _planner;
     private double _steadyStart;
     private int _version;
 
-    public ErsPlanService(TelemetryRuntime runtime, LiveDataHub hub, SettingsService settings, ILogger<ErsPlanService> log)
+    public ErsPlanService(TelemetryRuntime runtime, LiveDataHub hub, ILogger<ErsPlanService> log)
     {
         _runtime = runtime;
         _hub = hub;
-        _settings = settings;
         _log = log;
-        _reserveMj = settings.Current.ErsReserveMj;
         hub.SessionChanged += OnSession;
         hub.LapCompleted += lap => _ = ReplanAsync();
-        settings.Changed += s =>
-        {
-            if (Math.Abs(s.ErsReserveMj - _reserveMj) > 1e-6 && _track is { } track)
-            {
-                _reserveMj = s.ErsReserveMj;
-                _ = LoadAsync(track);
-            }
-        };
     }
 
     public PlanKind Kind { get; private set; } = PlanKind.Race;
@@ -129,7 +117,7 @@ public sealed class ErsPlanService
                 return;
             }
 
-            if (reference is not { } found || LapSimulator.Create(found.Lap, model, _reserveMj * ErsOptimizer.OneMj) is not { } simulator)
+            if (reference is not { } found || LapSimulator.Create(found.Lap, model) is not { } simulator)
             {
                 SetStatus("No clean lap with power data at this track yet.");
                 return;
