@@ -57,6 +57,12 @@ internal static class Schema
             .. TelemetryColumns.AddColumnsSql("engine_power_ice", "engine_power_mguk", "ers_harvest_limit", "active_aero_available", "overtake_available"),
             SetupColumns.CreateTableSql,
         ],
+
+        // v4: weather and temperatures with each recorded setup; the setup library
+        [
+            .. SetupColumns.AddConditionsSql,
+            SetupColumns.CreateLibrarySql,
+        ],
     ];
 
     public static int LatestVersion => Migrations.Length;

@@ -8,7 +8,7 @@ namespace F1Telemetry.App;
 
 /// <summary>
 /// Command-line switches:
-/// <c>--mode f1-25|f1-26</c>, <c>--source udp|demo|replay=&lt;file&gt;</c>, <c>--record</c>, <c>--tab live|laps|lapdetail|strategy|energy|compare|position|settings</c>,
+/// <c>--mode f1-25|f1-26</c>, <c>--source udp|demo|replay=&lt;file&gt;</c>, <c>--record</c>, <c>--tab live|laps|lapdetail|strategy|energy|compare|position|setups|settings</c>,
 /// <c>--select-latest</c> (open the newest recording), <c>--lap &lt;n&gt;</c> (open that lap of it),
 /// <c>--preview-overlays</c> (with <c>--tab settings</c>: overlay preview on), <c>--exit-after &lt;seconds&gt;</c> (unattended smoke
 /// tests; exits cleanly so the store is flushed).

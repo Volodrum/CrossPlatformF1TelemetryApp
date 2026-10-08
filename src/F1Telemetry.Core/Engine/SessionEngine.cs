@@ -520,7 +520,8 @@ public sealed class SessionEngine
             return;
         }
 
-        CurrentSetup = new SetupChange(_currentLap, packet.Header.SessionTime, setup);
+        var conditions = _sessionData is { } d ? new SessionConditions(d.Weather, d.TrackTemperature, d.AirTemperature) : (SessionConditions?)null;
+        CurrentSetup = new SetupChange(_currentLap, packet.Header.SessionTime, setup, conditions);
         SetupChanged?.Invoke(CurrentSetup);
     }
 

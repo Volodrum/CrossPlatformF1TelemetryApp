@@ -20,6 +20,7 @@ public enum MainTab
     Energy,
     Compare,
     Position,
+    Setups,
     Settings,
 }
 
@@ -42,6 +43,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
         LapDetailViewModel lapDetail,
         CompareViewModel compare,
         EnergyViewModel energy,
+        SetupsViewModel setups,
         SettingsViewModel settings,
         ILogger<MainWindowViewModel> log)
     {
@@ -53,6 +55,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
         LapDetail = lapDetail;
         Compare = compare;
         Energy = energy;
+        Setups = setups;
         Settings = settings;
 
         Sources =
@@ -105,6 +108,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
     public LapDetailViewModel LapDetail { get; }
     public CompareViewModel Compare { get; }
     public EnergyViewModel Energy { get; }
+    public SetupsViewModel Setups { get; }
     public SettingsViewModel Settings { get; }
     public IReadOnlyList<SourceOption> Sources { get; }
     public ObservableCollection<RecordingItemViewModel> Recordings { get; } = [];
@@ -190,6 +194,10 @@ public sealed partial class MainWindowViewModel : ObservableObject
         else if (value == MainTab.Energy)
         {
             _ = ActivateEnergyAsync();
+        }
+        else if (value == MainTab.Setups)
+        {
+            _ = Setups.LoadAsync();
         }
     }
 

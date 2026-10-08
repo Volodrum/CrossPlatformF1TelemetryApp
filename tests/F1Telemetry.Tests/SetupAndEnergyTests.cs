@@ -102,7 +102,7 @@ public sealed class SetupAndEnergyTests : IAsyncLifetime
     {
         var path = Path.Combine(_dir, "v2.duckdb");
 
-        // A database as v0.2.0 left it: today's schema without the v3 columns and table, one recorded sample.
+        // A database as v0.2.0 left it: today's schema without the v3 and v4 columns and tables, one recorded sample.
         await using (var fresh = new DuckDbTelemetryStore(path))
         {
             await fresh.InitializeAsync(TestContext.Current.CancellationToken);
@@ -119,7 +119,8 @@ public sealed class SetupAndEnergyTests : IAsyncLifetime
                 "ALTER TABLE telemetry DROP COLUMN active_aero_available",
                 "ALTER TABLE telemetry DROP COLUMN overtake_available",
                 "DROP TABLE recording_setups",
-                "DELETE FROM schema_info WHERE version = 3",
+                "DROP TABLE setups",
+                "DELETE FROM schema_info WHERE version >= 3",
                 "INSERT INTO recordings (id, description, track_id, track_name, session_type, game_format, start_time) VALUES (1, 'Old', 10, 'Spa', 15, 2026, now())",
                 "INSERT INTO telemetry (recording_id, lap_number, session_time, speed) VALUES (1, 1, 0.5, 210)",
             })

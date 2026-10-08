@@ -162,6 +162,17 @@ vm.SelectedTab = MainTab.Energy;
 Pump(vm.ActivateEnergyAsync(), 1500);
 Capture(window, "13-energy");
 
+// Setups: the three Monza setups the races ran (a new front wing at each stop), the newest compared with the one before.
+vm.SelectedTab = MainTab.Setups;
+Pump(vm.Setups.LoadAsync(), 800);
+foreach (var row in vm.Setups.Rows.Take(2))
+{
+    row.IsChecked = true;
+}
+
+vm.Setups.Rows[0].Favourite = true;
+Capture(window, "14-setups");
+
 vm.SelectedTab = MainTab.Live;
 
 // Overlays in preview state, on the worst-case bright background used in the design's overlay board.

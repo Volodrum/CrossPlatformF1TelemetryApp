@@ -126,6 +126,9 @@
       <TabItem Header="POSITION">
         <views:PositionView DataContext="{Binding Session}" />
       </TabItem>
+      <TabItem Header="SETUPS">
+        <views:SetupsView DataContext="{Binding Setups}" />
+      </TabItem>
       <TabItem Header="SETTINGS">
         <views:SettingsView DataContext="{Binding Settings}" />
       </TabItem>

@@ -1,4 +1,5 @@
 using F1Telemetry.Core.Models;
+using F1Telemetry.Core.Setups;
 
 namespace F1Telemetry.Core.Recording;
 
@@ -51,6 +52,21 @@ public interface ITelemetryStore : IAsyncDisposable
 
     /// <summary>The setups driven in a recording, in the order they arrived.</summary>
     Task<IReadOnlyList<SetupChange>> GetSetupsAsync(long recordingId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// The setup library, after adding every setup driven in a recording that it doesn't have yet (one entry per track,
+    /// game format and setup, fuel load aside; setups loaded in the garage but never driven are left out).
+    /// </summary>
+    Task<IReadOnlyList<SetupEntry>> GetSetupLibraryAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Where each library setup was driven, newest recording first.</summary>
+    Task<IReadOnlyList<SetupRun>> GetSetupRunsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Renames (an empty name goes back to the automatic one), annotates, stars or removes a library setup.</summary>
+    void UpdateSetup(long setupId, string? name = null, string? notes = null, bool? favourite = null, bool? removed = null);
+
+    /// <summary>Adds setups from a file to the library; ones it already has (removed ones come back) aren't added twice.</summary>
+    Task<SetupImportResult> ImportSetupsAsync(IReadOnlyList<NewSetup> setups, CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<PositionPoint>> GetPositionHistoryAsync(long recordingId, int maxPoints = 500, CancellationToken cancellationToken = default);
 }

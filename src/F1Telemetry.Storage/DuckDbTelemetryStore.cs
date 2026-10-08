@@ -17,7 +17,7 @@ namespace F1Telemetry.Storage;
 /// 1000 rows), instead of one flush per row.</para>
 /// <para>Reads: a second connection to the same database, serialised by a semaphore, on the thread pool.</para>
 /// </summary>
-public sealed class DuckDbTelemetryStore(string databasePath, ILogger<DuckDbTelemetryStore>? log = null) : ITelemetryStore
+public sealed partial class DuckDbTelemetryStore(string databasePath, ILogger<DuckDbTelemetryStore>? log = null) : ITelemetryStore
 {
     private static readonly TimeSpan FlushInterval = TimeSpan.FromMilliseconds(250);
 
@@ -236,6 +236,19 @@ public sealed class DuckDbTelemetryStore(string databasePath, ILogger<DuckDbTele
                     NonQuery(SetupColumns.InsertSql, SetupColumns.InsertArgs(s.RecordingId, s.Setup));
                     break;
 
+                case SyncLibraryOp sync:
+                    NonQuery(SyncLibrarySql);
+                    sync.Done.TrySetResult();
+                    break;
+
+                case UpdateSetupOp u:
+                    ExecuteUpdateSetup(u);
+                    break;
+
+                case ImportSetupsOp import:
+                    import.Done.TrySetResult(ExecuteImport(import.Setups));
+                    break;
+
                 case FlushOp f:
                     f.Done.TrySetResult();
                     break;
@@ -264,6 +277,12 @@ public sealed class DuckDbTelemetryStore(string databasePath, ILogger<DuckDbTele
                     break;
                 case FlushOp f:
                     f.Done.TrySetException(ex);
+                    break;
+                case SyncLibraryOp sync:
+                    sync.Done.TrySetException(ex);
+                    break;
+                case ImportSetupsOp import:
+                    import.Done.TrySetException(ex);
                     break;
             }
         }

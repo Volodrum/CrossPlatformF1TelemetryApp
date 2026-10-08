@@ -99,6 +99,7 @@ public partial class App : Application
         services.AddSingleton<LapDetailViewModel>();
         services.AddSingleton<CompareViewModel>();
         services.AddSingleton<EnergyViewModel>();
+        services.AddSingleton<SetupsViewModel>();
         services.AddSingleton<SettingsViewModel>();
         services.AddSingleton<MainWindowViewModel>();
         return services.BuildServiceProvider();

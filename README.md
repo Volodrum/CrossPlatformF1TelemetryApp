@@ -105,7 +105,7 @@ dotnet run --project src/F1Telemetry.App
 dotnet run --project src/F1Telemetry.App -- --mode f1-26 --source demo --record
 ```
 
-Other switches: `--mode f1-25|f1-26`, `--source udp|demo|replay=<file>`, `--record`, `--tab live|laps|lapdetail|strategy|energy|compare|position|settings`, `--select-latest`, `--lap <n>`, `--preview-overlays` (with `--tab settings`), and `--exit-after <s>` for smoke tests.
+Other switches: `--mode f1-25|f1-26`, `--source udp|demo|replay=<file>`, `--record`, `--tab live|laps|lapdetail|strategy|energy|compare|position|setups|settings`, `--select-latest`, `--lap <n>`, `--preview-overlays` (with `--tab settings`), and `--exit-after <s>` for smoke tests.
 
 Data is stored in `%LOCALAPPDATA%\F1Telemetry` on Windows, `~/Library/Application Support/F1Telemetry` on macOS and `~/.local/share/F1Telemetry` on Linux. Override it with `F1TELEMETRY_DATA_DIR`.
 
@@ -207,6 +207,19 @@ The game resets its per-lap harvest and deploy counters at the line, but not alw
 
 ![Energy tab](docs/screenshots/13-energy.png)
 
+## Setup library
+
+The **SETUPS** tab keeps every setup you drive, without typing anything in. The game sends your setup twice a second (packet 5). A recording stores the setup it started with and every change, and the library holds one entry per track, game format and setup (fuel load aside, since the game reports the fuel in the tank). Setups loaded in the garage but never driven on a timed lap stay out, so going through your saved setups doesn't fill the list.
+
+- Each setup lists its **runs**: the session, laps, best valid lap, top speed, and the weather and track and air temperature when it went out. Filter by track, by weather (dry: clear to overcast; wet: light rain; very wet: heavy rain and storm) or to your favourites.
+- Setups are named "Spa · v3" in the order they were first driven at a track. Rename them, add notes, and star the ones you keep.
+- The detail shows every setting grouped like the game's setup menu, compared with the previous version at that track (or any other setup there), with ▲/▼ and the size of each change.
+- **Export selected** writes the setups you tick, from one to all, to a `.f1setups` file (JSON: name, notes, game format, track, every setting, plus best lap and laps for whoever reads it). **Import** adds a file's setups and skips the ones the library already has. A removed setup stays removed until a file brings it back.
+
+![Setups tab](docs/screenshots/14-setups.png)
+
+The game can't load a setup from outside: its setups live in the encrypted, signed profile save. Typing a saved setup into the in-game setup screen for you is the next step.
+
 ## Overlays
 
 There are seven HUD windows: **lap timing**, **lap/sector delta**, **proximity radar**, **conditions & strategy**, **input trace**, **sector box** and **timing tower**. Each can be set to *Always*, *Session* (only while recording) or *Never*. The last two, plus the damage page, are meant to replace the game's own HUD.
@@ -250,6 +263,7 @@ Switch on **PREVIEW OVERLAYS** at the top of the Settings tab to show every over
 
 ## Next steps
 
+- Setup autopilot: dial a library setup into the game's setup screen with simulated key presses, checked against the live setup packet.
 - ERS planner: a car model learned from each track's laps (MGU-K power by mode and speed, harvest, drag), then qualifying and race deploy plans per zone on the battery map, and a live ERS PLAN overlay.
 - Strategy optimiser: a per-track compound library from every recording, then 1-, 2- and 3-stop plans ranked with pit windows and undercut values.
 - Driver names on the radar.
