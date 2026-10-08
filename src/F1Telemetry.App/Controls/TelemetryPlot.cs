@@ -176,9 +176,9 @@ public sealed class TelemetryPlot : ContentControl
         {
             left = Math.Min(left, segments.Min(s => s.X0));
             right = Math.Max(right, segments.Max(s => s.X1));
-            if (timeline.Any(r => r.Label.Length > 0))
+            if (timeline.Max(r => r.Label.Length) is > 0 and var chars)
             {
-                left -= (right - left) * 0.035; // room for the race badges at the start of each row
+                left -= (right - left) * (0.015 + 0.011 * chars); // room for the badges at the start of each row
             }
         }
 
@@ -215,6 +215,10 @@ public sealed class TelemetryPlot : ContentControl
         if (plot.Axes.Left.TickGenerator is TimeTickGenerator ticks)
         {
             ticks.Min = dataBottom;
+        }
+        else
+        {
+            plot.Axes.Left.TickGenerator = new FromTickGenerator(plot.Axes.Left.TickGenerator, dataBottom);
         }
 
         var rule = plot.Add.HorizontalLine(divider, 2, Line);
@@ -380,6 +384,21 @@ public sealed class TelemetryPlot : ContentControl
 
             Ticks = [.. ticks];
         }
+    }
+
+    /// <summary>Another generator's ticks from <paramref name="min"/> up (a timeline under the data has no values).</summary>
+    private sealed class FromTickGenerator(ITickGenerator inner, double min) : ITickGenerator
+    {
+        public Tick[] Ticks => [.. inner.Ticks.Where(t => t.Position >= min - 1e-9)];
+
+        public int MaxTickCount
+        {
+            get => inner.MaxTickCount;
+            set => inner.MaxTickCount = value;
+        }
+
+        public void Regenerate(CoordinateRange range, Edge edge, PixelLength size, Paint paint, LabelStyle labelStyle) =>
+            inner.Regenerate(range, edge, size, paint, labelStyle);
     }
 
     /// <summary>Skia can't read Avalonia's embedded resources, so the fonts ship as files next to the exe too.</summary>

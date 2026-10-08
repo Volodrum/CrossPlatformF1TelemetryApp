@@ -207,7 +207,12 @@ The **ENERGY** tab shows what the battery did on every lap of a recording:
   - **energy along the lap**: kJ harvested and deployed per 50 m on an average lap (counter resets at the line are not counted as harvest);
   - a **straight-line fit** per active-aero mode (DRS in 2025): *a = efficiency · P / (m · v) − drag · v² / m − resistance*, by least squares over full-throttle straight-line samples, with P the ICE plus MGU-K output and m the minimum car mass plus fuel. It reports the drag area C<sub>d</sub>A, the share of power that reaches the road and the fit's R². At Spa the low-drag active-aero mode fitted C<sub>d</sub>A 0.86 m² against 1.26 m², with R² 0.94 and 0.92.
 
-  The deploy map and the fit need ICE and MGU-K power, recorded from this version on; `f1tel reimport` adds it to older captures. They are the basis for the qualifying and race lap plans that come next.
+  The deploy map and the fit need ICE and MGU-K power, recorded from this version on; `f1tel reimport` adds it to older captures.
+- a **lap plan** for the chosen lap: which deploy mode to run in each flat-out zone, as **Qualifying** (start with a full battery, charged on the out-lap; may end empty) or **Race** (end every lap with at least the charge it started with, never below a reserve of 0, 0.5 or 1 MJ). It shows the predicted lap, the battery to cross the line with, the battle budget (what 1 MJ more this lap gains, and what winning it back costs), a confidence badge, and per zone what you ran, the plan, the battery in and out and the time it gains. The map can show the plan instead of your lap, and the trace draws the plan's battery and modes under yours.
+
+**How the plans are made.** `LapProfile` cuts the lap into 25 m segments; `LapSimulator` keeps your speeds through corners and braking zones (grip limits them, not power) and re-runs the flat-out stretches with the ICE output you had plus the MGU-K output of the chosen mode from the deploy map, never faster than you can still brake for the next corner. Each segment keeps the difference between your real acceleration and the straight-line fit's, so your own lap replays exactly and the fit only decides what a change of MGU-K output does. The battery takes the harvest you had, loses what doesn't fit in 4 MJ, and pays for deployment (including what the car deployed at part throttle). The game measures lap distance along the centre line, a little longer than the line you drive, so speeds are scaled per lap to match the real segment times. `ErsOptimizer` then runs dynamic programming over the zones and the battery level in 0.025 MJ steps, with options a driver can follow: one mode, one mode until the speed it fades from and then another, or one mode for the first third or two thirds of the zone and then None. A race plan tries every starting level and keeps the fastest. Plans take about 0.1 s. Gains are measured against your lap as driven, both simulated, so model errors cancel; the confidence badge says how close your modes, with the deploy map's output, replay the lap (within 0.3 s is trusted).
+
+![Lap plan](docs/screenshots/15-energy-plan.png)
 
 The game resets its per-lap harvest and deploy counters at the line, but not always on the same packet as the lap number. `EnergyAnalyzer` takes each lap's totals from after the last reset, so a lap never inherits the previous lap's figures. Lap detail's ENERGY charts add the battery difference to the comparison lap, the deploy mode and ICE / MGU-K power.
 
@@ -270,7 +275,7 @@ Switch on **PREVIEW OVERLAYS** at the top of the Settings tab to show every over
 ## Next steps
 
 - Setup autopilot: dial a library setup into the game's setup screen with simulated key presses, checked against the live setup packet.
-- ERS planner: qualifying and race deploy plans per zone on the battery map, simulated on the learned car model, and a live ERS PLAN overlay.
+- ERS PLAN overlay: the mode for the current and next zone, the battery against the plan, and re-planning at the line from the battery you actually have.
 - Strategy optimiser: a per-track compound library from every recording, then 1-, 2- and 3-stop plans ranked with pit windows and undercut values.
 - Driver names on the radar.
 - Installer and auto-update (e.g. Velopack), plus CI builds for all three OSes.

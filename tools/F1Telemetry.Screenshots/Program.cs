@@ -161,6 +161,13 @@ vm.SelectedRecording = vm.Recordings.First(r => r.Description == "One stop");
 vm.SelectedTab = MainTab.Energy;
 Pump(vm.ActivateEnergyAsync(), 1500);
 Capture(window, "13-energy");
+if (window.GetVisualDescendants().OfType<EnergyView>().FirstOrDefault()?.GetVisualDescendants().OfType<ScrollViewer>().FirstOrDefault() is { } energyScroll)
+{
+    Pump(minMs: 2000); // the plan is computed in the background
+    energyScroll.Offset = energyScroll.Offset.WithY(440);
+    Capture(window, "15-energy-plan");
+    energyScroll.Offset = default;
+}
 
 // Setups: the three Monza setups the races ran (a new front wing at each stop), the newest compared with the one before.
 vm.SelectedTab = MainTab.Setups;

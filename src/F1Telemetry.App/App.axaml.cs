@@ -98,6 +98,7 @@ public partial class App : Application
         services.AddSingleton<SessionViewModel>();
         services.AddSingleton<LapDetailViewModel>();
         services.AddSingleton<CompareViewModel>();
+        services.AddSingleton<EnergyPlanViewModel>();
         services.AddSingleton<EnergyViewModel>();
         services.AddSingleton<SetupsViewModel>();
         services.AddSingleton<SettingsViewModel>();

@@ -95,10 +95,23 @@ public static class EnergyText
 /// deployed, where the harvest limit was reached, wasted energy), and for the chosen lap a battery map on the track,
 /// the battery trace along the lap with the deploy modes under it, and a summary.
 /// </summary>
-public sealed partial class EnergyViewModel(TelemetryRuntime runtime) : ObservableObject
+public sealed partial class EnergyViewModel : ObservableObject
 {
+    private readonly TelemetryRuntime runtime;
     private int _loadVersion;
     private int _lapVersion;
+    private IReadOnlyList<TelemetrySample>? _lapSamples;
+    private LapEnergy? _lapEnergy;
+
+    public EnergyViewModel(TelemetryRuntime runtime, EnergyPlanViewModel plan)
+    {
+        this.runtime = runtime;
+        Plan = plan;
+        plan.PlanChanged += _ => ShowLapGraphics();
+    }
+
+    /// <summary>The ERS plan for the chosen lap.</summary>
+    public EnergyPlanViewModel Plan { get; }
 
     [ObservableProperty] public partial RecordingInfo? Recording { get; set; }
     [ObservableProperty] public partial string Header { get; set; } = "Select a recording";
@@ -106,6 +119,9 @@ public sealed partial class EnergyViewModel(TelemetryRuntime runtime) : Observab
     [ObservableProperty] public partial string EmptyText { get; set; } = "Select a recording in the sidebar.";
     [ObservableProperty] public partial EnergyLapRow? SelectedLap { get; set; }
     [ObservableProperty] public partial MapColoring Layer { get; set; } = MapColoring.DeployMode;
+
+    /// <summary>The map shows the plan instead of the lap as driven.</summary>
+    [ObservableProperty] public partial bool ShowPlanOnMap { get; set; }
     [ObservableProperty] public partial TrackOutline? Outline { get; set; }
     [ObservableProperty] public partial IReadOnlyList<TelemetrySample>? Samples { get; set; }
     [ObservableProperty] public partial ChartModel? Trace { get; set; }
@@ -148,8 +164,19 @@ public sealed partial class EnergyViewModel(TelemetryRuntime runtime) : Observab
         FillLegend();
     }
 
+    public bool IsDrivenOnMap => !ShowPlanOnMap;
+
+    partial void OnShowPlanOnMapChanged(bool value)
+    {
+        OnPropertyChanged(nameof(IsDrivenOnMap));
+        ShowLapGraphics();
+    }
+
     [RelayCommand]
     private void SetLayer(MapColoring layer) => Layer = layer;
+
+    [RelayCommand]
+    private void SetMapSource(string source) => ShowPlanOnMap = source == "plan";
 
     partial void OnSelectedLapChanged(EnergyLapRow? value) => _ = ShowLapAsync(value);
 
@@ -315,21 +342,88 @@ public sealed partial class EnergyViewModel(TelemetryRuntime runtime) : Observab
         }
 
         OnPropertyChanged(nameof(HasIssues));
-        Samples = samples;
-        Trace = BuildTrace(samples, energy);
+        _lapSamples = samples;
+        _lapEnergy = energy;
+        Plan.Clear();
+        ShowLapGraphics();
+
+        // Plan the lap on the track's car model (in the background; the plan's result redraws the map and trace).
+        var reference = Model is { HasPowerData: true }
+            ? LapProfile.From(samples, recording.Format, row.Lap is { HasTime: true } timed ? timed.LapTimeMs / 1000.0 : null)
+            : null;
+        await Plan.SetLapAsync(reference, Model, reference?.ActualSeconds ?? 0);
     }
 
-    /// <summary>Battery level along the lap, the deploy modes under it, and where the harvest limit was reached.</summary>
-    private static ChartModel BuildTrace(IReadOnlyList<TelemetrySample> samples, LapEnergy energy)
+    /// <summary>The map and trace for the chosen lap, with the plan when there is one.</summary>
+    private void ShowLapGraphics()
+    {
+        if (_lapSamples is not { } samples || _lapEnergy is not { } energy)
+        {
+            return;
+        }
+
+        var plan = Plan.Result?.Plan;
+        Samples = ShowPlanOnMap && plan is not null ? PlannedSamples(samples, plan) : samples;
+        Trace = BuildTrace(samples, energy, plan);
+    }
+
+    /// <summary>The lap's racing line with the plan's mode and battery level at every point.</summary>
+    private static List<TelemetrySample> PlannedSamples(IReadOnlyList<TelemetrySample> samples, LapPlan plan) =>
+    [
+        .. samples.Where(s => s.LapDistance >= 0).Select(s =>
+        {
+            var i = Math.Clamp((int)(s.LapDistance / LapProfile.Step), 0, plan.Modes.Length - 1);
+            return new TelemetrySample
+            {
+                LapNumber = s.LapNumber, SessionTime = s.SessionTime, LapDistance = s.LapDistance, WorldPosX = s.WorldPosX, WorldPosZ = s.WorldPosZ,
+                ErsDeployMode = plan.Modes[i], ErsStoreEnergy = plan.Stores[i],
+            };
+        }),
+    ];
+
+    /// <summary>
+    /// Battery level along the lap, the deploy modes under it, and where the harvest limit was reached; with a plan, its
+    /// battery level dashed and its modes on a second row.
+    /// </summary>
+    private static ChartModel BuildTrace(IReadOnlyList<TelemetrySample> samples, LapEnergy energy, LapPlan? plan)
     {
         var lap = samples.Where(s => s.LapDistance >= 0).ToList();
-        var series = new ChartSeries("Battery", "#F4F6F9", [.. lap.Select(s => s.LapDistance)], [.. lap.Select(s => s.ErsStoreEnergy / 1_000_000)]);
-        var segments = energy.Modes.Select(m => new ChartTimelineSegment(m.From, m.To, DeployModes.Letter(m.Mode), "", "",
-            m.Mode == DeployModes.None ? "#8D97A6" : Palette.DeployModeHex[Math.Clamp(m.Mode, 0, 3)],
-            Palette.DeployModeHex[Math.Clamp(m.Mode, 0, 3)])).ToList();
+        List<ChartSeries> series = [new ChartSeries("Your lap", "#F4F6F9", [.. lap.Select(s => s.LapDistance)], [.. lap.Select(s => s.ErsStoreEnergy / 1_000_000)])];
         IReadOnlyList<ChartMarker> markers = energy.LimitReachedAt is { } at ? [new ChartMarker(at, "#4DB5FF", "Harvest limit reached")] : [];
-        return new ChartModel("Battery (MJ) · deploy mode under the trace", [series], Markers: markers,
-            Timeline: segments.Count > 0 ? [new ChartTimelineRow("", "#C3CAD5", segments, [])] : null);
+        var driven = Row(energy.Modes);
+        if (plan is null)
+        {
+            return new ChartModel("Battery (MJ) · deploy mode under the trace", series, Markers: markers,
+                Timeline: driven.Count > 0 ? [new ChartTimelineRow("", "#C3CAD5", driven, [])] : null);
+        }
+
+        series.Add(new ChartSeries("Plan", "#4DB5FF", [.. Enumerable.Range(0, plan.Stores.Length).Select(i => (i + 1) * LapProfile.Step)],
+            [.. plan.Stores.Select(j => j / 1_000_000)], Line: ChartLine.Dashed));
+        return new ChartModel("Battery (MJ) · your deploy modes and the plan's under the trace", series, Markers: markers,
+            Timeline: [new ChartTimelineRow("YOU", "#C3CAD5", driven, []), new ChartTimelineRow("PLAN", "#4DB5FF", Row(PlanRuns(plan)), [])]);
+
+        static List<ChartTimelineSegment> Row(IEnumerable<ModeRun> runs) =>
+        [
+            .. runs.Select(m => new ChartTimelineSegment(m.From, m.To, DeployModes.Letter(m.Mode), "", "",
+                m.Mode == DeployModes.None ? "#8D97A6" : Palette.DeployModeHex[Math.Clamp(m.Mode, 0, 3)],
+                Palette.DeployModeHex[Math.Clamp(m.Mode, 0, 3)])),
+        ];
+    }
+
+    /// <summary>The plan's segments merged into runs of one mode.</summary>
+    private static IEnumerable<ModeRun> PlanRuns(LapPlan plan)
+    {
+        var start = 0;
+        for (var i = 1; i <= plan.Modes.Length; i++)
+        {
+            if (i < plan.Modes.Length && plan.Modes[i] == plan.Modes[start])
+            {
+                continue;
+            }
+
+            yield return new ModeRun(plan.Modes[start], start * LapProfile.Step, i * LapProfile.Step);
+            start = i;
+        }
     }
 
     private void FillLegend()
