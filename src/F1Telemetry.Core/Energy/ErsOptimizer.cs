@@ -68,10 +68,10 @@ public static class ErsOptimizer
     public const double OneMj = 1_000_000;
 
     private const double Capacity = LapSimulator.Capacity;
-    private static readonly int States = (int)Math.Round(Capacity / Quantum) + 1;
+    internal static readonly int States = (int)Math.Round(Capacity / Quantum) + 1;
 
     /// <summary>A stretch from a deploy zone's start (<see cref="From"/>) to the next one's, flat out until <see cref="DeployEnd"/>.</summary>
-    private sealed record Stage(int From, int DeployEnd, int To)
+    internal sealed record Stage(int From, int DeployEnd, int To)
     {
         public bool HasZone => DeployEnd > From;
     }
@@ -104,53 +104,12 @@ public static class ErsOptimizer
     /// <paramref name="qualifyingStart"/> J (a full battery after a charging out-lap) and may end empty. A race picks
     /// the starting level that gives the fastest lap ending at least as charged as it began.
     /// </summary>
-    public static PlanResult Plan(LapSimulator simulator, PlanKind kind, double qualifyingStart = Capacity)
-    {
-        var stages = Stages(simulator.Lap);
-        var options = Options(simulator.Model.Deploy);
-        var table = Precompute(simulator, stages, options);
+    public static PlanResult Plan(LapSimulator simulator, PlanKind kind, double qualifyingStart = Capacity) =>
+        new ErsPlanner(simulator).Plan(kind, qualifyingStart);
 
-        var check = Check(simulator, stages);
-        if (kind == PlanKind.Qualifying)
-        {
-            var start = State(qualifyingStart);
-            var plan = Build(simulator, stages, options, Solve(table, stages, options.Count, minEnd: 0), start, kind);
-            return new PlanResult(plan, check, null, null);
-        }
+    internal static int State(double joules) => Math.Clamp((int)Math.Round(joules / Quantum), 0, States - 1);
 
-        // Every starting level, each with the end held at or above it; keep the fastest.
-        var floor = State(simulator.Reserve);
-        int best = floor;
-        var bestTime = double.PositiveInfinity;
-        Policy? bestPolicy = null;
-        for (var s = floor; s < States; s++)
-        {
-            var policy = Solve(table, stages, options.Count, minEnd: s);
-            if (policy.Value[0][s] < bestTime - 1e-9)
-            {
-                (best, bestTime, bestPolicy) = (s, policy.Value[0][s], policy);
-            }
-        }
-
-        var race = Build(simulator, stages, options, bestPolicy!, best, kind);
-        var oneMj = (int)Math.Round(OneMj / Quantum);
-        LapPlan? attack = null, recover = null;
-        if (best - oneMj >= 0)
-        {
-            attack = Build(simulator, stages, options, Solve(table, stages, options.Count, minEnd: best - oneMj), best, kind);
-        }
-
-        if (best + oneMj < States && Solve(table, stages, options.Count, minEnd: best + oneMj) is var up && !double.IsInfinity(up.Value[0][best]))
-        {
-            recover = Build(simulator, stages, options, up, best, kind);
-        }
-
-        return new PlanResult(race, check, attack, recover);
-    }
-
-    private static int State(double joules) => Math.Clamp((int)Math.Round(joules / Quantum), 0, States - 1);
-
-    private static List<Stage> Stages(LapProfile lap)
+    internal static List<Stage> Stages(LapProfile lap)
     {
         var segments = lap.Segments;
         var runs = new List<(int From, int To)>();
@@ -186,7 +145,7 @@ public static class ErsOptimizer
     }
 
     /// <summary>Time and exit level of every stage, option and entry level.</summary>
-    private static (double Seconds, int Exit)[,,] Precompute(LapSimulator simulator, List<Stage> stages, IReadOnlyList<DeployOption> options)
+    internal static (double Seconds, int Exit)[,,] Precompute(LapSimulator simulator, List<Stage> stages, IReadOnlyList<DeployOption> options)
     {
         var table = new (double, int)[stages.Count, options.Count, States];
         Parallel.For(0, stages.Count, k =>
@@ -210,10 +169,10 @@ public static class ErsOptimizer
         return table;
     }
 
-    private sealed record Policy(double[][] Value, int[][] Choice);
+    internal sealed record Policy(double[][] Value, int[][] Choice);
 
     /// <summary>Backwards over the stages: the fastest time to the line from each level, ending at <paramref name="minEnd"/> or above.</summary>
-    private static Policy Solve((double Seconds, int Exit)[,,] table, List<Stage> stages, int optionCount, int minEnd)
+    internal static Policy Solve((double Seconds, int Exit)[,,] table, List<Stage> stages, int optionCount, int minEnd)
     {
         var value = new double[stages.Count + 1][];
         var choice = new int[stages.Count][];
@@ -246,7 +205,7 @@ public static class ErsOptimizer
     }
 
     /// <summary>Follows the policy from <paramref name="start"/>, re-simulating each stage from the exact level.</summary>
-    private static LapPlan Build(LapSimulator simulator, List<Stage> stages, IReadOnlyList<DeployOption> options, Policy policy, int start, PlanKind kind)
+    internal static LapPlan Build(LapSimulator simulator, List<Stage> stages, IReadOnlyList<DeployOption> options, Policy policy, int start, PlanKind kind)
     {
         var count = simulator.Lap.Segments.Count;
         var modes = new int[count];
@@ -278,7 +237,7 @@ public static class ErsOptimizer
     /// <summary>The reference lap with its own modes, from its own starting level.</summary>
     public static ModelCheck Check(LapSimulator simulator) => Check(simulator, Stages(simulator.Lap));
 
-    private static ModelCheck Check(LapSimulator simulator, List<Stage> stages)
+    internal static ModelCheck Check(LapSimulator simulator, List<Stage> stages)
     {
         var count = simulator.Lap.Segments.Count;
         var modes = new int[count];
@@ -301,4 +260,87 @@ public static class ErsOptimizer
 
         return (seconds, store);
     }
+}
+
+/// <summary>
+/// Plans one lap as often as needed: what every zone option does from every battery level is simulated once (about
+/// 0.1 s), then each plan is a quick search. The live overlay re-plans at every line from the battery it has.
+/// </summary>
+public sealed class ErsPlanner
+{
+    private readonly List<ErsOptimizer.Stage> _stages;
+    private readonly IReadOnlyList<DeployOption> _options;
+    private readonly (double Seconds, int Exit)[,,] _table;
+
+    public ErsPlanner(LapSimulator simulator)
+    {
+        Simulator = simulator;
+        _stages = ErsOptimizer.Stages(simulator.Lap);
+        _options = ErsOptimizer.Options(simulator.Model.Deploy);
+        _table = ErsOptimizer.Precompute(simulator, _stages, _options);
+    }
+
+    public LapSimulator Simulator { get; }
+
+    /// <inheritdoc cref="ErsOptimizer.Plan"/>
+    public PlanResult Plan(PlanKind kind, double qualifyingStart = LapSimulator.Capacity)
+    {
+        var check = ErsOptimizer.Check(Simulator, _stages);
+        if (kind == PlanKind.Qualifying)
+        {
+            return new PlanResult(PlanFrom(kind, qualifyingStart, 0), check, null, null);
+        }
+
+        // Every starting level, each with the end held at or above it; keep the fastest.
+        var floor = ErsOptimizer.State(Simulator.Reserve);
+        var best = floor;
+        var bestTime = double.PositiveInfinity;
+        ErsOptimizer.Policy? bestPolicy = null;
+        for (var s = floor; s < ErsOptimizer.States; s++)
+        {
+            var policy = Solve(s);
+            if (policy.Value[0][s] < bestTime - 1e-9)
+            {
+                (best, bestTime, bestPolicy) = (s, policy.Value[0][s], policy);
+            }
+        }
+
+        var race = Build(bestPolicy!, best, kind);
+        var oneMj = (int)Math.Round(ErsOptimizer.OneMj / ErsOptimizer.Quantum);
+        LapPlan? attack = null, recover = null;
+        if (best - oneMj >= 0)
+        {
+            attack = Build(Solve(best - oneMj), best, kind);
+        }
+
+        if (best + oneMj < ErsOptimizer.States && Solve(best + oneMj) is var up && !double.IsInfinity(up.Value[0][best]))
+        {
+            recover = Build(up, best, kind);
+        }
+
+        return new PlanResult(race, check, attack, recover);
+    }
+
+    /// <summary>
+    /// The fastest lap from <paramref name="start"/> J that ends at or above <paramref name="minEnd"/> J, or as close
+    /// below it as the lap allows (a battery too low to recover fully in one lap).
+    /// </summary>
+    public LapPlan PlanFrom(PlanKind kind, double start, double minEnd)
+    {
+        var from = ErsOptimizer.State(start);
+        for (var end = ErsOptimizer.State(minEnd); end >= 0; end--)
+        {
+            var policy = Solve(end);
+            if (!double.IsInfinity(policy.Value[0][from]))
+            {
+                return Build(policy, from, kind);
+            }
+        }
+
+        return Build(Solve(0), from, kind);
+    }
+
+    private ErsOptimizer.Policy Solve(int minEnd) => ErsOptimizer.Solve(_table, _stages, _options.Count, minEnd);
+
+    private LapPlan Build(ErsOptimizer.Policy policy, int start, PlanKind kind) => ErsOptimizer.Build(Simulator, _stages, _options, policy, start, kind);
 }

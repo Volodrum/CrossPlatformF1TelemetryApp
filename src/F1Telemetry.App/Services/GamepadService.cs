@@ -16,6 +16,7 @@ public sealed class GamepadService : IDisposable
     private const int StartStopAction = 0;
     private const int ToggleOverlaysAction = 1;
     private const int StrategyPageAction = 2;
+    private const int ErsPlanAction = 3;
 
     private readonly SettingsService _settings;
     private readonly ILogger _log;
@@ -34,6 +35,7 @@ public sealed class GamepadService : IDisposable
     public event Action? StartStopPressed;
     public event Action? ToggleOverlaysPressed;
     public event Action? StrategyPagePressed;
+    public event Action? ErsPlanPressed;
 
     /// <summary>A binding was captured (see <see cref="BeginCapture"/>). UI thread.</summary>
     public event Action<PadBinding>? Captured;
@@ -84,6 +86,7 @@ public sealed class GamepadService : IDisposable
                 PadBinding.TryParse(s.StartStopPadButton),
                 PadBinding.TryParse(s.ToggleOverlaysPadButton),
                 PadBinding.TryParse(s.StrategyPagePadButton),
+                PadBinding.TryParse(s.ErsPlanPadButton),
             ];
         }
     }
@@ -234,6 +237,9 @@ public sealed class GamepadService : IDisposable
                 break;
             case StrategyPageAction:
                 StrategyPagePressed?.Invoke();
+                break;
+            case ErsPlanAction:
+                ErsPlanPressed?.Invoke();
                 break;
         }
     }

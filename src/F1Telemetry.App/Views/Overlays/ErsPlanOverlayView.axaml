@@ -1,0 +1,68 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:F1Telemetry.App.ViewModels"
+             x:Class="F1Telemetry.App.Views.Overlays.ErsPlanOverlayView"
+             x:DataType="vm:ErsPlanOverlayViewModel"
+             Width="300">
+  <Border Classes="hud">
+    <StackPanel Spacing="10">
+      <Grid ColumnDefinitions="*,Auto">
+        <TextBlock Classes="label strong" Text="{Binding Title}" FontSize="13" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+        <TextBlock Grid.Column="1" Classes="data-s" Text="{Binding Zone}" IsVisible="{Binding HasPlan}" />
+      </Grid>
+
+      <TextBlock Classes="body" FontSize="14" Text="{Binding Status}" TextWrapping="Wrap" IsVisible="{Binding !HasPlan}" />
+
+      <StackPanel Spacing="10" IsVisible="{Binding HasPlan}">
+        <!-- Now: the headline -->
+        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="14">
+          <Border Width="72" Height="72" CornerRadius="8" Background="{Binding NowFill}" BorderBrush="{Binding NowBorder}" BorderThickness="3">
+            <TextBlock Text="{Binding NowLetter}" Foreground="{Binding NowForeground}" FontFamily="{StaticResource DataFont}" FontSize="56"
+                       FontWeight="ExtraBold" HorizontalAlignment="Center" VerticalAlignment="Center" />
+          </Border>
+          <StackPanel Grid.Column="1" Spacing="6" VerticalAlignment="Center">
+            <TextBlock Classes="label" Text="NOW" />
+            <TextBlock Text="{Binding NowCaption}" Foreground="{Binding NowCaptionBrush}" FontFamily="{StaticResource DisplayFont}" FontSize="18"
+                       FontWeight="Bold" TextWrapping="Wrap" />
+          </StackPanel>
+        </Grid>
+
+        <!-- Next switch -->
+        <StackPanel Orientation="Horizontal" Spacing="10">
+          <TextBlock Classes="label" Text="NEXT" VerticalAlignment="Center" />
+          <Border Width="30" Height="28" CornerRadius="5" Background="{Binding NextFill}">
+            <TextBlock Text="{Binding NextLetter}" Foreground="{Binding NextForeground}" FontFamily="{StaticResource DataFont}" FontSize="16"
+                       FontWeight="ExtraBold" HorizontalAlignment="Center" VerticalAlignment="Center" />
+          </Border>
+          <TextBlock Classes="data-s" Text="{Binding NextAt}" VerticalAlignment="Center" />
+        </StackPanel>
+
+        <!-- Battery against the plan -->
+        <StackPanel Spacing="6">
+          <Grid ColumnDefinitions="Auto,*">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <TextBlock Classes="data-m" FontSize="26" Text="{Binding Battery}" Foreground="{Binding BatteryBrush}" />
+              <TextBlock Classes="unit" FontSize="14" Text="MJ" VerticalAlignment="Bottom" Margin="0,0,0,4" />
+            </StackPanel>
+            <TextBlock Grid.Column="1" Classes="label strong" Text="{Binding Delta}" Foreground="{Binding DeltaBrush}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+          </Grid>
+          <Canvas Width="264" Height="16" HorizontalAlignment="Left">
+            <Border Width="264" Height="12" Canvas.Top="2" CornerRadius="6" Background="{StaticResource DividerBrush}" />
+            <Border Width="{Binding BarFill}" Height="12" Canvas.Top="2" CornerRadius="6" Background="{Binding BatteryBrush}" />
+            <Border Width="4" Height="16" Canvas.Left="{Binding TargetX}" CornerRadius="2" Background="{StaticResource TextHiBrush}" Margin="-2,0,0,0" />
+          </Canvas>
+          <TextBlock Classes="label" Text="WHITE MARK · THE PLAN'S LEVEL HERE" FontSize="11" />
+        </StackPanel>
+
+        <WrapPanel ItemSpacing="8" LineSpacing="6" IsVisible="{Binding HasFight}">
+          <Border Classes="pill" Background="{StaticResource SlowerBrush}">
+            <TextBlock Text="{Binding Fight}" FontFamily="{StaticResource DisplayFont}" FontSize="13" FontWeight="Bold" LetterSpacing="1.2" Foreground="{StaticResource OnColorBrush}" />
+          </Border>
+          <Border Classes="pill" Background="{StaticResource InfoBrush}" IsVisible="{Binding OvertakeReady}">
+            <TextBlock Text="OVERTAKE READY" FontFamily="{StaticResource DisplayFont}" FontSize="13" FontWeight="Bold" LetterSpacing="1.2" Foreground="{StaticResource OnColorBrush}" />
+          </Border>
+        </WrapPanel>
+      </StackPanel>
+    </StackPanel>
+  </Border>
+</UserControl>

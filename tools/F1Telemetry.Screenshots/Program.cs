@@ -252,6 +252,18 @@ var hudBoard = new Window
 hudBoard.Show();
 Capture(hudBoard, "08-hud-overlays");
 
+// The ERS PLAN overlay in preview: Overtake wanted while the car runs Medium, so the switch is called out.
+overlays.ErsPlan.LoadPreview();
+var ersBoard = new Window
+{
+    Width = 360,
+    Height = 370,
+    Background = new SolidColorBrush(Color.Parse("#8A929C")),
+    Content = new ErsPlanOverlayView { DataContext = overlays.ErsPlan, Margin = new Thickness(24), VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top },
+};
+ersBoard.Show();
+Capture(ersBoard, "16-ers-plan-overlay");
+
 runtime.Recorder.Stop();
 Pump(services.DisposeAsync().AsTask(), 200);
 try

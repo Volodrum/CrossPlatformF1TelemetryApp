@@ -137,4 +137,48 @@ public class ErsPlanTests
         var qualifying = ErsOptimizer.Plan(simulator, PlanKind.Qualifying);
         Assert.True(qualifying.Plan.Seconds < race.Plan.Seconds); // spending everything is faster than holding it
     }
+    [Fact]
+    public void Live_replans_aim_for_the_steady_level_from_whatever_the_battery_has()
+    {
+        var planner = new ErsPlanner(Simulator(2_000_000, reserve: 300_000));
+        var steady = planner.Plan(PlanKind.Race).Plan.StartStore;
+
+        var low = planner.PlanFrom(PlanKind.Race, 500_000, steady);
+        Assert.Equal(500_000, low.StartStore, 1.0);
+        Assert.True(low.EndStore > low.StartStore); // a low battery climbs back towards the steady level
+
+        var attack = planner.PlanFrom(PlanKind.Race, steady, steady - ErsOptimizer.OneMj);
+        var normal = planner.PlanFrom(PlanKind.Race, steady, steady);
+        Assert.True(attack.Seconds < normal.Seconds);
+        Assert.True(attack.EndStore >= steady - ErsOptimizer.OneMj - ErsOptimizer.Quantum);
+    }
+
+    [Fact]
+    public void The_coach_reads_the_plan_at_the_cars_position()
+    {
+        var modes = new int[120];
+        var stores = Enumerable.Range(0, 120).Select(i => 3_000_000 - i * 10_000.0).ToArray();
+        var plan = new LapPlan(PlanKind.Race, 3_000_000, 1_810_000, 80, [
+            new ZonePlan(1, 300, 1300, new DeployOption(DeployModes.Overtake, DeployModes.Medium, UntilKmh: 250), 0, 0, 0, 0),
+            new ZonePlan(2, 1750, 2875, new DeployOption(DeployModes.Overtake, DeployModes.None, UntilFraction: 1 / 3.0), 0, 0, 0, 0),
+        ], modes, stores);
+
+        var early = ErsCoach.Advise(plan, 500, 2_900_000, DeployModes.Overtake, 200);
+        Assert.Equal((1, DeployModes.Overtake, true, DeployModes.Medium, "250 KM/H"), (early.Zone!.Number, early.NowMode, early.OnPlan, early.NextMode, early.NextAt));
+        Assert.Equal(stores[20], early.Target);
+        Assert.Equal(2_900_000 - stores[20], early.Delta);
+
+        var fast = ErsCoach.Advise(plan, 500, 2_900_000, DeployModes.Overtake, 260);
+        Assert.Equal((DeployModes.Medium, false, DeployModes.Overtake, "1250 M"), (fast.NowMode, fast.OnPlan, fast.NextMode, fast.NextAt));
+
+        var between = ErsCoach.Advise(plan, 1500, 2_000_000, DeployModes.None, 150);
+        Assert.Equal((null, true, DeployModes.Overtake, "250 M"), (between.NowMode, between.OnPlan, between.NextMode, between.NextAt));
+        Assert.Null(between.Zone);
+
+        var partial = ErsCoach.Advise(plan, 1825, 2_000_000, DeployModes.Overtake, 200);
+        Assert.Equal((DeployModes.Overtake, DeployModes.None, "300 M"), (partial.NowMode, partial.NextMode, partial.NextAt)); // switch at 2125 m
+
+        var last = ErsCoach.Advise(plan, 2900, 2_000_000, DeployModes.None, 150);
+        Assert.Equal((DeployModes.Overtake, "400 M"), (last.NextMode, last.NextAt)); // the first zone of the next lap
+    }
 }

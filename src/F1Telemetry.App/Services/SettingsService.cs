@@ -26,6 +26,7 @@ public enum OverlayKind
     Inputs,
     SectorBox,
     TimingTower,
+    ErsPlan,
 }
 
 public sealed class OverlaySettings
@@ -65,10 +66,17 @@ public sealed class AppSettings
     /// </summary>
     public int StrategyPageUdpAction { get; set; }
 
+    /// <summary>Steps the ERS PLAN overlay through race (normal, attack, recover) and qualifying plans.</summary>
+    public string ErsPlanHotkey { get; set; } = "Ctrl+Alt+E";
+
     /// <summary>Controller buttons read directly from the pad (DualSense, Xbox, …), e.g. "Touchpad+DPadRight". Empty = none.</summary>
     public string StartStopPadButton { get; set; } = "";
     public string ToggleOverlaysPadButton { get; set; } = "";
     public string StrategyPagePadButton { get; set; } = "";
+    public string ErsPlanPadButton { get; set; } = "";
+
+    /// <summary>Charge the ERS PLAN overlay's race plans never deploy below, MJ.</summary>
+    public double ErsReserveMj { get; set; } = 0.5;
 
     /// <summary>What the sector box's gap chips compare against.</summary>
     public SectorReference SectorBoxReference { get; set; } = SectorReference.SessionBest;

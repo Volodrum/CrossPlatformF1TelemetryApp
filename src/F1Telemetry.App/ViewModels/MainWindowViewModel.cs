@@ -45,6 +45,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
         EnergyViewModel energy,
         SetupsViewModel setups,
         SettingsViewModel settings,
+        ErsPlanService ersPlan,
         ILogger<MainWindowViewModel> log)
     {
         _runtime = runtime;
@@ -80,6 +81,8 @@ public sealed partial class MainWindowViewModel : ObservableObject
         gamepads.StartStopPressed += () => ToggleRecording();
         gamepads.ToggleOverlaysPressed += () => overlays.GloballyVisible = !overlays.GloballyVisible;
         gamepads.StrategyPagePressed += overlays.ToggleStrategyPage;
+        hotkeys.ErsPlanPressed += ersPlan.NextMode;
+        gamepads.ErsPlanPressed += ersPlan.NextMode;
         overlays.StateChanged += () => OnPropertyChanged(nameof(OverlaysEnabled));
         runtime.ModeChanged += _ => Dispatcher.UIThread.Post(() =>
         {

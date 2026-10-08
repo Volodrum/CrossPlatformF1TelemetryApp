@@ -90,6 +90,7 @@ public partial class App : Application
         services.AddSingleton<SettingsService>();
         services.AddSingleton<TelemetryRuntime>();
         services.AddSingleton<LiveDataHub>();
+        services.AddSingleton<ErsPlanService>();
         services.AddSingleton<OverlayManager>();
         services.AddSingleton<HotkeyService>();
         services.AddSingleton<GamepadService>();

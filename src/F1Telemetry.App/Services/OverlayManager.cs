@@ -20,6 +20,7 @@ public enum OverlayPreset
     Center,
     RightCenter,
     BottomCenter,
+    BottomRight,
 }
 
 /// <summary>
@@ -34,6 +35,7 @@ public sealed class OverlayManager
     private readonly SettingsService _settings;
     private readonly LiveDataHub _hub;
     private readonly RecordingCoordinator _recorder;
+    private readonly ErsPlanService _ersPlan;
     private readonly Dictionary<OverlayKind, OverlayWindow> _windows = [];
     private readonly Dictionary<OverlayKind, DateTime> _lastMoved = [];
     private readonly Dictionary<OverlayKind, OverlayViewModelBase> _viewModels;
@@ -41,11 +43,12 @@ public sealed class OverlayManager
     private bool _editMode;
     private bool _globallyVisible = true;
 
-    public OverlayManager(SettingsService settings, LiveDataHub hub, TelemetryRuntime runtime)
+    public OverlayManager(SettingsService settings, LiveDataHub hub, TelemetryRuntime runtime, ErsPlanService ersPlan)
     {
         _settings = settings;
         _hub = hub;
         _recorder = runtime.Recorder;
+        _ersPlan = ersPlan;
         Inputs = new InputTraceOverlayViewModel(hub.Inputs);
         _viewModels = new()
         {
@@ -56,6 +59,7 @@ public sealed class OverlayManager
             [OverlayKind.Inputs] = Inputs,
             [OverlayKind.SectorBox] = SectorBox,
             [OverlayKind.TimingTower] = TimingTower,
+            [OverlayKind.ErsPlan] = ErsPlan,
         };
         settings.Changed += _ => ApplySettings();
         // Frequent enough that the hole follows the main window and a dragged overlay without visible lag.
@@ -69,6 +73,7 @@ public sealed class OverlayManager
     public InputTraceOverlayViewModel Inputs { get; }
     public SectorBoxOverlayViewModel SectorBox { get; } = new();
     public TimingTowerOverlayViewModel TimingTower { get; } = new();
+    public ErsPlanOverlayViewModel ErsPlan { get; } = new();
 
     public static IReadOnlyDictionary<OverlayKind, Size> Sizes { get; } = new Dictionary<OverlayKind, Size>
     {
@@ -79,6 +84,7 @@ public sealed class OverlayManager
         [OverlayKind.Inputs] = new(552, 220),
         [OverlayKind.SectorBox] = new(400, 116),
         [OverlayKind.TimingTower] = new(420, 290),
+        [OverlayKind.ErsPlan] = new(300, 300),
     };
 
     public event Action? StateChanged;
@@ -168,6 +174,14 @@ public sealed class OverlayManager
         Create(OverlayKind.Inputs, new InputTraceOverlayView { DataContext = Inputs });
         Create(OverlayKind.SectorBox, new SectorBoxOverlayView { DataContext = SectorBox });
         Create(OverlayKind.TimingTower, new TimingTowerOverlayView { DataContext = TimingTower });
+        Create(OverlayKind.ErsPlan, new ErsPlanOverlayView { DataContext = ErsPlan });
+        _ersPlan.Changed += () =>
+        {
+            if (!_editMode)
+            {
+                ErsPlan.Update(_ersPlan, _hub.LastSample, _hub.Field);
+            }
+        };
         ApplySettings();
 
         _hub.LapTimingUpdated += t => { if (!_editMode) LapTiming.Update(t); };
@@ -244,6 +258,8 @@ public sealed class OverlayManager
         {
             SectorBox.Update(box, field?.Player?.TeamColour, SessionTypes.IsQualifying(_hub.Session?.SessionType ?? 0));
         }
+
+        ErsPlan.Update(_ersPlan, _hub.LastSample, field);
     }
 
     /// <summary>Hotkey: flips the conditions &amp; strategy overlay between its strategy and damage pages.</summary>
@@ -422,6 +438,7 @@ public sealed class OverlayManager
         OverlayKind.Inputs => OverlayPreset.BottomCenter,
         OverlayKind.SectorBox => OverlayPreset.TopRight,
         OverlayKind.TimingTower => OverlayPreset.TopLeft,
+        OverlayKind.ErsPlan => OverlayPreset.BottomRight,
         _ => OverlayPreset.RightCenter,
     };
 
@@ -442,6 +459,7 @@ public sealed class OverlayManager
             OverlayPreset.TopCenter => new PixelPoint(area.X + (area.Width - w) / 2, area.Y + (int)(150 * scaling)),
             OverlayPreset.Center => new PixelPoint(area.X + (area.Width - w) / 2, area.Y + (int)(380 * scaling)),
             OverlayPreset.BottomCenter => new PixelPoint(area.X + (area.Width - w) / 2, area.Bottom - h - (int)(60 * scaling)),
+            OverlayPreset.BottomRight => new PixelPoint(area.Right - w - margin, area.Bottom - h - (int)(60 * scaling)),
             _ => new PixelPoint(area.Right - w - margin, area.Y + (area.Height - h) / 2),
         };
     }
