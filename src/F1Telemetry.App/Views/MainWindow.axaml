@@ -117,11 +117,17 @@
       <TabItem Header="STRATEGY">
         <views:StrategyView DataContext="{Binding Session}" />
       </TabItem>
+      <TabItem Header="ENERGY">
+        <views:EnergyView DataContext="{Binding Energy}" />
+      </TabItem>
       <TabItem Header="COMPARE">
         <views:CompareView DataContext="{Binding Compare}" />
       </TabItem>
       <TabItem Header="POSITION">
         <views:PositionView DataContext="{Binding Session}" />
+      </TabItem>
+      <TabItem Header="SETUPS">
+        <views:SetupsView DataContext="{Binding Setups}" />
       </TabItem>
       <TabItem Header="SETTINGS">
         <views:SettingsView DataContext="{Binding Settings}" />

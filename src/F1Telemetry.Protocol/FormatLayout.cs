@@ -33,6 +33,7 @@ public sealed class FormatLayout
 
     public int MotionSlot { get; }
     public int LapSlot => 57;
+    public int SetupSlot => 50;
     public int TelemetrySlot { get; }
     public int StatusSlot { get; }
     public int DamageSlot => 46;

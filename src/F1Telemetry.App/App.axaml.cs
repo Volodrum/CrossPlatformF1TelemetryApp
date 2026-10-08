@@ -90,6 +90,7 @@ public partial class App : Application
         services.AddSingleton<SettingsService>();
         services.AddSingleton<TelemetryRuntime>();
         services.AddSingleton<LiveDataHub>();
+        services.AddSingleton<ErsPlanService>();
         services.AddSingleton<OverlayManager>();
         services.AddSingleton<HotkeyService>();
         services.AddSingleton<GamepadService>();
@@ -98,6 +99,9 @@ public partial class App : Application
         services.AddSingleton<SessionViewModel>();
         services.AddSingleton<LapDetailViewModel>();
         services.AddSingleton<CompareViewModel>();
+        services.AddSingleton<EnergyPlanViewModel>();
+        services.AddSingleton<EnergyViewModel>();
+        services.AddSingleton<SetupsViewModel>();
         services.AddSingleton<SettingsViewModel>();
         services.AddSingleton<MainWindowViewModel>();
         return services.BuildServiceProvider();

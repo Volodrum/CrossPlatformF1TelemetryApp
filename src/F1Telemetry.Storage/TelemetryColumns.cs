@@ -123,19 +123,37 @@ internal static class TelemetryColumns
 
         TelemetryColumn.Int("active_aero_mode", s => s.ActiveAeroMode, (s, v) => s.ActiveAeroMode = v),
         TelemetryColumn.Int("overtake_active", s => s.OvertakeActive, (s, v) => s.OvertakeActive = v),
+
+        // v3. Older databases get these by ALTER TABLE, which appends: keep them last, in this order (the appender
+        // writes by position).
+        TelemetryColumn.Double("engine_power_ice", s => s.EnginePowerIce, (s, v) => s.EnginePowerIce = v),
+        TelemetryColumn.Double("engine_power_mguk", s => s.EnginePowerMguk, (s, v) => s.EnginePowerMguk = v),
+        TelemetryColumn.Double("ers_harvest_limit", s => s.ErsHarvestLimit, (s, v) => s.ErsHarvestLimit = v),
+        TelemetryColumn.Int("active_aero_available", s => s.ActiveAeroAvailable, (s, v) => s.ActiveAeroAvailable = v),
+        TelemetryColumn.Int("overtake_available", s => s.OvertakeAvailable, (s, v) => s.OvertakeAvailable = v),
     ];
 
     public static string SelectList { get; } = string.Join(", ", All.Select(c => c.Name));
 
+    /// <summary>Columns added after v1, with the migration that adds them to an existing table.</summary>
+    public static IEnumerable<string> AddColumnsSql(params string[] names) =>
+        names.Select(name => All.Single(c => c.Name == name)).Select(c => $"ALTER TABLE telemetry ADD COLUMN IF NOT EXISTS {c.Name} {c.SqlType}");
+
     public static string CreateTableSql { get; } =
         $"CREATE TABLE IF NOT EXISTS telemetry (\n    {string.Join(",\n    ", All.Select(c => $"{c.Name} {c.SqlType}"))}\n)";
 
-    public static TelemetrySample ReadRow(DbDataReader reader)
+    public static TelemetrySample ReadRow(DbDataReader reader) => ReadRow(reader, All);
+
+    /// <summary>Some of the columns, for a query that only needs part of each sample.</summary>
+    public static TelemetryColumn[] Select(params string[] names) => [.. names.Select(name => All.Single(c => c.Name == name))];
+
+    /// <summary>Reads a row selected as <paramref name="columns"/>, in that order; the other fields stay 0.</summary>
+    public static TelemetrySample ReadRow(DbDataReader reader, TelemetryColumn[] columns)
     {
         var sample = new TelemetrySample();
-        for (var i = 0; i < All.Length; i++)
+        for (var i = 0; i < columns.Length; i++)
         {
-            All[i].Read(sample, reader, i);
+            columns[i].Read(sample, reader, i);
         }
 
         return sample;

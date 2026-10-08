@@ -19,6 +19,7 @@ public sealed class HotkeyService : IDisposable
     private Hotkey? _startStop;
     private Hotkey? _toggleOverlays;
     private Hotkey? _strategyPage;
+    private Hotkey? _ersPlan;
 
     public HotkeyService(SettingsService settings, ILogger<HotkeyService> log)
     {
@@ -30,6 +31,7 @@ public sealed class HotkeyService : IDisposable
     public event Action? StartStopPressed;
     public event Action? ToggleOverlaysPressed;
     public event Action? StrategyPagePressed;
+    public event Action? ErsPlanPressed;
 
     /// <summary>Suspends dispatch (while the settings page is capturing a new shortcut).</summary>
     public bool Suspended { get; set; }
@@ -54,6 +56,7 @@ public sealed class HotkeyService : IDisposable
         _startStop = Hotkey.TryParse(_settings.Current.StartStopHotkey);
         _toggleOverlays = Hotkey.TryParse(_settings.Current.ToggleOverlaysHotkey);
         _strategyPage = Hotkey.TryParse(_settings.Current.StrategyPageHotkey);
+        _ersPlan = Hotkey.TryParse(_settings.Current.ErsPlanHotkey);
     }
 
     private void OnKeyPressed(object? sender, KeyboardHookEventArgs e)
@@ -76,6 +79,10 @@ public sealed class HotkeyService : IDisposable
         else if (_strategyPage?.Matches(key, mask) == true)
         {
             Dispatcher.UIThread.Post(() => StrategyPagePressed?.Invoke());
+        }
+        else if (_ersPlan?.Matches(key, mask) == true)
+        {
+            Dispatcher.UIThread.Post(() => ErsPlanPressed?.Invoke());
         }
     }
 

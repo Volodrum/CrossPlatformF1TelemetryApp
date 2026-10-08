@@ -100,6 +100,34 @@ public sealed class PacketWriter(FormatLayout layout)
         F32(s, 52, d.SpeedTrapFastestSpeed);
     }
 
+    public void WriteCarSetup(byte[] packet, int car, CarSetup c)
+    {
+        var s = Slot(packet, car, layout.SetupSlot);
+        s[0] = c.FrontWing;
+        s[1] = c.RearWing;
+        s[2] = c.OnThrottle;
+        s[3] = c.OffThrottle;
+        F32(s, 4, c.FrontCamber);
+        F32(s, 8, c.RearCamber);
+        F32(s, 12, c.FrontToe);
+        F32(s, 16, c.RearToe);
+        s[20] = c.FrontSuspension;
+        s[21] = c.RearSuspension;
+        s[22] = c.FrontAntiRollBar;
+        s[23] = c.RearAntiRollBar;
+        s[24] = c.FrontSuspensionHeight;
+        s[25] = c.RearSuspensionHeight;
+        s[26] = c.BrakePressure;
+        s[27] = c.BrakeBias;
+        s[28] = c.EngineBraking;
+        TyresF32(s, 29, c.TyresPressure);
+        s[45] = c.Ballast;
+        F32(s, 46, c.FuelLoad);
+    }
+
+    public void WriteNextFrontWingValue(byte[] packet, float value) =>
+        F32(packet.AsSpan(H + layout.MaxCars * layout.SetupSlot), 0, value);
+
     public void WriteCarTelemetry(byte[] packet, int car, CarTelemetry t)
     {
         var s = Slot(packet, car, layout.TelemetrySlot);

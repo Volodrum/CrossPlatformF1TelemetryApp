@@ -1,4 +1,5 @@
 using F1Telemetry.Core;
+using F1Telemetry.Core.Energy;
 using F1Telemetry.Core.Engine;
 using F1Telemetry.Core.Models;
 using F1Telemetry.Core.Recording;
@@ -157,7 +158,42 @@ public sealed class EndToEndTests : IAsyncLifetime
         if (format == GameFormat.F1_26)
         {
             Assert.Contains(samples, s => s.OvertakeActive == 1);
+            Assert.Contains(samples, s => s.OvertakeAvailable == 1 && s.ActiveAeroAvailable == 1);
         }
+
+        // Energy: the battery stays within its 4 MJ, the MGU-K deploys by mode, the harvest limit only exists in 2026.
+        var race = new List<TelemetrySample>();
+        foreach (var lap in laps)
+        {
+            race.AddRange(await store.GetLapSamplesAsync(recording.Id, lap.LapNumber, TestContext.Current.CancellationToken));
+        }
+
+        Assert.All(race, s => Assert.InRange(s.ErsStoreEnergy, 0, 4_000_000));
+        Assert.Contains(race, s => s.ErsDeployMode == 1 && s.EnginePowerMguk > 0);
+        Assert.Contains(race, s => s.ErsDeployMode == 3);
+        Assert.Contains(race, s => s.EnginePowerIce > 0);
+        Assert.Contains(race, s => s.ErsHarvestedMguk > 0);
+        Assert.All(race, s => Assert.Equal(format == GameFormat.F1_26 ? 7_100_000 : 0, s.ErsHarvestLimit));
+
+        // Lap energy from the energy-only query: one per lap, each with harvest, deployment and its deploy modes.
+        var energy = EnergyAnalyzer.AnalyzeLaps(await store.GetEnergySamplesAsync(recording.Id, TestContext.Current.CancellationToken));
+        Assert.Equal([1, 2, 3, 4, 5], energy.Select(e => e.LapNumber));
+        Assert.All(energy, e => Assert.True(e.Harvested > 0 && e.Deployed > 0));
+        Assert.Contains(energy, e => e.Modes.Any(m => m.Mode == DeployModes.Overtake));
+        Assert.Equal(race.First().ErsStoreEnergy, energy[0].StartStore);
+
+        // The car model learned from the race: the simulator's deploy map and where it harvests.
+        var model = ErsModelBuilder.Build(format, recording.TrackId, await store.GetModelSamplesAsync(format, recording.TrackId, TestContext.Current.CancellationToken));
+        Assert.Equal(5, model.Laps);
+        Assert.True(model.HasPowerData);
+        Assert.Equal(format == GameFormat.F1_26 ? 126_000 : 60_000, model.Deploy.Curve(DeployModes.Medium)!.PeakW, 1_000.0);
+        Assert.Contains(model.AlongLap, b => b.HarvestedJ > 0);
+
+        // Setups: the one the race started on, then the new front wing fitted at the stop on lap 2.
+        var setups = await store.GetSetupsAsync(recording.Id, TestContext.Current.CancellationToken);
+        Assert.Equal(2, setups.Count);
+        Assert.Equal(setups[0].Setup.FrontWing + 1, setups[1].Setup.FrontWing);
+        Assert.Equal(3, setups[1].LapNumber);
 
         var result2 = (await analysis.AnalyzeAsync(recording, laps, TestContext.Current.CancellationToken))!;
         Assert.Equal(2, result2.Stints.Count);

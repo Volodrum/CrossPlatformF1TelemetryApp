@@ -24,7 +24,7 @@
           <StackPanel Spacing="12">
             <TextBlock Classes="label strong" Text="GLOBAL HOTKEYS" FontSize="14" />
             <TextBlock Classes="body" Text="Work while the game has focus. macOS: grant the Accessibility permission. Not available on Wayland." />
-            <Grid ColumnDefinitions="260,220,Auto" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="10" ColumnSpacing="12">
+            <Grid ColumnDefinitions="260,220,Auto" RowDefinitions="Auto,Auto,Auto,Auto,Auto" RowSpacing="10" ColumnSpacing="12">
               <TextBlock Classes="h2" Text="Start / stop recording" VerticalAlignment="Center" />
               <TextBlock Grid.Column="1" Classes="data-s" Text="{Binding StartStopHotkey}" VerticalAlignment="Center" />
               <Button Grid.Column="2" Theme="{StaticResource SecondaryButton}" Content="CHANGE…" Command="{Binding BeginCaptureCommand}" CommandParameter="startStop" />
@@ -34,6 +34,9 @@
               <TextBlock Grid.Row="2" Classes="h2" Text="Strategy / damage page" VerticalAlignment="Center" />
               <TextBlock Grid.Row="2" Grid.Column="1" Classes="data-s" Text="{Binding StrategyPageHotkey}" VerticalAlignment="Center" />
               <Button Grid.Row="2" Grid.Column="2" Theme="{StaticResource SecondaryButton}" Content="CHANGE…" Command="{Binding BeginCaptureCommand}" CommandParameter="strategyPage" />
+              <TextBlock Grid.Row="4" Classes="h2" Text="ERS plan: next mode" VerticalAlignment="Center" />
+              <TextBlock Grid.Row="4" Grid.Column="1" Classes="data-s" Text="{Binding ErsPlanHotkey}" VerticalAlignment="Center" />
+              <Button Grid.Row="4" Grid.Column="2" Theme="{StaticResource SecondaryButton}" Content="CHANGE…" Command="{Binding BeginCaptureCommand}" CommandParameter="ersPlan" />
               <TextBlock Grid.Row="3" Classes="h2" Text="Strategy / damage page (wheel)" VerticalAlignment="Center" />
               <ComboBox Grid.Row="3" Grid.Column="1" ItemsSource="{Binding WheelButtons}" SelectedIndex="{Binding StrategyPageUdpAction}"
                         HorizontalAlignment="Stretch" VerticalAlignment="Center" />
@@ -50,7 +53,7 @@
             <TextBlock Classes="body" TextWrapping="Wrap"
                        Text="Read straight from the pad (DualSense over USB or Bluetooth, DualShock, Xbox, Switch Pro…), also while the game has focus. Press SET, then a button, or hold one button and press another for a combo such as Touchpad + D-pad Right. The game still sees the press, so pick a button or combo it doesn't use." />
             <TextBlock Classes="mono" Text="{Binding ControllerStatus}" FontSize="13" Foreground="{StaticResource TextLoBrush}" TextWrapping="Wrap" />
-            <Grid ColumnDefinitions="260,220,Auto,Auto" RowDefinitions="Auto,Auto,Auto" RowSpacing="10" ColumnSpacing="12">
+            <Grid ColumnDefinitions="260,220,Auto,Auto" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="10" ColumnSpacing="12">
               <TextBlock Classes="h2" Text="Start / stop recording" VerticalAlignment="Center" />
               <controls:PadBindingView Grid.Column="1" BindingText="{Binding StartStopPad}" Family="{Binding PadFamily}" HorizontalAlignment="Left" VerticalAlignment="Center" />
               <Button Grid.Column="2" Theme="{StaticResource SecondaryButton}" Content="SET…" Command="{Binding BeginPadCaptureCommand}" CommandParameter="startStop" />
@@ -63,6 +66,10 @@
               <controls:PadBindingView Grid.Row="2" Grid.Column="1" BindingText="{Binding StrategyPagePad}" Family="{Binding PadFamily}" HorizontalAlignment="Left" VerticalAlignment="Center" />
               <Button Grid.Row="2" Grid.Column="2" Theme="{StaticResource SecondaryButton}" Content="SET…" Command="{Binding BeginPadCaptureCommand}" CommandParameter="strategyPage" />
               <Button Grid.Row="2" Grid.Column="3" Theme="{StaticResource SecondaryButton}" Content="CLEAR" Command="{Binding ClearPadBindingCommand}" CommandParameter="strategyPage" />
+              <TextBlock Grid.Row="3" Classes="h2" Text="ERS plan: next mode" VerticalAlignment="Center" />
+              <controls:PadBindingView Grid.Row="3" Grid.Column="1" BindingText="{Binding ErsPlanPad}" Family="{Binding PadFamily}" HorizontalAlignment="Left" VerticalAlignment="Center" />
+              <Button Grid.Row="3" Grid.Column="2" Theme="{StaticResource SecondaryButton}" Content="SET…" Command="{Binding BeginPadCaptureCommand}" CommandParameter="ersPlan" />
+              <Button Grid.Row="3" Grid.Column="3" Theme="{StaticResource SecondaryButton}" Content="CLEAR" Command="{Binding ClearPadBindingCommand}" CommandParameter="ersPlan" />
             </Grid>
             <TextBlock Text="{Binding PadCaptureHint}" Foreground="{StaticResource DangerBrush}" FontWeight="SemiBold" />
           </StackPanel>
@@ -110,6 +117,7 @@
                           <Button Theme="{StaticResource SecondaryButton}" Content="CENTRE" Command="{Binding PresetCommand}" CommandParameter="{x:Static services:OverlayPreset.Center}" />
                           <Button Theme="{StaticResource SecondaryButton}" Content="RIGHT" Command="{Binding PresetCommand}" CommandParameter="{x:Static services:OverlayPreset.RightCenter}" />
                           <Button Theme="{StaticResource SecondaryButton}" Content="BOTTOM" Command="{Binding PresetCommand}" CommandParameter="{x:Static services:OverlayPreset.BottomCenter}" />
+                          <Button Theme="{StaticResource SecondaryButton}" Content="BOTTOM RIGHT" Command="{Binding PresetCommand}" CommandParameter="{x:Static services:OverlayPreset.BottomRight}" />
                         </StackPanel>
                       </WrapPanel>
 
@@ -132,6 +140,18 @@
                             </StackPanel>
                           </Border>
                           <TextBlock Classes="body" Text="what the gap after each sector is measured against" VerticalAlignment="Center" />
+                        </StackPanel>
+
+                        <StackPanel Orientation="Horizontal" Spacing="12" IsVisible="{Binding HasErsReserve}">
+                          <TextBlock Classes="label" Text="RACE RESERVE · MJ" VerticalAlignment="Center" />
+                          <ComboBox ItemsSource="{x:Static vm:OverlaySettingsViewModel.ErsReserves}" SelectedItem="{Binding ErsReserveMj}" MinWidth="90">
+                            <ComboBox.ItemTemplate>
+                              <DataTemplate>
+                                <TextBlock Text="{Binding StringFormat='{}{0:0.0}'}" />
+                              </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                          </ComboBox>
+                          <TextBlock Classes="body" Text="charge race plans never deploy below, kept for fights" VerticalAlignment="Center" />
                         </StackPanel>
 
                         <StackPanel Orientation="Horizontal" Spacing="12" IsVisible="{Binding HasGapMode}">

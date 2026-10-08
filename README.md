@@ -53,7 +53,7 @@ It is a rewrite of the Electron + React + DuckDB app on **.NET 10 + Avalonia 12*
 | `F1Telemetry.Ingest` | Packet sources (UDP, replay, simulator), `.f1rec` capture format, `TelemetryPipeline` | Core, Simulation |
 | `F1Telemetry.Storage` | DuckDB schema and migrations, batched writer, analytics queries | Core |
 | `F1Telemetry.App` | Avalonia desktop app: dashboard, overlays, hotkeys, settings | all |
-| `tools/F1Telemetry.Cli` (`f1tel`) | Capture, replay, simulate, inspect and seed data without the game | Ingest, Storage |
+| `tools/F1Telemetry.Cli` (`f1tel`) | Capture, replay, simulate, inspect, seed and re-import data without the game | Ingest, Storage |
 | `tests/F1Telemetry.Tests` | Protocol round-trips for both formats, analytics, end-to-end simulator → DuckDB | all |
 
 ### Telemetry modes: F1 25 and F1 26
@@ -67,7 +67,9 @@ The layout differences between the two formats are handled in `FormatLayout`:
 - `engineTemperature` in car telemetry is `u8` instead of `u16`, so the slot is 59 bytes instead of 60.
 - Car status gains `ersHarvestLimitPerLap`, so the slot is 59 bytes instead of 55.
 - The session packet gains active-aero zones, DRS zones and assist flags (753 → 926 bytes).
-- New packet 16, **CarTelemetry2**: active aero mode and overtake mode. These are recorded as `active_aero_mode` and `overtake_active`.
+- New packet 16, **CarTelemetry2**: active aero mode and overtake mode. These are recorded as `active_aero_mode`, `active_aero_available`, `overtake_active` and `overtake_available`.
+
+Both formats also record ICE and MGU-K power (`engine_power_ice`, `engine_power_mguk`, in W) with the battery, and the player's **car setup** (packet 5) in `recording_setups`: the setup in use when a recording starts, then one row per change, such as a new front wing at a stop. Fuel load alone doesn't count as a change.
 
 Packets whose length doesn't match their format are rejected and counted, never misread. The Live view shows the count.
 
@@ -126,7 +128,7 @@ dotnet run --project src/F1Telemetry.App
 dotnet run --project src/F1Telemetry.App -- --mode f1-26 --source demo --record
 ```
 
-Other switches: `--mode f1-25|f1-26`, `--source udp|demo|replay=<file>`, `--record`, `--tab live|laps|lapdetail|strategy|compare|position|settings`, `--select-latest`, `--lap <n>`, `--preview-overlays` (with `--tab settings`), and `--exit-after <s>` for smoke tests.
+Other switches: `--mode f1-25|f1-26`, `--source udp|demo|replay=<file>`, `--record`, `--tab live|laps|lapdetail|strategy|energy|compare|position|setups|settings`, `--select-latest`, `--lap <n>`, `--preview-overlays` (with `--tab settings`), and `--exit-after <s>` for smoke tests.
 
 Data is stored in `%LOCALAPPDATA%\F1Telemetry` on Windows, `~/Library/Application Support/F1Telemetry` on macOS and `~/.local/share/F1Telemetry` on Linux. Override it with `F1TELEMETRY_DATA_DIR`.
 
@@ -139,6 +141,13 @@ dotnet run --project tools/F1Telemetry.Cli -- replay race.f1rec --speed 2       
 dotnet run --project tools/F1Telemetry.Cli -- inspect race.f1rec                                                  # packet/format breakdown
 dotnet run --project tools/F1Telemetry.Cli -- seed --db test.duckdb --laps 8 --track Spa                          # offline database seeding
 dotnet run --project tools/F1Telemetry.Cli -- seed --db test.duckdb --laps 20 --pits 7,14 --track Spa             # a two-stop race (Medium → Hard → Medium)
+dotnet run --project tools/F1Telemetry.Cli -- list --db test.duckdb                                               # recordings with laps and setups
+```
+
+`reimport` rebuilds recordings from the app's raw captures (`captures/recording-<id>-….f1rec` in the data folder), so data that a newer version records, such as setups and ERS power, can be added to older sessions. With `--replace` it deletes the original recording once the new one is in, and keeps its date and description. Close the app first: it locks the database.
+
+```bash
+dotnet run --project tools/F1Telemetry.Cli -- reimport --db telemetry.duckdb captures/recording-18-20261006-164715.f1rec --replace
 ```
 
 ### Tests
@@ -178,6 +187,7 @@ The UI implements the "F1 Telemetry Design Template": a dark, high-contrast race
 - **Type:** JetBrains Mono for every number, Chakra Petch for labels and headings, IBM Plex Sans for body text. All three are embedded (`Assets/Fonts`, SIL OFL). Numbers are 18 px or larger, and each overlay has one headline number of 56 px or larger.
 - **Status is never colour alone:** filled purple = session best, filled green = faster, amber outline = slower, filled red = warning. Deltas carry ▲/▼ and compounds carry a letter (`CompoundBadge`). The shared `Chip` model and template (`App.axaml`) render the same way on overlays, the laps table and lap detail.
 - **Controls:** `Theme/Controls.axaml` defines the primary and secondary buttons, the segmented mode toggle, section and segment tabs, card lists and text roles (`label`, `h1`, `data-xl`…`data-s`). Strokes are 2 px or thicker and targets 44 px or larger.
+- **ERS deploy modes:** one blue ramp, lighter for more power (None `#3A404C`, Medium `#1F6FB2`, Hotlap `#4DB5FF`, Overtake `#B5E2FF`), always with the mode letter N/M/H/O. It is kept apart from the status colours, so a mode never reads as good or bad.
 - **Charts and map:** panel background, JetBrains Mono ticks, 3 px traces and a dashed grey best-lap reference. The map draws the tarmac at its true width (at least 6 px) between 1 px track limits, with a thin 2.5 px green/amber/red input ribbon, a thin grey comparison lap and a small car marker. Zoom (up to 60×) moves the points apart but keeps every line's on-screen width, so the lines of different laps separate instead of growing fatter.
 
 | Live | Lap detail | Strategy |
@@ -208,9 +218,45 @@ Within one stint the two effects can't be told apart, because fuel falls in step
 
 The fits need a few clean laps per stint: with only two or three, wear rates are noisy.
 
+## Energy analysis
+
+The **ENERGY** tab shows what the battery did on every lap of a recording:
+
+- a **battery map**: the lap's racing line coloured by ERS deploy mode, or by battery level in the ERS charge bands (MODE / BATTERY switch). None is a thin grey line, the deploy modes a wider ribbon;
+- the **battery trace** along the lap, with the deploy modes as a strip under it and a marker where the harvest limit was reached;
+- a **lap table**: battery at the start and end of the lap, MJ harvested and deployed, where the harvest limit was reached (2026 format), and waste flags. **FLAT** is time at full throttle with an empty battery, so no electric power. **FULL** is time braking with a full battery, so the energy is lost. **CAP** is time braking after the lap's harvest limit, so nothing more could be stored. **FADE** is time deploying above the speed where the mode's MGU-K output drops;
+- the **car model**, learned from every lap recorded at the track in that game format (`ErsModelBuilder`):
+  - a **deploy map**: MGU-K output by deploy mode and speed (median of full-throttle samples with charge in the battery, 10 km/h bands), and the speed where each mode fades. In a 2026 race at Spa, Overtake gave 315 kW from 220 to 260 km/h and 135 kW from 270 km/h; Medium a flat 126 kW, nothing below about 100 km/h;
+  - **energy along the lap**: kJ harvested and deployed per 50 m on an average lap (counter resets at the line are not counted as harvest);
+  - a **straight-line fit** per active-aero mode (DRS in 2025): *a = efficiency · P / (m · v) − drag · v² / m − resistance*, by least squares over full-throttle straight-line samples, with P the ICE plus MGU-K output and m the minimum car mass plus fuel. It reports the drag area C<sub>d</sub>A, the share of power that reaches the road and the fit's R². At Spa the low-drag active-aero mode fitted C<sub>d</sub>A 0.86 m² against 1.26 m², with R² 0.94 and 0.92.
+
+  The deploy map and the fit need ICE and MGU-K power, recorded from this version on; `f1tel reimport` adds it to older captures.
+- a **lap plan** for the chosen lap: which deploy mode to run in each flat-out zone, as **Qualifying** (start with a full battery, charged on the out-lap; may end empty) or **Race** (end every lap with at least the charge it started with, never below a reserve of 0, 0.5 or 1 MJ). It shows the predicted lap, the battery to cross the line with, the battle budget (what 1 MJ more this lap gains, and what winning it back costs), a confidence badge, and per zone what you ran, the plan, the battery in and out and the time it gains. The map can show the plan instead of your lap, and the trace draws the plan's battery and modes under yours.
+
+**How the plans are made.** `LapProfile` cuts the lap into 25 m segments; `LapSimulator` keeps your speeds through corners and braking zones (grip limits them, not power) and re-runs the flat-out stretches with the ICE output you had plus the MGU-K output of the chosen mode from the deploy map, never faster than you can still brake for the next corner. Each segment keeps the difference between your real acceleration and the straight-line fit's, so your own lap replays exactly and the fit only decides what a change of MGU-K output does. The battery takes the harvest you had, loses what doesn't fit in 4 MJ, and pays for deployment (including what the car deployed at part throttle). The game measures lap distance along the centre line, a little longer than the line you drive, so speeds are scaled per lap to match the real segment times. `ErsOptimizer` then runs dynamic programming over the zones and the battery level in 0.025 MJ steps, with options a driver can follow: one mode, one mode until the speed it fades from and then another, or one mode for the first third or two thirds of the zone and then None. A race plan tries every starting level and keeps the fastest. Plans take about 0.1 s. Gains are measured against your lap as driven, both simulated, so model errors cancel; the confidence badge says how close your modes, with the deploy map's output, replay the lap (within 0.3 s is trusted).
+
+![Lap plan](docs/screenshots/15-energy-plan.png)
+
+The game resets its per-lap harvest and deploy counters at the line, but not always on the same packet as the lap number. `EnergyAnalyzer` takes each lap's totals from after the last reset, so a lap never inherits the previous lap's figures. Lap detail's ENERGY charts add the battery difference to the comparison lap, the deploy mode and ICE / MGU-K power.
+
+![Energy tab](docs/screenshots/13-energy.png)
+
+## Setup library
+
+The **SETUPS** tab keeps every setup you drive, without typing anything in. The game sends your setup twice a second (packet 5). A recording stores the setup it started with and every change, and the library holds one entry per track, game format and setup (fuel load aside, since the game reports the fuel in the tank). Setups loaded in the garage but never driven on a timed lap stay out, so going through your saved setups doesn't fill the list.
+
+- Each setup lists its **runs**: the session, laps, best valid lap, top speed, and the weather and track and air temperature when it went out. Filter by track, by weather (dry: clear to overcast; wet: light rain; very wet: heavy rain and storm) or to your favourites.
+- Setups are named "Spa · v3" in the order they were first driven at a track. Rename them, add notes, and star the ones you keep.
+- The detail shows every setting grouped like the game's setup menu, compared with the previous version at that track (or any other setup there), with ▲/▼ and the size of each change.
+- **Export selected** writes the setups you tick, from one to all, to a `.f1setups` file (JSON: name, notes, game format, track, every setting, plus best lap and laps for whoever reads it). **Import** adds a file's setups and skips the ones the library already has. A removed setup stays removed until a file brings it back.
+
+![Setups tab](docs/screenshots/14-setups.png)
+
+The game can't load a setup from outside: its setups live in the encrypted, signed profile save. Typing a saved setup into the in-game setup screen for you is the next step.
+
 ## Overlays
 
-There are seven HUD windows: **lap timing**, **lap/sector delta**, **proximity radar**, **conditions & strategy**, **input trace**, **sector box** and **timing tower**. Each can be set to *Always*, *Session* (only while recording) or *Never*. The last two, plus the damage page, are meant to replace the game's own HUD.
+There are eight HUD windows: **lap timing**, **lap/sector delta**, **proximity radar**, **conditions & strategy**, **input trace**, **sector box**, **timing tower** and **ERS plan**. Each can be set to *Always*, *Session* (only while recording) or *Never*. The sector box and timing tower, plus the damage page, are meant to replace the game's own HUD.
 
 The **sector box** (top right by default) works like the TV qualifying graphic. It shows your position, team colour and the reference lap, then three colour-only sector bars: purple = fastest of anyone this session, green = your personal best, yellow = slower. The live sector fills as you drive through it, using the session's sector boundaries. Below the bars is the lap time. For 4 s after each split, that sector's time replaces it, in the same large type, with the cumulative gap to the reference lap at that split in coloured text (green ahead, amber behind). The reference is the session's fastest lap (P1) or your personal best, chosen in Settings. Colours and gaps are fixed when you cross the split. A finished lap is held for 4 s, with the lap time filled in its colour and the lap gap beside it (purple when it beats the session best). An invalid lap turns grey with a red strike-through.
 
@@ -219,6 +265,10 @@ The **timing tower** (top left) shows you plus the 3 cars ahead and 2 behind, sh
 The **conditions & strategy** overlay has a second page: the car from above with damage per part (front wing L/R, rear wing, sidepods, engine, floor, diffuser, gearbox). It also shows tyre wear, brake damage and DRS/ERS faults. Parts are banded <10 % green, 10–29 % amber, 30–49 % orange, 50 %+ red; tyres use the strategy page's 35 % / 55 % thresholds. The **Strategy / damage page** hotkey (default <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>D</kbd>) switches pages. So does a wheel or pad button: bind a button to one of the game's **UDP Action 1–12** controls and pick that action in Settings. The game reports the press in its `BUTN` event, so this works with any wheel, on every OS, without a keyboard hook. On a controller you can also bind the button directly: under **CONTROLLER BUTTONS** in Settings, press **SET…** and then a button, or hold one button and press another for a combo (for example Touchpad + D-pad Right on a DualSense). This works for start / stop recording and toggle overlays too. Bindings are shown as button icons in the style of the connected pad (PlayStation symbols, Xbox letters), with the name in a tooltip. The game still sees the press, so pick a button or combo it doesn't use. When the car takes new bodywork, gearbox or engine damage, or gets a new fault, the overlay shows the damage page for a few seconds (8 s by default, adjustable, can be switched off) and then goes back. Tyre wear, tyre and brake damage, power-unit wear, and damage that goes down after a flashback or repair never trigger it.
 
 ![Controller buttons in Settings](docs/screenshots/12-controller.png)
+
+The **ERS plan** overlay (bottom right by default) puts the Energy tab's lap plan on screen while you drive. When a session starts it learns the car model from every lap recorded at that track and takes your fastest clean lap with power data as the reference; then it plans each lap at the line from the battery you actually have. The headline is the deploy mode the plan wants now (N/M/H/O in the deploy-mode ramp). When the car runs a different mode it turns amber and says which one to switch to; between zones it shows a dash. Below are the next switch (at a speed, or in so many metres, or the next zone's mode), the battery against the plan's level at this point (a white mark on the bar, and ▲/▼ with the difference), and in races the gap to the car ahead when it is under a second and whether the game offers overtake mode. Qualifying sessions and time trial get qualifying plans, everything else race plans. The **ERS plan: next mode** hotkey (default <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>E</kbd>) or controller button steps through race normal → attack (end the lap 1 MJ lower) → recover (1 MJ higher) → qualifying. Race plans keep the reserve set in Settings (0, 0.5 or 1 MJ). The app never changes the mode: you do, in the game.
+
+![ERS plan overlay](docs/screenshots/16-ers-plan-overlay.png)
 
 The **input trace** plots throttle and brake over the last few seconds (1–30 s, 6 by default) on a 0–100 % scale, with live pedal bars. It is built for latency. The engine raises an allocation-free `InputsCaptured` event for every car-telemetry packet on the ingest thread, straight into a lock-guarded ring buffer (`InputHistory`). The overlay control reads that buffer and redraws on every display frame (`RequestAnimationFrame`), bypassing bindings and the 20 Hz UI tick. Samples sit on the game clock and are mapped to the local clock through the lowest observed arrival latency, so a 60 Hz feed scrolls smoothly on a high-refresh display. When packets stop, the trace freezes and the frame loop idles.
 
@@ -251,6 +301,7 @@ Switch on **PREVIEW OVERLAYS** at the top of the Settings tab to show every over
 
 ## Next steps
 
+- Setup autopilot: dial a library setup into the game's setup screen with simulated key presses, checked against the live setup packet.
 - Strategy optimiser: a per-track compound library from every recording, then 1-, 2- and 3-stop plans ranked with pit windows and undercut values.
 - Driver names on the radar.
 - Installer and auto-update (e.g. Velopack), plus CI builds for all three OSes.

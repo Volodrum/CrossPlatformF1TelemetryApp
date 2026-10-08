@@ -33,6 +33,7 @@ public class ProtocolTests
             Assert.Equal(layout.PacketSizes[PacketId.CarTelemetry], h + layout.MaxCars * layout.TelemetrySlot + 3);
             Assert.Equal(layout.PacketSizes[PacketId.CarStatus], h + layout.MaxCars * layout.StatusSlot);
             Assert.Equal(layout.PacketSizes[PacketId.CarDamage], h + layout.MaxCars * layout.DamageSlot);
+            Assert.Equal(layout.PacketSizes[PacketId.CarSetups], h + layout.MaxCars * layout.SetupSlot + 4);
             Assert.Equal(layout.PacketSizes[PacketId.FinalClassification], h + 1 + layout.MaxCars * layout.FinalClassificationSlot);
         }
 
@@ -246,6 +247,37 @@ public class ProtocolTests
         var expected = new FinalClassification(3, 57, 5, 15, 1, ResultStatus.Finished, 91_931, 5_341.517, 5);
         writer.WriteFinalClassification(packet, player, expected);
         Assert.Equal(expected, Assert.IsType<FinalClassificationPacket>(PacketParser.Parse(packet).Packet).Player);
+    }
+
+    [Theory]
+    [MemberData(nameof(Formats))]
+    public void Car_setups_round_trip(GameFormat format)
+    {
+        var layout = FormatLayout.For(format);
+        var writer = new PacketWriter(layout);
+        var packet = writer.Create(PacketId.CarSetups, 1, 0, 0, 5);
+        var expected = new CarSetup(18, 12, 100, 25, -3.4f, -1.9f, 0.01f, 0.12f, 37, 17, 15, 8, 24, 51, 100, 55, 50,
+            new Tyres<float>(24.2f, 24.3f, 28.0f, 28.1f), 6, 6.5f);
+        writer.WriteCarSetup(packet, 5, expected);
+        writer.WriteCarSetup(packet, layout.MaxCars - 1, expected with { FrontWing = 40 });
+        writer.WriteNextFrontWingValue(packet, 19);
+
+        var parsed = Assert.IsType<CarSetupsPacket>(PacketParser.Parse(packet).Packet);
+        Assert.Equal(expected, parsed.Player);
+        Assert.Equal(40, parsed.Cars[^1].FrontWing);
+        Assert.True(parsed.Cars[0].IsEmpty); // a car whose setup the game does not share
+        Assert.Equal(19, parsed.NextFrontWingValue);
+    }
+
+    [Fact]
+    public void Setups_compare_without_fuel_load()
+    {
+        var setup = new CarSetup(18, 12, 100, 25, -3.4f, -1.9f, 0.01f, 0.12f, 37, 17, 15, 8, 24, 51, 100, 55, 50,
+            new Tyres<float>(24.2f, 24.2f, 28.0f, 28.0f), 6, 6);
+        Assert.True(setup.SameSettings(setup with { FuelLoad = 5.2f }));
+        Assert.False(setup.SameSettings(setup with { RearAntiRollBar = 9 }));
+        Assert.False(setup.SameSettings(setup with { TyresPressure = setup.TyresPressure with { FrontLeft = 28.4f } }));
+        Assert.False(setup.IsEmpty);
     }
 
     [Fact]

@@ -155,6 +155,31 @@ vm.SelectedRecording = vm.Recordings.First(r => r.Description == "Two stops");
 Pump(vm.Session.RefreshAsync(), 300);
 vm.SelectedTab = MainTab.Strategy;
 Capture(window, "11-strategy-two-stops");
+
+// Energy: the one-stop race's battery map, lap summary and trace.
+vm.SelectedRecording = vm.Recordings.First(r => r.Description == "One stop");
+vm.SelectedTab = MainTab.Energy;
+Pump(vm.ActivateEnergyAsync(), 1500);
+Capture(window, "13-energy");
+if (window.GetVisualDescendants().OfType<EnergyView>().FirstOrDefault()?.GetVisualDescendants().OfType<ScrollViewer>().FirstOrDefault() is { } energyScroll)
+{
+    Pump(minMs: 2000); // the plan is computed in the background
+    energyScroll.Offset = energyScroll.Offset.WithY(440);
+    Capture(window, "15-energy-plan");
+    energyScroll.Offset = default;
+}
+
+// Setups: the three Monza setups the races ran (a new front wing at each stop), the newest compared with the one before.
+vm.SelectedTab = MainTab.Setups;
+Pump(vm.Setups.LoadAsync(), 800);
+foreach (var row in vm.Setups.Rows.Take(2))
+{
+    row.IsChecked = true;
+}
+
+vm.Setups.Rows[0].Favourite = true;
+Capture(window, "14-setups");
+
 vm.SelectedTab = MainTab.Live;
 
 // Overlays in preview state, on the worst-case bright background used in the design's overlay board.
@@ -226,6 +251,18 @@ var hudBoard = new Window
 };
 hudBoard.Show();
 Capture(hudBoard, "08-hud-overlays");
+
+// The ERS PLAN overlay in preview: Overtake wanted while the car runs Medium, so the switch is called out.
+overlays.ErsPlan.LoadPreview();
+var ersBoard = new Window
+{
+    Width = 360,
+    Height = 370,
+    Background = new SolidColorBrush(Color.Parse("#8A929C")),
+    Content = new ErsPlanOverlayView { DataContext = overlays.ErsPlan, Margin = new Thickness(24), VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top },
+};
+ersBoard.Show();
+Capture(ersBoard, "16-ers-plan-overlay");
 
 runtime.Recorder.Stop();
 Pump(services.DisposeAsync().AsTask(), 200);

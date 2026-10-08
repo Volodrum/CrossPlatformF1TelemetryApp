@@ -35,6 +35,12 @@
   <Color x:Key="InfoTintColor">#0E2236</Color>
   <Color x:Key="WarningTintColor">#3A1F00</Color>
 
+  <!-- ERS deploy modes: one blue ramp, lighter = more power. Always shown with the mode letter (N M H O). -->
+  <Color x:Key="ErsNoneColor">#3A404C</Color>
+  <Color x:Key="ErsMediumColor">#1F6FB2</Color>
+  <Color x:Key="ErsHotlapColor">#4DB5FF</Color>
+  <Color x:Key="ErsOvertakeColor">#B5E2FF</Color>
+
   <SolidColorBrush x:Key="Bg0Brush" Color="{StaticResource Bg0Color}" />
   <SolidColorBrush x:Key="ChromeBrush" Color="{StaticResource ChromeColor}" />
   <SolidColorBrush x:Key="PanelBrush" Color="{StaticResource PanelColor}" />
@@ -58,6 +64,10 @@
   <SolidColorBrush x:Key="FasterTintBrush" Color="{StaticResource FasterTintColor}" />
   <SolidColorBrush x:Key="InfoTintBrush" Color="{StaticResource InfoTintColor}" />
   <SolidColorBrush x:Key="WarningTintBrush" Color="{StaticResource WarningTintColor}" />
+  <SolidColorBrush x:Key="ErsNoneBrush" Color="{StaticResource ErsNoneColor}" />
+  <SolidColorBrush x:Key="ErsMediumBrush" Color="{StaticResource ErsMediumColor}" />
+  <SolidColorBrush x:Key="ErsHotlapBrush" Color="{StaticResource ErsHotlapColor}" />
+  <SolidColorBrush x:Key="ErsOvertakeBrush" Color="{StaticResource ErsOvertakeColor}" />
 
   <!-- Type: Chakra Petch for labels/headings, JetBrains Mono for every number, IBM Plex Sans for text. -->
   <FontFamily x:Key="DisplayFont">avares://F1Telemetry/Assets/Fonts#Chakra Petch</FontFamily>

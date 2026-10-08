@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Net.Sockets;
 using F1Telemetry.Core;
 using F1Telemetry.Core.Engine;
+using F1Telemetry.Core.Models;
 using F1Telemetry.Core.Recording;
 using F1Telemetry.Core.Tracks;
 using F1Telemetry.Ingest;
@@ -28,6 +29,8 @@ try
         "simulate" => await Simulate(cli, cts.Token),
         "inspect" => await Inspect(cli, cts.Token),
         "seed" => await Seed(cli, cts.Token),
+        "reimport" => await Reimport(cli, cts.Token),
+        "list" => await List(cli, cts.Token),
         _ => Help(),
     };
 }
@@ -50,6 +53,12 @@ static int Help()
           inspect  <file.f1rec>                                    Packet counts, formats, sessions and size errors
           seed     --db <file.duckdb> [--format 2025|2026] [--laps 8] [--pit 4 | --pits 3,6] [--track Monza] [--from <file.f1rec>]
                                                                    Process a simulation/capture offline into a database
+          list     --db <file.duckdb>                               Recordings with their laps and setups
+          reimport --db <file.duckdb> <capture.f1rec>... [--replace]
+                                                                   Rebuild recordings from captures, e.g. after a schema
+                                                                   upgrade. --replace deletes the recording a capture was
+                                                                   made for (recording-<id>-…) once the new one is in.
+                                                                   Close the app first: it locks the database.
         """);
     return 1;
 }
@@ -181,14 +190,117 @@ static async Task<int> Seed(Args cli, CancellationToken ct)
     var dbPath = cli.Get("--db") ?? throw new ArgumentException("seed needs --db <file>");
     await using var store = new DuckDbTelemetryStore(dbPath);
     await store.InitializeAsync(ct);
-    var engine = new SessionEngine();
-    using var recorder = new RecordingCoordinator(engine, store);
-
     IAsyncEnumerable<RawPacket> packets = cli.Get("--from") is { } capture
         ? new ReplayPacketSource(capture, speed: 0).ReadAllAsync(ct)
         : new SimulatorPacketSource(() => SimulationFromArgs(cli), speed: 0, loop: false).ReadAllAsync(ct);
 
     var sw = Stopwatch.StartNew();
+    var (count, _) = await Ingest(store, packets, "Seeded by f1tel", ct);
+    var recordings = await store.GetRecordingsAsync(ct);
+    Console.WriteLine($"Processed {count:N0} packets in {sw.Elapsed.TotalSeconds:0.0}s → {dbPath} ({recordings.Count} recording(s))");
+    return 0;
+}
+
+static async Task<int> Reimport(Args cli, CancellationToken ct)
+{
+    var dbPath = cli.Get("--db") ?? throw new ArgumentException("reimport needs --db <file>");
+    var captures = cli.All.Where(a => a.EndsWith(PacketFile.Extension, StringComparison.OrdinalIgnoreCase)).ToList();
+    if (captures.Count == 0)
+    {
+        throw new ArgumentException($"reimport needs at least one {PacketFile.Extension} file");
+    }
+
+    await using var store = new DuckDbTelemetryStore(dbPath);
+    await store.InitializeAsync(ct);
+    foreach (var capture in captures)
+    {
+        // The app names captures after the recording they were made with: recording-17-20261006-162009.f1rec.
+        var name = Path.GetFileNameWithoutExtension(capture);
+        var parts = name.Split('-');
+        var original = parts is ["recording", var id, ..] && long.TryParse(id, out var originalId)
+            ? await store.GetRecordingAsync(originalId, ct)
+            : null;
+
+        if (original is null && parts is ["recording", var missing, ..])
+        {
+            Console.WriteLine($"{Path.GetFileName(capture)}: recording {missing} is not in the database, importing as a new one");
+        }
+
+        var sw = Stopwatch.StartNew();
+        var (count, created) = await Ingest(store, new ReplayPacketSource(capture, speed: 0).ReadAllAsync(ct), original?.Description ?? $"Re-imported from {name}", ct);
+        Console.WriteLine($"{Path.GetFileName(capture)}: {count:N0} packets in {sw.Elapsed.TotalSeconds:0.0}s → recording(s) {string.Join(", ", created)}");
+        if (original is not null && created.Count > 0)
+        {
+            await KeepOriginalTimes(store, original, created, ct);
+        }
+
+        if (cli.Has("--replace") && original is not null && created.Count > 0)
+        {
+            await store.DeleteRecordingAsync(original.Id, ct);
+            Console.WriteLine($"  replaced recording {original.Id}");
+        }
+    }
+
+    return 0;
+}
+
+static async Task<int> List(Args cli, CancellationToken ct)
+{
+    var dbPath = cli.Get("--db") ?? throw new ArgumentException("list needs --db <file>");
+    await using var store = new DuckDbTelemetryStore(dbPath);
+    await store.InitializeAsync(ct);
+    foreach (var r in (await store.GetRecordingsAsync(ct)).OrderBy(r => r.Id))
+    {
+        var laps = await store.GetLapsAsync(r.Id, ct);
+        var setups = await store.GetSetupsAsync(r.Id, ct);
+        Console.WriteLine($"{r.Id,4}  {r.StartTime.ToLocalTime():yyyy-MM-dd HH:mm}  {r.TrackName,-12} {SessionTypes.Name(r.SessionType),-20} "
+                          + $"{(int)r.Format}  {laps.Count,3} laps  {setups.Count,2} setup(s)  {r.Description}");
+    }
+
+    return 0;
+}
+
+// A capture replays in seconds, so its recordings would be dated now: move them back to when the original was driven.
+static async Task KeepOriginalTimes(ITelemetryStore store, RecordingInfo original, IReadOnlyList<long> created, CancellationToken ct)
+{
+    var rebuilt = new List<RecordingInfo>();
+    foreach (var id in created)
+    {
+        if (await store.GetRecordingAsync(id, ct) is { } recording)
+        {
+            rebuilt.Add(recording);
+        }
+    }
+
+    if (rebuilt.Count == 0)
+    {
+        return;
+    }
+
+    var shift = original.StartTime - rebuilt[0].StartTime;
+    foreach (var recording in rebuilt)
+    {
+        store.UpdateRecording(recording.Id, startTime: recording.StartTime + shift, endTime: recording.EndTime + shift);
+    }
+
+    await store.FlushAsync(ct);
+}
+
+// Runs packets through the engine and records everything from the first packet that names the track. Returns the
+// number of packets processed and the recordings created (more than one when the capture spans several sessions).
+static async Task<(long Packets, List<long> Recordings)> Ingest(ITelemetryStore store, IAsyncEnumerable<RawPacket> packets, string description, CancellationToken ct)
+{
+    var engine = new SessionEngine();
+    using var recorder = new RecordingCoordinator(engine, store);
+    var created = new List<long>();
+    recorder.StateChanged += state =>
+    {
+        if (state is { Change: RecordingChange.Started or RecordingChange.AutoSplit, RecordingId: { } id })
+        {
+            created.Add(id);
+        }
+    };
+
     long count = 0;
     await foreach (var packet in packets)
     {
@@ -198,16 +310,14 @@ static async Task<int> Seed(Args cli, CancellationToken ct)
             count++;
             if (!recorder.IsRecording && engine.Session is { TrackId: >= 0 })
             {
-                recorder.Start("Seeded by f1tel");
+                recorder.Start(description);
             }
         }
     }
 
     recorder.Stop();
     await store.FlushAsync(ct);
-    var recordings = await store.GetRecordingsAsync(ct);
-    Console.WriteLine($"Processed {count:N0} packets in {sw.Elapsed.TotalSeconds:0.0}s → {dbPath} ({recordings.Count} recording(s))");
-    return 0;
+    return (count, created);
 }
 
 static SimulationOptions SimulationFromArgs(Args cli)
@@ -232,6 +342,7 @@ static SimulationOptions SimulationFromArgs(Args cli)
 internal sealed class Args(string[] args)
 {
     public string Command => args.Length > 0 ? args[0] : "";
+    public IReadOnlyList<string> All => args;
     public string? Positional => args.Skip(1).FirstOrDefault(a => !a.StartsWith("--", StringComparison.Ordinal));
     public bool Has(string name) => args.Contains(name);
 

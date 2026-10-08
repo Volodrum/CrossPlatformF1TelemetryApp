@@ -32,6 +32,7 @@ public sealed partial class OverlaySettingsViewModel : ObservableObject
         GapMode = settings.Current.TowerGap;
         DamagePopup = settings.Current.DamagePopup;
         DamagePopupSeconds = Math.Clamp(settings.Current.DamagePopupSeconds, 1, 60);
+        ErsReserveMj = settings.Current.ErsReserveMj;
         overlays.StateChanged += UpdatePosition;
         UpdatePosition();
     }
@@ -166,6 +167,23 @@ public sealed partial class OverlaySettingsViewModel : ObservableObject
         }
     }
 
+    /// <summary>Only the ERS PLAN overlay has a reserve.</summary>
+    public bool HasErsReserve => Kind == OverlayKind.ErsPlan;
+
+    public static IReadOnlyList<double> ErsReserves { get; } = [0, 0.5, 1.0];
+
+    /// <summary>Charge the overlay's race plans keep back for fights, MJ.</summary>
+    [ObservableProperty] public partial double ErsReserveMj { get; set; }
+
+    partial void OnErsReserveMjChanged(double value)
+    {
+        if (HasErsReserve && Math.Abs(_settings.Current.ErsReserveMj - value) > 1e-6)
+        {
+            _settings.Current.ErsReserveMj = value;
+            _settings.Save();
+        }
+    }
+
     [RelayCommand]
     private void ResetScale() => Scale = 1;
 
@@ -212,6 +230,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         StartStopHotkey = s.StartStopHotkey;
         ToggleOverlaysHotkey = s.ToggleOverlaysHotkey;
         StrategyPageHotkey = s.StrategyPageHotkey;
+        ErsPlanHotkey = s.ErsPlanHotkey;
         StrategyPageUdpAction = Math.Clamp(s.StrategyPageUdpAction, 0, F1Telemetry.Protocol.Packets.EventPacket.UdpActionCount);
         RefreshPadBindings();
 
@@ -224,6 +243,7 @@ public sealed partial class SettingsViewModel : ObservableObject
             new(OverlayKind.Inputs, "Input trace", "Throttle and brake history on a 0–100 % scale, updated every frame.", settings, overlays),
             new(OverlayKind.SectorBox, "Sector box", "TV-style qualifying box: sector colours, lap time, and each sector's time and gap to the reference lap.", settings, overlays),
             new(OverlayKind.TimingTower, "Timing tower", "The six cars around you: gap, tyre and age, battery charge, penalties and warnings.", settings, overlays),
+            new(OverlayKind.ErsPlan, "ERS plan", "The deploy mode the plan wants now, the next switch, and your battery against the plan. Re-plans at every line; the hotkey steps through race (normal, attack, recover) and qualifying.", settings, overlays),
         ];
     }
 
@@ -250,6 +270,7 @@ public sealed partial class SettingsViewModel : ObservableObject
     [ObservableProperty] public partial string StartStopHotkey { get; set; }
     [ObservableProperty] public partial string ToggleOverlaysHotkey { get; set; }
     [ObservableProperty] public partial string StrategyPageHotkey { get; set; }
+    [ObservableProperty] public partial string ErsPlanHotkey { get; set; }
 
     /// <summary>"Off", then the game's bindable "UDP Action 1" … "UDP Action 12" (index = action number).</summary>
     public IReadOnlyList<string> WheelButtons { get; } =
@@ -274,6 +295,7 @@ public sealed partial class SettingsViewModel : ObservableObject
     [ObservableProperty] public partial string StartStopPad { get; set; } = "";
     [ObservableProperty] public partial string ToggleOverlaysPad { get; set; } = "";
     [ObservableProperty] public partial string StrategyPagePad { get; set; } = "";
+    [ObservableProperty] public partial string ErsPlanPad { get; set; } = "";
 
     /// <summary>Icon style: that of the controller connected or used last.</summary>
     [ObservableProperty] public partial PadFamily PadFamily { get; set; }
@@ -289,6 +311,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         StartStopPad = s.StartStopPadButton;
         ToggleOverlaysPad = s.ToggleOverlaysPadButton;
         StrategyPagePad = s.StrategyPagePadButton;
+        ErsPlanPad = s.ErsPlanPadButton;
         PadFamily = _gamepads.Family;
         ControllerStatus = _gamepads switch
         {
@@ -338,6 +361,9 @@ public sealed partial class SettingsViewModel : ObservableObject
             case "strategyPage":
                 s.StrategyPagePadButton = binding;
                 break;
+            case "ersPlan":
+                s.ErsPlanPadButton = binding;
+                break;
             default:
                 s.ToggleOverlaysPadButton = binding;
                 break;
@@ -384,6 +410,9 @@ public sealed partial class SettingsViewModel : ObservableObject
             case "strategyPage":
                 StrategyPageHotkey = hotkey.ToString();
                 break;
+            case "ersPlan":
+                ErsPlanHotkey = hotkey.ToString();
+                break;
             default:
                 ToggleOverlaysHotkey = hotkey.ToString();
                 break;
@@ -415,6 +444,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         s.StartStopHotkey = StartStopHotkey;
         s.ToggleOverlaysHotkey = ToggleOverlaysHotkey;
         s.StrategyPageHotkey = StrategyPageHotkey;
+        s.ErsPlanHotkey = ErsPlanHotkey;
         _settings.Save();
         SaveStatus = needsRestart ? $"Saved {DateTime.Now:T}. Restart the source (UDP port) or the app (wear limit) to apply." : $"Saved {DateTime.Now:T}.";
     }

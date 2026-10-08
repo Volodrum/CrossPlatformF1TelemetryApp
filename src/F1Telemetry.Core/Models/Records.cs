@@ -1,4 +1,5 @@
 using F1Telemetry.Protocol;
+using F1Telemetry.Protocol.Packets;
 
 namespace F1Telemetry.Core.Models;
 
@@ -54,6 +55,16 @@ public sealed record RecordingInfo(
     GameFormat Format,
     DateTimeOffset StartTime,
     DateTimeOffset? EndTime);
+
+/// <summary>Weather (see <see cref="Protocol.Lookups.WeatherTypes"/>) and temperatures in °C.</summary>
+public readonly record struct SessionConditions(byte Weather, sbyte TrackTemperature, sbyte AirTemperature);
+
+/// <summary>
+/// The setup the player drove from a point in the session on.
+/// </summary>
+/// <param name="LapNumber">Lap the car was on when the setup arrived; 0 before the first lap (garage, formation).</param>
+/// <param name="Conditions">Weather and temperatures when it arrived; null if the session packet hadn't come yet.</param>
+public sealed record SetupChange(int LapNumber, double SessionTime, CarSetup Setup, SessionConditions? Conditions = null);
 
 public sealed record NewRecording(
     string SessionUid,

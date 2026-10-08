@@ -31,6 +31,15 @@ public sealed class TelemetrySample
     public double ErsHarvestedMguh { get; set; }
     public double ErsDeployed { get; set; }
 
+    /// <summary>Combustion engine output, W.</summary>
+    public double EnginePowerIce { get; set; }
+
+    /// <summary>MGU-K output, W: what the battery delivers in the current deploy mode.</summary>
+    public double EnginePowerMguk { get; set; }
+
+    /// <summary>Most energy the MGU-K may harvest in one lap, J. 2026 format only (0 in 2025).</summary>
+    public double ErsHarvestLimit { get; set; }
+
     // Temperatures & pressures
     public int BrakesTempFl { get; set; }
     public int BrakesTempFr { get; set; }
@@ -98,6 +107,8 @@ public sealed class TelemetrySample
     // 2026 Season Pack
     public int ActiveAeroMode { get; set; }
     public int OvertakeActive { get; set; }
+    public int ActiveAeroAvailable { get; set; }
+    public int OvertakeAvailable { get; set; }
 
     public double AverageTyreWear => (TyreWearFl + TyreWearFr + TyreWearRl + TyreWearRr) / 4.0;
 }
