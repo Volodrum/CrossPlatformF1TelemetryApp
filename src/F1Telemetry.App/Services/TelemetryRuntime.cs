@@ -1,6 +1,7 @@
 using F1Telemetry.App.Infrastructure;
 using F1Telemetry.Core;
 using F1Telemetry.Core.Engine;
+using F1Telemetry.Core.Models;
 using F1Telemetry.Core.Recording;
 using F1Telemetry.Core.Tracks;
 using F1Telemetry.Ingest;
@@ -17,6 +18,9 @@ public enum SourceKind
     Demo,
     Replay,
 }
+
+/// <summary>The raw captures a deleted recording left: deleted (<paramref name="Bytes"/> in all), and any that couldn't be.</summary>
+public sealed record CaptureCleanup(IReadOnlyList<string> Deleted, IReadOnlyList<string> Failed, long Bytes);
 
 /// <summary>
 /// Composition root for the non-UI runtime: store, engine, recording coordinator and ingest pipeline.
@@ -134,10 +138,43 @@ public sealed class TelemetryRuntime : IAsyncDisposable
         }
         else
         {
-            var path = Path.Combine(_paths.CapturesDirectory, $"recording-{state.RecordingId}-{DateTime.Now:yyyyMMdd-HHmmss}{PacketFile.Extension}");
+            var path = Path.Combine(_paths.CapturesDirectory, RecordingCaptures.FileName(state.RecordingId ?? 0, DateTime.Now));
             Pipeline.StartRawCapture(path);
             _log.LogInformation("Raw capture → {Path}", path);
         }
+    }
+
+    /// <summary>
+    /// Deletes a recording: its rows in the database, then its raw captures (<see cref="RecordingCaptures.Find"/>).
+    /// A capture that can't be deleted (open as the replay source, say) is left and listed in <c>Failed</c>.
+    /// </summary>
+    public async Task<CaptureCleanup> DeleteRecordingAsync(RecordingInfo recording)
+    {
+        var existing = (await Store.GetRecordingsAsync()).Select(r => r.Id).ToHashSet();
+        var captures = RecordingCaptures.Find(_paths.CapturesDirectory, recording, existing);
+        await Store.DeleteRecordingAsync(recording.Id);
+
+        var deleted = new List<string>();
+        var failed = new List<string>();
+        long bytes = 0;
+        foreach (var capture in captures)
+        {
+            try
+            {
+                var size = new FileInfo(capture).Length;
+                File.Delete(capture);
+                bytes += size;
+                deleted.Add(capture);
+                _log.LogInformation("Deleted raw capture {Path} of recording {Id}", capture, recording.Id);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                failed.Add(capture);
+                _log.LogWarning(ex, "Could not delete raw capture {Path} of recording {Id}", capture, recording.Id);
+            }
+        }
+
+        return new CaptureCleanup(deleted, failed, bytes);
     }
 
     public async ValueTask DisposeAsync()

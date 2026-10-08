@@ -261,9 +261,12 @@ public sealed partial class MainWindowViewModel : ObservableObject
             return;
         }
 
-        await _runtime.Store.DeleteRecordingAsync(item.Info.Id);
+        var captures = await _runtime.DeleteRecordingAsync(item.Info);
         Recordings.Remove(item);
-        StatusMessage = $"Deleted recording #{item.Info.Id}.";
+        var mb = (captures.Bytes / 1_000_000.0).ToString("0", System.Globalization.CultureInfo.InvariantCulture);
+        StatusMessage = $"Deleted recording #{item.Info.Id}"
+            + (captures.Deleted.Count switch { 0 => "", 1 => $" and its raw capture ({mb} MB)", var n => $" and its {n} raw captures ({mb} MB)" })
+            + (captures.Failed.Count > 0 ? $". Could not delete {string.Join(", ", captures.Failed.Select(Path.GetFileName))}: the file is in use." : ".");
     }
 
     private async Task SwitchSourceAsync(SourceOption option)
