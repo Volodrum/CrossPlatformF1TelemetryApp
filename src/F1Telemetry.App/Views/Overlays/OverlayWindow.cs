@@ -1,9 +1,9 @@
-using System.Runtime.InteropServices;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Shapes;
 using Avalonia.Input;
 using Avalonia.Media;
+using Avalonia.Threading;
 using F1Telemetry.App.Platform;
 using F1Telemetry.App.Services;
 using F1Telemetry.Core.Layout;
@@ -16,7 +16,8 @@ namespace F1Telemetry.App.Views.Overlays;
 /// laid out at its design size and scaled as a whole, so each overlay can be resized from the settings page.
 /// <para>
 /// While dragged, the overlay's centre is magnetic to the screen's centre lines (horizontal and vertical); a blue
-/// guide shows through the overlay while it is snapped.
+/// guide shows through the overlay while it is snapped. The overlay never leaves its screen: a drag, a resize or a
+/// saved position from another monitor layout is pushed back inside the screen's edges.
 /// </para>
 /// <para>
 /// In edit mode a <see cref="Hole"/> can be cut through the window: nothing is drawn there and clicks inside it
@@ -27,8 +28,6 @@ namespace F1Telemetry.App.Views.Overlays;
 public sealed class OverlayWindow : Window
 {
     private const int WmNcHitTest = 0x0084;
-    private const int WmMoving = 0x0216;
-    private const int WmExitSizeMove = 0x0232;
     private const int HtTransparent = -1;
 
     // How close (in DIPs) the overlay's centre must come to a screen centre line to snap onto it.
@@ -44,15 +43,10 @@ public sealed class OverlayWindow : Window
     private bool _editMode;
     private PixelRect? _hole;
 
-    // Pointer-driven drag (non-Windows): cursor and window position when the drag began.
+    // Pointer-driven drag: cursor and window position when the drag began.
     private PixelPoint? _dragCursorStart;
     private PixelPoint _dragWindowStart;
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct Win32Rect
-    {
-        public int Left, Top, Right, Bottom;
-    }
+    private bool _keepOnScreenPending;
 
     public OverlayWindow(OverlayKind kind, Control content, double scale, double opacity = 1)
     {
@@ -97,9 +91,19 @@ public sealed class OverlayWindow : Window
         {
             ApplyInteractivity();
             ApplyHole();
+            QueueKeepOnScreen();
         };
-        PositionChanged += (_, _) => ApplyHole();
-        _frame.SizeChanged += (_, _) => ApplyHole();
+        PositionChanged += (_, _) =>
+        {
+            ApplyHole();
+            QueueKeepOnScreen();
+        };
+        _frame.SizeChanged += (_, _) =>
+        {
+            ApplyHole();
+            QueueKeepOnScreen();
+        };
+        Screens.Changed += (_, _) => QueueKeepOnScreen();
         PointerPressed += OnPointerPressed;
         PointerMoved += OnPointerMoved;
         PointerReleased += (_, _) => EndPointerDrag();
@@ -162,22 +166,71 @@ public sealed class OverlayWindow : Window
     }
 
     /// <summary>
-    /// Pulls a window rectangle (physical pixels) onto the screen's centre lines when its centre is within
-    /// <see cref="SnapDistance"/> of them. Returns the snapped top-left.
+    /// Where a window rectangle (physical pixels) proposed at <paramref name="topLeft"/> really goes: onto the screen's
+    /// centre lines when <paramref name="snap"/> is set and its centre is within <see cref="SnapDistance"/> of them,
+    /// and always fully inside the screen. The screen is the one under the window's centre, else the one under
+    /// <paramref name="cursor"/>, so a drag can carry the overlay to another monitor.
     /// </summary>
-    private PixelPoint Snap(PixelPoint topLeft, PixelSize size, out bool snappedX, out bool snappedY)
+    private PixelPoint Place(PixelPoint topLeft, PixelSize size, PixelPoint? cursor, bool snap, out bool snappedX, out bool snappedY)
     {
         snappedX = snappedY = false;
         var centre = new PixelPoint(topLeft.X + size.Width / 2, topLeft.Y + size.Height / 2);
-        if ((Screens.ScreenFromPoint(centre) ?? Screens.ScreenFromWindow(this) ?? Screens.Primary) is not { } screen)
+        var screen = Screens.ScreenFromPoint(centre)
+            ?? (cursor is { } c ? Screens.ScreenFromPoint(c) : null)
+            ?? Screens.ScreenFromBounds(new PixelRect(topLeft, size))
+            ?? Screens.ScreenFromWindow(this)
+            ?? Screens.Primary;
+        if (screen is null)
         {
             return topLeft;
         }
 
         var b = screen.Bounds;
-        var snap = CentreSnap.Apply(topLeft.X, topLeft.Y, size.Width, size.Height, b.X, b.Y, b.Width, b.Height, SnapDistance * screen.Scaling);
-        (snappedX, snappedY) = (snap.SnappedX, snap.SnappedY);
-        return new PixelPoint(snap.X, snap.Y);
+        var (x, y) = (topLeft.X, topLeft.Y);
+        if (snap)
+        {
+            var snapped = CentreSnap.Apply(x, y, size.Width, size.Height, b.X, b.Y, b.Width, b.Height, SnapDistance * screen.Scaling);
+            (x, y, snappedX, snappedY) = (snapped.X, snapped.Y, snapped.SnappedX, snapped.SnappedY);
+        }
+
+        var clamped = ScreenClamp.Apply(x, y, size.Width, size.Height, b.X, b.Y, b.Width, b.Height);
+        // Only a window bigger than the screen can be pushed off a centre line by the clamp.
+        snappedX &= clamped.X == x;
+        snappedY &= clamped.Y == y;
+        return new PixelPoint(clamped.X, clamped.Y);
+    }
+
+    /// <summary>
+    /// Checks once layout has settled (a resized window's new size is only known then) that the overlay is still
+    /// fully on its screen, and moves it back inside if not.
+    /// </summary>
+    private void QueueKeepOnScreen()
+    {
+        if (_keepOnScreenPending)
+        {
+            return;
+        }
+
+        _keepOnScreenPending = true;
+        Dispatcher.UIThread.Post(() =>
+        {
+            _keepOnScreenPending = false;
+            KeepOnScreen();
+        }, DispatcherPriority.Background);
+    }
+
+    private void KeepOnScreen()
+    {
+        if (!IsVisible || _dragCursorStart is not null)
+        {
+            return;
+        }
+
+        var placed = Place(Position, PixelSize.FromSize(ClientSize, RenderScaling), null, snap: false, out _, out _);
+        if (placed != Position)
+        {
+            Position = placed;
+        }
     }
 
     /// <summary>Snapped on the vertical centre line → vertical guide; on the horizontal one → horizontal guide.</summary>
@@ -236,11 +289,9 @@ public sealed class OverlayWindow : Window
 
     /// <summary>
     /// Windows: inside the hole, report HTTRANSPARENT so the click goes to the window underneath owned by the same
-    /// thread (the main window with the preview toggle). During the native move loop, WM_MOVING hands over the
-    /// proposed rectangle, which is snapped in place — Windows recomputes it from the cursor on every move, so the
-    /// overlay lets go again once dragged past the snap distance.
+    /// thread (the main window with the preview toggle).
     /// </summary>
-    private unsafe IntPtr WndProcHook(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+    private IntPtr WndProcHook(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
         switch (msg)
         {
@@ -253,22 +304,6 @@ public sealed class OverlayWindow : Window
                     return HtTransparent;
                 }
 
-                break;
-
-            case WmMoving when _editMode && lParam != IntPtr.Zero:
-                var rect = (Win32Rect*)lParam;
-                var size = new PixelSize(rect->Right - rect->Left, rect->Bottom - rect->Top);
-                var snapped = Snap(new PixelPoint(rect->Left, rect->Top), size, out var sx, out var sy);
-                rect->Left = snapped.X;
-                rect->Top = snapped.Y;
-                rect->Right = snapped.X + size.Width;
-                rect->Bottom = snapped.Y + size.Height;
-                ShowGuides(sx, sy);
-                handled = true;
-                return new IntPtr(1);
-
-            case WmExitSizeMove:
-                ShowGuides(false, false);
                 break;
         }
 
@@ -283,6 +318,13 @@ public sealed class OverlayWindow : Window
         }
     }
 
+    /// <summary>
+    /// The overlay moves itself rather than handing the drag to the OS (BeginMoveDrag): the OS move loop behaves
+    /// differently between machines, and window-management tools hook into it (e.g. Windhawk's Slick Window
+    /// Arrangement snaps and glides windows on its own), which left snapped overlays short of the centre line or unable
+    /// to let go of it. Here every position is worked out afresh from where the cursor is now, so the overlay sits
+    /// exactly on a centre line while within the snap distance and lets go as soon as the cursor moves past it.
+    /// </summary>
     private void OnPointerPressed(object? sender, PointerPressedEventArgs e)
     {
         if (!_editMode || !e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
@@ -290,18 +332,10 @@ public sealed class OverlayWindow : Window
             return;
         }
 
-        if (OperatingSystem.IsWindows())
-        {
-            // Native move loop (smooth, OS-driven); snapping happens in WM_MOVING. Returns when the drag ends.
-            BeginMoveDrag(e);
-            Moved?.Invoke(this);
-            return;
-        }
-
-        // Elsewhere the OS drag gives no hook to adjust the position, so move the window ourselves.
-        _dragCursorStart = this.PointToScreen(e.GetPosition(this));
+        _dragCursorStart = CursorPosition(e);
         _dragWindowStart = Position;
         e.Pointer.Capture(this);
+        e.Handled = true;
     }
 
     private void OnPointerMoved(object? sender, PointerEventArgs e)
@@ -311,11 +345,23 @@ public sealed class OverlayWindow : Window
             return;
         }
 
-        var cursor = this.PointToScreen(e.GetPosition(this));
+        var cursor = CursorPosition(e);
         var proposed = new PixelPoint(_dragWindowStart.X + cursor.X - start.X, _dragWindowStart.Y + cursor.Y - start.Y);
-        Position = Snap(proposed, PixelSize.FromSize(ClientSize, RenderScaling), out var sx, out var sy);
+        var placed = Place(proposed, PixelSize.FromSize(ClientSize, RenderScaling), cursor, snap: true, out var sx, out var sy);
+        if (placed != Position)
+        {
+            Position = placed;
+        }
+
         ShowGuides(sx, sy);
     }
+
+    /// <summary>
+    /// The cursor on screen. On Windows straight from the OS: a pointer event's position is relative to where the
+    /// window was when the event was raised, which lags behind a window that is being moved.
+    /// </summary>
+    private PixelPoint CursorPosition(PointerEventArgs e) =>
+        OverlayInterop.TryGetCursorPosition(out var cursor) ? cursor : this.PointToScreen(e.GetPosition(this));
 
     private void EndPointerDrag()
     {

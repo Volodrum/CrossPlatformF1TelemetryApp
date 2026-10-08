@@ -73,9 +73,36 @@ public static partial class OverlayInterop
         }
     }
 
+    /// <summary>
+    /// Windows: the cursor's screen position in physical pixels, read straight from the OS. Unlike a pointer event's
+    /// window-relative position, it stays correct while the window under the cursor is being moved. False elsewhere.
+    /// </summary>
+    public static bool TryGetCursorPosition(out PixelPoint position)
+    {
+        position = default;
+        if (!OperatingSystem.IsWindows() || !Win32.GetCursorPos(out var p))
+        {
+            return false;
+        }
+
+        position = new PixelPoint(p.X, p.Y);
+        return true;
+    }
+
     private static partial class Win32
     {
         private const int GwlExStyle = -20;
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct Point
+        {
+            public int X;
+            public int Y;
+        }
+
+        [LibraryImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        public static partial bool GetCursorPos(out Point point);
         private const long WsExTransparent = 0x00000020;
         private const long WsExToolWindow = 0x00000080;
         private const long WsExLayered = 0x00080000;
