@@ -88,6 +88,29 @@ git tag v0.2.0
 git push origin v0.2.0
 ```
 
+## Turning on telemetry in the game
+
+The game only sends telemetry when you switch it on. In F1 25 (or with the 2026 Season Pack), go to **Game Options → Settings → Telemetry Settings** and set:
+
+| Setting | Value | Notes |
+|---|---|---|
+| **UDP Telemetry** | On | Without this the game sends nothing. |
+| **UDP Broadcast Mode** | Off | Turn it on only if you want every device on your network to receive the data. The app listens on all interfaces, so it works either way. |
+| **UDP IP Address** | `127.0.0.1` if the app runs on the same PC as the game; otherwise the local IP of the PC/Mac running the app (e.g. `192.168.1.20`) | On PlayStation and Xbox it is always the computer's IP. To find it, run `ipconfig` on Windows, `ipconfig getifaddr en0` on macOS or `ip addr` on Linux. |
+| **UDP Port** | `20777` | Must match **UDP port** in the app's Settings tab (*TELEMETRY & STRATEGY*). If you change it there, restart the source. |
+| **UDP Send Rate** | 60 Hz | Lower rates work, but the input trace, radar and lap charts get coarser. |
+| **UDP Format** | `2025` for F1 25, `2026` for the 2026 Season Pack | Must match the **F1 25 / F1 26** switch in the app's toolbar, see [Telemetry modes](#telemetry-modes-f1-25-and-f1-26). |
+| **Your Telemetry** | Restricted or Public | Your own car is always sent in full. *Public* only lets other players' apps in an online lobby see your fuel, ERS and damage. |
+
+Then, in the app, pick **Game (UDP)** in the Source dropdown (or switch on *Listen for the game on startup* in Settings) and drive onto the track. The Live view fills in as soon as packets arrive.
+
+If nothing shows up:
+
+- **Firewall.** Allow the app through it when it first asks (on Windows, tick *Private networks*). Otherwise, allow incoming UDP on port 20777 yourself (on Linux, for example, `sudo ufw allow 20777/udp`).
+- **Wrong format.** A banner in the app means the game is sending the other format: change the toolbar switch or the game's **UDP Format**.
+- **Port already in use.** Only one program can listen on a port. Close other telemetry tools (SimHub, other dashboards) or have them forward the data to a different port, and set that port in both the game and the app.
+- **Console on Wi-Fi.** The console and the computer must be on the same network. Some routers block traffic between wired and wireless devices or between guest networks.
+
 ## Running
 
 Requires the .NET 10 SDK.
@@ -96,7 +119,7 @@ Requires the .NET 10 SDK.
 dotnet run --project src/F1Telemetry.App
 ```
 
-- **With the game:** enable UDP telemetry in F1 25 (port 20777, send rate 60 Hz). For consoles, set the IP to the PC/Mac running this app.
+- **With the game:** turn on UDP telemetry in the game first, see [Turning on telemetry in the game](#turning-on-telemetry-in-the-game).
 - **Without the game:** pick *Demo (simulator)* in the Source dropdown, or run:
 
 ```bash
