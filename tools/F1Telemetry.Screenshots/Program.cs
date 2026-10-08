@@ -155,6 +155,13 @@ vm.SelectedRecording = vm.Recordings.First(r => r.Description == "Two stops");
 Pump(vm.Session.RefreshAsync(), 300);
 vm.SelectedTab = MainTab.Strategy;
 Capture(window, "11-strategy-two-stops");
+
+// Energy: the one-stop race's battery map, lap summary and trace.
+vm.SelectedRecording = vm.Recordings.First(r => r.Description == "One stop");
+vm.SelectedTab = MainTab.Energy;
+Pump(vm.ActivateEnergyAsync(), 1500);
+Capture(window, "13-energy");
+
 vm.SelectedTab = MainTab.Live;
 
 // Overlays in preview state, on the worst-case bright background used in the design's overlay board.

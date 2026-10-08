@@ -1,0 +1,160 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:F1Telemetry.App.ViewModels"
+             xmlns:controls="using:F1Telemetry.App.Controls"
+             x:Class="F1Telemetry.App.Views.EnergyView"
+             x:DataType="vm:EnergyViewModel">
+  <DockPanel Margin="0,16,0,0">
+    <StackPanel DockPanel.Dock="Top" Spacing="4" Margin="0,0,0,12">
+      <TextBlock Classes="label" Text="ENERGY · BATTERY, HARVEST AND DEPLOYMENT PER LAP · CLICK A LAP TO MAP IT" />
+      <TextBlock Classes="h1" Text="{Binding Header}" />
+    </StackPanel>
+
+    <TextBlock DockPanel.Dock="Top" Classes="body" Text="{Binding EmptyText}" IsVisible="{Binding !HasData}" />
+
+    <ScrollViewer IsVisible="{Binding HasData}">
+      <StackPanel Spacing="12" Margin="0,0,8,0">
+        <Grid ColumnDefinitions="*,340" ColumnSpacing="12" Height="440">
+          <!-- Battery map -->
+          <Border Classes="panel" Padding="0" ClipToBounds="True">
+            <Panel>
+              <controls:TrackMapControl Outline="{Binding Outline}" ActiveLap="{Binding Samples}" ColorByInputs="True" Coloring="{Binding Layer}" />
+              <StackPanel Margin="16,14" HorizontalAlignment="Left" VerticalAlignment="Top" Spacing="2" IsHitTestVisible="False">
+                <TextBlock Classes="h2" Text="{Binding TrackName}" FontSize="20" />
+                <TextBlock Classes="label" Text="{Binding LapTitle}" />
+              </StackPanel>
+              <Border Classes="segmented" Margin="14" HorizontalAlignment="Right" VerticalAlignment="Top">
+                <StackPanel Orientation="Horizontal">
+                  <Button Theme="{StaticResource ModeToggle}" Content="MODE" Classes.selected="{Binding IsModeLayer}"
+                          Command="{Binding SetLayerCommand}" CommandParameter="{x:Static controls:MapColoring.DeployMode}" />
+                  <Button Theme="{StaticResource ModeToggle}" Content="BATTERY" Classes.selected="{Binding IsBatteryLayer}"
+                          Command="{Binding SetLayerCommand}" CommandParameter="{x:Static controls:MapColoring.Battery}" />
+                </StackPanel>
+              </Border>
+              <ItemsControl ItemsSource="{Binding Legend}" Margin="16,14" HorizontalAlignment="Right" VerticalAlignment="Bottom" IsHitTestVisible="False">
+                <ItemsControl.ItemsPanel>
+                  <ItemsPanelTemplate>
+                    <StackPanel Spacing="8" />
+                  </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="vm:LegendEntry">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                      <Border Width="24" Height="{Binding Thickness}" CornerRadius="3" Background="{Binding Swatch}" VerticalAlignment="Center" />
+                      <TextBlock Classes="label strong" Text="{Binding Label}" VerticalAlignment="Center" />
+                    </StackPanel>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </Panel>
+          </Border>
+
+          <!-- Lap summary -->
+          <Border Grid.Column="1" Classes="panel" Padding="18">
+            <StackPanel Spacing="14">
+              <TextBlock Classes="h2" Text="{Binding LapTitle}" />
+              <StackPanel Spacing="4">
+                <TextBlock Classes="label" Text="BATTERY · START → END · MJ" />
+                <StackPanel Orientation="Horizontal" Spacing="10">
+                  <TextBlock Classes="data-l" Text="{Binding StartLevel}" Foreground="{Binding StartBrush}" />
+                  <TextBlock Classes="data-m" Text="→" Foreground="{StaticResource TextLoBrush}" VerticalAlignment="Center" />
+                  <TextBlock Classes="data-l" Text="{Binding EndLevel}" Foreground="{Binding EndBrush}" />
+                </StackPanel>
+                <TextBlock Classes="body" FontSize="13" Text="{Binding DeployNote}" TextWrapping="Wrap" />
+              </StackPanel>
+              <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+                <StackPanel Spacing="4">
+                  <TextBlock Classes="label" Text="HARVESTED · MJ" />
+                  <TextBlock Classes="data-m" Text="{Binding Harvested}" />
+                </StackPanel>
+                <StackPanel Grid.Column="1" Spacing="4">
+                  <TextBlock Classes="label" Text="DEPLOYED · MJ" />
+                  <TextBlock Classes="data-m" Text="{Binding Deployed}" />
+                </StackPanel>
+              </Grid>
+              <TextBlock Classes="body" FontSize="13" Text="{Binding HarvestNote}" TextWrapping="Wrap" />
+              <StackPanel Spacing="6">
+                <TextBlock Classes="label" Text="DEPLOY MODES · DISTANCE" />
+                <ItemsControl ItemsSource="{Binding Modes}">
+                  <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                      <WrapPanel />
+                    </ItemsPanelTemplate>
+                  </ItemsControl.ItemsPanel>
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:ModeShare">
+                      <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,0,14,6" ToolTip.Tip="{Binding Name}">
+                        <Border Width="28" Height="26" CornerRadius="5" Background="{Binding Fill}">
+                          <TextBlock Text="{Binding Letter}" FontFamily="{StaticResource DataFont}" FontSize="14" FontWeight="ExtraBold"
+                                     Foreground="{Binding Foreground}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <TextBlock Classes="data-s" FontSize="16" Text="{Binding Distance}" VerticalAlignment="Center" />
+                      </StackPanel>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </StackPanel>
+              <ItemsControl ItemsSource="{Binding Issues}" IsVisible="{Binding HasIssues}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="x:String">
+                    <TextBlock Classes="body" FontSize="13" Text="{Binding}" TextWrapping="Wrap" Margin="0,0,0,6" Foreground="{StaticResource SlowerBrush}" />
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+          </Border>
+        </Grid>
+
+        <!-- Battery along the lap, deploy modes underneath -->
+        <Border Classes="panel" Padding="0" Height="300">
+          <controls:TelemetryPlot Model="{Binding Trace}" />
+        </Border>
+
+        <!-- Every lap -->
+        <Border Classes="panel" Padding="8">
+          <DockPanel>
+            <Grid DockPanel.Dock="Top" ColumnDefinitions="60,110,72,72,72,96,96,96,*" ColumnSpacing="12" Margin="12,6,12,8">
+              <TextBlock Classes="label" Text="LAP" />
+              <TextBlock Grid.Column="1" Classes="label" Text="TIME" HorizontalAlignment="Center" />
+              <TextBlock Grid.Column="2" Classes="label" Text="START" HorizontalAlignment="Right" />
+              <TextBlock Grid.Column="3" Classes="label" Text="END" HorizontalAlignment="Right" />
+              <TextBlock Grid.Column="4" Classes="label" Text="NET" HorizontalAlignment="Right" />
+              <TextBlock Grid.Column="5" Classes="label" Text="HARVESTED" HorizontalAlignment="Right" />
+              <TextBlock Grid.Column="6" Classes="label" Text="DEPLOYED" HorizontalAlignment="Right" />
+              <TextBlock Grid.Column="7" Classes="label" Text="LIMIT AT" HorizontalAlignment="Right" />
+              <TextBlock Grid.Column="8" Classes="label" Text="WASTE" Margin="8,0,0,0" />
+            </Grid>
+            <!-- The page scrolls, not the list: selecting a lap must not jump the page down to it. -->
+            <ListBox Classes="rows" ItemsSource="{Binding Laps}" SelectedItem="{Binding SelectedLap}" AutoScrollToSelectedItem="False">
+              <ListBox.ItemTemplate>
+                <DataTemplate x:DataType="vm:EnergyLapRow">
+                  <Grid ColumnDefinitions="60,110,72,72,72,96,96,96,*" ColumnSpacing="12">
+                    <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                      <TextBlock Classes="h2" Text="{Binding Label}" />
+                      <TextBlock Text="{Binding Kind}" FontFamily="{StaticResource DisplayFont}" FontSize="12" FontWeight="Bold" Foreground="{StaticResource SlowerBrush}" VerticalAlignment="Center" />
+                    </StackPanel>
+                    <ContentControl Grid.Column="1" Content="{Binding Time}" HorizontalAlignment="Center" />
+                    <TextBlock Grid.Column="2" Classes="data-s" Text="{Binding Start}" Foreground="{Binding StartBrush}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                    <TextBlock Grid.Column="3" Classes="data-s" Text="{Binding End}" Foreground="{Binding EndBrush}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                    <TextBlock Grid.Column="4" Classes="data-s" Text="{Binding Net}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                    <TextBlock Grid.Column="5" Classes="data-s" Text="{Binding Harvested}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                    <TextBlock Grid.Column="6" Classes="data-s" Text="{Binding Deployed}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                    <TextBlock Grid.Column="7" Classes="data-s" Text="{Binding LimitAt}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                    <ItemsControl Grid.Column="8" ItemsSource="{Binding Flags}" Margin="8,0,0,0" VerticalAlignment="Center">
+                      <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                          <WrapPanel ItemSpacing="8" LineSpacing="6" />
+                        </ItemsPanelTemplate>
+                      </ItemsControl.ItemsPanel>
+                    </ItemsControl>
+                  </Grid>
+                </DataTemplate>
+              </ListBox.ItemTemplate>
+            </ListBox>
+          </DockPanel>
+        </Border>
+        <TextBlock Classes="body" Text="All values in MJ. START and END are the battery at the line, in the ERS charge bands. FLAT: full throttle with an empty battery. FULL: braking with a full battery, so that energy is lost. CAP: braking after the lap's harvest limit." TextWrapping="Wrap" />
+      </StackPanel>
+    </ScrollViewer>
+  </DockPanel>
+</UserControl>

@@ -20,6 +20,11 @@ namespace F1Telemetry.Storage;
 public sealed class DuckDbTelemetryStore(string databasePath, ILogger<DuckDbTelemetryStore>? log = null) : ITelemetryStore
 {
     private static readonly TimeSpan FlushInterval = TimeSpan.FromMilliseconds(250);
+
+    private static readonly TelemetryColumn[] EnergyColumns = TelemetryColumns.Select(
+        "lap_number", "session_time", "lap_distance", "speed", "throttle", "brake", "ers_store_energy", "ers_deploy_mode",
+        "ers_harvested_mguk", "ers_deployed", "ers_harvest_limit", "engine_power_mguk");
+
     private const int MaxBatch = 1000;
 
     private readonly ILogger _log = log ?? NullLogger<DuckDbTelemetryStore>.Instance;
@@ -384,6 +389,10 @@ public sealed class DuckDbTelemetryStore(string databasePath, ILogger<DuckDbTele
     public Task<IReadOnlyList<TelemetrySample>> GetLapSamplesAsync(long recordingId, int lapNumber, CancellationToken cancellationToken = default) =>
         QueryAsync($"SELECT {TelemetryColumns.SelectList} FROM telemetry WHERE recording_id = $id AND lap_number = $lap ORDER BY session_time",
             TelemetryColumns.ReadRow, cancellationToken, ("id", recordingId), ("lap", lapNumber));
+
+    public Task<IReadOnlyList<TelemetrySample>> GetEnergySamplesAsync(long recordingId, CancellationToken cancellationToken = default) =>
+        QueryAsync($"SELECT {string.Join(", ", EnergyColumns.Select(c => c.Name))} FROM telemetry WHERE recording_id = $id ORDER BY session_time",
+            r => TelemetryColumns.ReadRow(r, EnergyColumns), cancellationToken, ("id", recordingId));
 
     public Task<IReadOnlyList<LapAggregate>> GetLapAggregatesAsync(long recordingId, CancellationToken cancellationToken = default) =>
         QueryAsync("""

@@ -2,14 +2,29 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media;
+using F1Telemetry.Core.Energy;
 using F1Telemetry.Core.Models;
 using F1Telemetry.Core.Tracks;
 
 namespace F1Telemetry.App.Controls;
 
+/// <summary>What the coloured ribbon along the active lap shows (when <see cref="TrackMapControl.ColorByInputs"/> is on).</summary>
+public enum MapColoring
+{
+    /// <summary>Throttle, partial, braking, coasting.</summary>
+    Inputs,
+
+    /// <summary>ERS deploy mode, in the deploy-mode ramp.</summary>
+    DeployMode,
+
+    /// <summary>Battery level in the ERS charge bands: 50 %+, 20–49 %, under 20 %.</summary>
+    Battery,
+}
+
 /// <summary>
 /// Circuit map: track limits from the SRTT outline, a faint reference lap, and the active lap as a
-/// trajectory or coloured by driver input (green full throttle, yellow partial, red braking, white coasting).
+/// trajectory or coloured by driver input (green full throttle, yellow partial, red braking, white coasting), by ERS
+/// deploy mode or by battery level (see <see cref="Coloring"/>).
 /// Wheel zooms around the cursor, drag pans, double-click resets. Falls back to fitting the trajectory
 /// when no outline is available for the track.
 /// <para>
@@ -32,6 +47,9 @@ public sealed class TrackMapControl : Control
     public static readonly StyledProperty<bool> ColorByInputsProperty =
         AvaloniaProperty.Register<TrackMapControl, bool>(nameof(ColorByInputs), true);
 
+    public static readonly StyledProperty<MapColoring> ColoringProperty =
+        AvaloniaProperty.Register<TrackMapControl, MapColoring>(nameof(Coloring));
+
     // Race HUD styling: dark ground, tarmac at true width (at least 6 px) with 1 px limits, a thin input ribbon (green full throttle,
     // amber partial, red braking, grey coasting), a thin solid grey reference lap and a small white car marker.
     // Widths are screen pixels at every zoom level.
@@ -49,13 +67,17 @@ public sealed class TrackMapControl : Control
     private static readonly IPen MarkerPen = new Pen(new SolidColorBrush(Color.Parse("#07080A")), 1.5);
     private static readonly IPen MarkerHalo = new Pen(new SolidColorBrush(Color.Parse("#F4F6F9"), 0.35), 1.5);
     private static readonly IBrush MarkerFill = new SolidColorBrush(Color.Parse("#F4F6F9"));
-    private static readonly IPen[] InputPens =
+    private static readonly IPen[] InputPens = Pens(RibbonWidth, "#2EE88F", "#FFC23D", "#FF5A4F", "#8D97A6");
+
+    // The energy map is about reading colour along the whole lap, so its ribbon is wider. No deployment is a thin grey
+    // line, like coasting on the input map: the darkest step of the mode ramp would vanish into the tarmac.
+    private const double EnergyRibbonWidth = 4;
+    private static readonly IPen[] DeployModePens =
     [
-        new Pen(new SolidColorBrush(Color.Parse("#2EE88F")), RibbonWidth, lineCap: PenLineCap.Round, lineJoin: PenLineJoin.Round),
-        new Pen(new SolidColorBrush(Color.Parse("#FFC23D")), RibbonWidth, lineCap: PenLineCap.Round, lineJoin: PenLineJoin.Round),
-        new Pen(new SolidColorBrush(Color.Parse("#FF5A4F")), RibbonWidth, lineCap: PenLineCap.Round, lineJoin: PenLineJoin.Round),
-        new Pen(new SolidColorBrush(Color.Parse("#8D97A6")), RibbonWidth, lineCap: PenLineCap.Round, lineJoin: PenLineJoin.Round),
+        Pens(RibbonWidth, "#8D97A6")[0],
+        .. Pens(EnergyRibbonWidth, ViewModels.Palette.DeployModeHex[1..]),
     ];
+    private static readonly IPen[] BatteryPens = Pens(EnergyRibbonWidth, "#2EE88F", "#FFC23D", "#FF5A4F");
 
     private double _zoom = 1;
     private Vector _pan;
@@ -63,7 +85,7 @@ public sealed class TrackMapControl : Control
 
     static TrackMapControl()
     {
-        AffectsRender<TrackMapControl>(OutlineProperty, ActiveLapProperty, ReferenceLapProperty, ColorByInputsProperty);
+        AffectsRender<TrackMapControl>(OutlineProperty, ActiveLapProperty, ReferenceLapProperty, ColorByInputsProperty, ColoringProperty);
         ClipToBoundsProperty.OverrideDefaultValue<TrackMapControl>(true);
     }
 
@@ -71,6 +93,7 @@ public sealed class TrackMapControl : Control
     public IReadOnlyList<TelemetrySample>? ActiveLap { get => GetValue(ActiveLapProperty); set => SetValue(ActiveLapProperty, value); }
     public IReadOnlyList<TelemetrySample>? ReferenceLap { get => GetValue(ReferenceLapProperty); set => SetValue(ReferenceLapProperty, value); }
     public bool ColorByInputs { get => GetValue(ColorByInputsProperty); set => SetValue(ColorByInputsProperty, value); }
+    public MapColoring Coloring { get => GetValue(ColoringProperty); set => SetValue(ColoringProperty, value); }
 
     public override void Render(DrawingContext context)
     {
@@ -127,7 +150,18 @@ public sealed class TrackMapControl : Control
         {
             if (ColorByInputs)
             {
-                DrawInputRibbon(context, active, Map);
+                switch (Coloring)
+                {
+                    case MapColoring.DeployMode:
+                        DrawRibbon(context, active, Map, DeployModePens, s => Math.Clamp(s.ErsDeployMode, 0, DeployModePens.Length - 1));
+                        break;
+                    case MapColoring.Battery:
+                        DrawRibbon(context, active, Map, BatteryPens, s => (s.ErsStoreEnergy / EnergyAnalyzer.Capacity * 100) switch { >= 50 => 0, >= 20 => 1, _ => 2 });
+                        break;
+                    default:
+                        DrawRibbon(context, active, Map, InputPens, InputClass);
+                        break;
+                }
             }
             else
             {
@@ -140,22 +174,25 @@ public sealed class TrackMapControl : Control
         }
     }
 
-    private static void DrawInputRibbon(DrawingContext context, List<TelemetrySample> samples, Func<double, double, Point> map)
+    private static void DrawRibbon(DrawingContext context, List<TelemetrySample> samples, Func<double, double, Point> map, IPen[] pens, Func<TelemetrySample, int> classOf)
     {
-        // Batch consecutive samples with the same input class into one polyline per class run.
+        // Batch consecutive samples of the same class into one polyline per run.
         var start = 0;
         for (var i = 1; i <= samples.Count; i++)
         {
-            if (i < samples.Count && InputClass(samples[i]) == InputClass(samples[start]))
+            if (i < samples.Count && classOf(samples[i]) == classOf(samples[start]))
             {
                 continue;
             }
 
             var run = samples.Skip(Math.Max(0, start - 1)).Take(i - start + 1).Select(s => map(s.WorldPosX, s.WorldPosZ));
-            context.DrawGeometry(null, InputPens[InputClass(samples[start])], Polyline(run, closed: false));
+            context.DrawGeometry(null, pens[classOf(samples[start])], Polyline(run, closed: false));
             start = i;
         }
     }
+
+    private static IPen[] Pens(double width, params string[] colors) =>
+        [.. colors.Select(c => (IPen)new Pen(new SolidColorBrush(Color.Parse(c)), width, lineCap: PenLineCap.Round, lineJoin: PenLineJoin.Round))];
 
     private static int InputClass(TelemetrySample s) => s.Brake > 0.1 ? 2 : s.Throttle > 0.8 ? 0 : s.Throttle > 0.1 ? 1 : 3;
 

@@ -1,4 +1,5 @@
 using F1Telemetry.Core;
+using F1Telemetry.Core.Energy;
 using F1Telemetry.Core.Engine;
 using F1Telemetry.Core.Models;
 using F1Telemetry.Core.Recording;
@@ -173,6 +174,13 @@ public sealed class EndToEndTests : IAsyncLifetime
         Assert.Contains(race, s => s.EnginePowerIce > 0);
         Assert.Contains(race, s => s.ErsHarvestedMguk > 0);
         Assert.All(race, s => Assert.Equal(format == GameFormat.F1_26 ? 7_100_000 : 0, s.ErsHarvestLimit));
+
+        // Lap energy from the energy-only query: one per lap, each with harvest, deployment and its deploy modes.
+        var energy = EnergyAnalyzer.AnalyzeLaps(await store.GetEnergySamplesAsync(recording.Id, TestContext.Current.CancellationToken));
+        Assert.Equal([1, 2, 3, 4, 5], energy.Select(e => e.LapNumber));
+        Assert.All(energy, e => Assert.True(e.Harvested > 0 && e.Deployed > 0));
+        Assert.Contains(energy, e => e.Modes.Any(m => m.Mode == DeployModes.Overtake));
+        Assert.Equal(race.First().ErsStoreEnergy, energy[0].StartStore);
 
         // Setups: the one the race started on, then the new front wing fitted at the stop on lap 2.
         var setups = await store.GetSetupsAsync(recording.Id, TestContext.Current.CancellationToken);

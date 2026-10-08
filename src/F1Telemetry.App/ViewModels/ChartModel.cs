@@ -34,16 +34,17 @@ public sealed record ChartMarker(double X, string Color, string Label = "");
 
 /// <summary>
 /// One row of a strategy timeline drawn under the plot on the same x axis: a badge (<paramref name="Label"/> on
-/// <paramref name="Color"/>), its stints, and a PIT chip at each of <paramref name="Pits"/> with a dotted line
-/// in <paramref name="Color"/> up through the plot.
+/// <paramref name="Color"/>; none when the label is empty), its stints, and a PIT chip at each of <paramref name="Pits"/>
+/// with a dotted line in <paramref name="Color"/> up through the plot.
 /// </summary>
 public sealed record ChartTimelineRow(string Label, string Color, IReadOnlyList<ChartTimelineSegment> Segments, IReadOnlyList<double> Pits);
 
 /// <summary>
 /// A stint on a timeline row, <paramref name="X0"/>–<paramref name="X1"/>: a ring with <paramref name="Badge"/> (a compound letter)
 /// in <paramref name="Edge"/>, then <paramref name="Text"/> and, at the right end, <paramref name="Value"/>, as far as they fit.
+/// The bar is filled with <paramref name="Fill"/> when given (a deploy mode, say), else the raised surface.
 /// </summary>
-public sealed record ChartTimelineSegment(double X0, double X1, string Badge, string Text, string Value, string Edge);
+public sealed record ChartTimelineSegment(double X0, double X1, string Badge, string Text, string Value, string Edge, string? Fill = null);
 
 /// <param name="XIsTime">X values are seconds; ticks are formatted as m:ss.</param>
 /// <param name="ZeroLine">Draws a dashed line at y = 0 (delta charts).</param>
@@ -165,6 +166,8 @@ public static class ChartCatalog
             new ChartSpec("Fuel in tank (kg)", [new("Fuel", "#4DB5FF", s => s.FuelInTank)], CompareWithReference: false),
             new ChartSpec("ERS store (MJ)", [new("ERS store", "#FFC23D", s => s.ErsStoreEnergy / 1_000_000)]),
             new ChartSpec("ERS this lap (MJ)", [new("Deployed", "#FFC23D", s => s.ErsDeployed / 1_000_000), new("Harvested MGU-K", "#2EE88F", s => s.ErsHarvestedMguk / 1_000_000)], CompareWithReference: false),
+            new ChartSpec("ERS deploy mode · 0 none, 1 medium, 2 hotlap, 3 overtake", [new("Deploy mode", "#B5E2FF", s => s.ErsDeployMode, true)]),
+            new ChartSpec("Power (kW)", [new("MGU-K", "#4DB5FF", s => s.EnginePowerMguk / 1000), new("ICE", "#F4F6F9", s => s.EnginePowerIce / 1000)], CompareWithReference: false),
             new ChartSpec("2026: overtake / active aero", [new("Overtake active", "#FF5A4F", s => s.OvertakeActive, true), new("Active aero mode", "#4DB5FF", s => s.ActiveAeroMode, true)], CompareWithReference: false),
         ]),
         ("Health",
@@ -186,17 +189,55 @@ public static class ChartCatalog
             return null;
         }
 
-        // Reference time as a function of distance; drop points that don't advance (standstill, resets).
-        var refTimes = LapAxis.LapTimes(reference);
+        var lapTimes = LapAxis.LapTimes(lap);
+        if (Delta(lap, reference, LapAxis.LapTimes(reference), i => lapTimes[i], mode) is not { } delta)
+        {
+            return null;
+        }
+
+        return new ChartModel($"Time delta to {referenceLabel} (s) · below 0 = ahead",
+            [new ChartSeries($"Δ {referenceLabel}", "#FFC23D", delta.X, delta.Y)],
+            LapAxis.Label(mode), XIsTime: mode == XAxisMode.LapTime, ZeroLine: true);
+    }
+
+    /// <summary>
+    /// Battery level minus the reference lap's at the same lap distance, in MJ (above 0 = more charge than the
+    /// reference there). Null when the laps don't overlap.
+    /// </summary>
+    public static ChartModel? BuildBatteryDelta(IReadOnlyList<TelemetrySample> lap, IReadOnlyList<TelemetrySample>? reference, string referenceLabel, XAxisMode mode)
+    {
+        if (lap.Count < 2 || reference is not { Count: > 1 })
+        {
+            return null;
+        }
+
+        if (Delta(lap, reference, [.. reference.Select(s => s.ErsStoreEnergy / 1_000_000)], i => lap[i].ErsStoreEnergy / 1_000_000, mode) is not { } delta)
+        {
+            return null;
+        }
+
+        return new ChartModel($"Battery vs {referenceLabel} (MJ) · above 0 = more charge",
+            [new ChartSeries($"Δ {referenceLabel}", "#4DB5FF", delta.X, delta.Y)],
+            LapAxis.Label(mode), XIsTime: mode == XAxisMode.LapTime, ZeroLine: true);
+    }
+
+    /// <summary>
+    /// <paramref name="value"/> of each lap sample minus <paramref name="referenceValues"/> interpolated at the same lap
+    /// distance, against the chosen x axis. Null when fewer than two points overlap.
+    /// </summary>
+    private static (double[] X, double[] Y)? Delta(IReadOnlyList<TelemetrySample> lap, IReadOnlyList<TelemetrySample> reference,
+        IReadOnlyList<double> referenceValues, Func<int, double> value, XAxisMode mode)
+    {
+        // Reference value as a function of distance; drop points that don't advance (standstill, resets).
         var refDistance = new List<double>(reference.Count);
-        var refTime = new List<double>(reference.Count);
+        var refValue = new List<double>(reference.Count);
         for (var i = 0; i < reference.Count; i++)
         {
             var d = reference[i].LapDistance;
             if (d >= 0 && (refDistance.Count == 0 || d > refDistance[^1]))
             {
                 refDistance.Add(d);
-                refTime.Add(refTimes[i]);
+                refValue.Add(referenceValues[i]);
             }
         }
 
@@ -205,7 +246,7 @@ public static class ChartCatalog
             return null;
         }
 
-        var lapTimes = LapAxis.LapTimes(lap);
+        var lapTimes = mode == XAxisMode.LapTime ? LapAxis.LapTimes(lap) : null;
         var xs = new List<double>(lap.Count);
         var ys = new List<double>(lap.Count);
         for (var i = 0; i < lap.Count; i++)
@@ -217,30 +258,23 @@ public static class ChartCatalog
             }
 
             var j = refDistance.BinarySearch(d);
-            double tRef;
+            double atReference;
             if (j >= 0)
             {
-                tRef = refTime[j];
+                atReference = refValue[j];
             }
             else
             {
                 var hi = ~j;
                 var lo = hi - 1;
                 var f = (d - refDistance[lo]) / (refDistance[hi] - refDistance[lo]);
-                tRef = refTime[lo] + f * (refTime[hi] - refTime[lo]);
+                atReference = refValue[lo] + f * (refValue[hi] - refValue[lo]);
             }
 
-            xs.Add(mode == XAxisMode.LapTime ? lapTimes[i] : d);
-            ys.Add(lapTimes[i] - tRef);
+            xs.Add(lapTimes?[i] ?? d);
+            ys.Add(value(i) - atReference);
         }
 
-        if (xs.Count < 2)
-        {
-            return null;
-        }
-
-        return new ChartModel($"Time delta to {referenceLabel} (s) · below 0 = ahead",
-            [new ChartSeries($"Δ {referenceLabel}", "#FFC23D", xs.ToArray(), ys.ToArray())],
-            LapAxis.Label(mode), XIsTime: mode == XAxisMode.LapTime, ZeroLine: true);
+        return xs.Count < 2 ? null : (xs.ToArray(), ys.ToArray());
     }
 }

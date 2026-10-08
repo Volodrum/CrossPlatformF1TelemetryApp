@@ -105,7 +105,7 @@ dotnet run --project src/F1Telemetry.App
 dotnet run --project src/F1Telemetry.App -- --mode f1-26 --source demo --record
 ```
 
-Other switches: `--mode f1-25|f1-26`, `--source udp|demo|replay=<file>`, `--record`, `--tab live|laps|lapdetail|strategy|compare|position|settings`, `--select-latest`, `--lap <n>`, `--preview-overlays` (with `--tab settings`), and `--exit-after <s>` for smoke tests.
+Other switches: `--mode f1-25|f1-26`, `--source udp|demo|replay=<file>`, `--record`, `--tab live|laps|lapdetail|strategy|energy|compare|position|settings`, `--select-latest`, `--lap <n>`, `--preview-overlays` (with `--tab settings`), and `--exit-after <s>` for smoke tests.
 
 Data is stored in `%LOCALAPPDATA%\F1Telemetry` on Windows, `~/Library/Application Support/F1Telemetry` on macOS and `~/.local/share/F1Telemetry` on Linux. Override it with `F1TELEMETRY_DATA_DIR`.
 
@@ -164,6 +164,7 @@ The UI implements the "F1 Telemetry Design Template": a dark, high-contrast race
 - **Type:** JetBrains Mono for every number, Chakra Petch for labels and headings, IBM Plex Sans for body text. All three are embedded (`Assets/Fonts`, SIL OFL). Numbers are 18 px or larger, and each overlay has one headline number of 56 px or larger.
 - **Status is never colour alone:** filled purple = session best, filled green = faster, amber outline = slower, filled red = warning. Deltas carry ▲/▼ and compounds carry a letter (`CompoundBadge`). The shared `Chip` model and template (`App.axaml`) render the same way on overlays, the laps table and lap detail.
 - **Controls:** `Theme/Controls.axaml` defines the primary and secondary buttons, the segmented mode toggle, section and segment tabs, card lists and text roles (`label`, `h1`, `data-xl`…`data-s`). Strokes are 2 px or thicker and targets 44 px or larger.
+- **ERS deploy modes:** one blue ramp, lighter for more power (None `#3A404C`, Medium `#1F6FB2`, Hotlap `#4DB5FF`, Overtake `#B5E2FF`), always with the mode letter N/M/H/O. It is kept apart from the status colours, so a mode never reads as good or bad.
 - **Charts and map:** panel background, JetBrains Mono ticks, 3 px traces and a dashed grey best-lap reference. The map draws the tarmac at its true width (at least 6 px) between 1 px track limits, with a thin 2.5 px green/amber/red input ribbon, a thin grey comparison lap and a small car marker. Zoom (up to 60×) moves the points apart but keeps every line's on-screen width, so the lines of different laps separate instead of growing fatter.
 
 | Live | Lap detail | Strategy |
@@ -193,6 +194,18 @@ Within one stint the two effects can't be told apart, because fuel falls in step
 - **where the time went:** the total gap split into pit stops, tyre wear, fuel load, base pace (compound and driving) and a remainder for the start, traffic and mistakes. Each lap is split into the fitted model plus what it doesn't explain, so the five parts add up to the total gap exactly. Both races use the same fuel effect.
 
 The fits need a few clean laps per stint: with only two or three, wear rates are noisy.
+
+## Energy analysis
+
+The **ENERGY** tab shows what the battery did on every lap of a recording:
+
+- a **battery map**: the lap's racing line coloured by ERS deploy mode, or by battery level in the ERS charge bands (MODE / BATTERY switch). None is a thin grey line, the deploy modes a wider ribbon;
+- the **battery trace** along the lap, with the deploy modes as a strip under it and a marker where the harvest limit was reached;
+- a **lap table**: battery at the start and end of the lap, MJ harvested and deployed, where the harvest limit was reached (2026 format), and waste flags. **FLAT** is time at full throttle with an empty battery, so no electric power. **FULL** is time braking with a full battery, so the energy is lost. **CAP** is time braking after the lap's harvest limit, so nothing more could be stored.
+
+The game resets its per-lap harvest and deploy counters at the line, but not always on the same packet as the lap number. `EnergyAnalyzer` takes each lap's totals from after the last reset, so a lap never inherits the previous lap's figures. Lap detail's ENERGY charts add the battery difference to the comparison lap, the deploy mode and ICE / MGU-K power.
+
+![Energy tab](docs/screenshots/13-energy.png)
 
 ## Overlays
 
@@ -237,6 +250,7 @@ Switch on **PREVIEW OVERLAYS** at the top of the Settings tab to show every over
 
 ## Next steps
 
+- ERS planner: a car model learned from each track's laps (MGU-K power by mode and speed, harvest, drag), then qualifying and race deploy plans per zone on the battery map, and a live ERS PLAN overlay.
 - Strategy optimiser: a per-track compound library from every recording, then 1-, 2- and 3-stop plans ranked with pit windows and undercut values.
 - Driver names on the radar.
 - Installer and auto-update (e.g. Velopack), plus CI builds for all three OSes.

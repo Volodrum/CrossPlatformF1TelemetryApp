@@ -6,7 +6,7 @@ namespace F1Telemetry.Simulation;
 /// The player's battery, closely enough to the game to exercise energy analysis: harvest under braking up to a per-lap
 /// limit, deployment at full throttle by deploy mode, a 4 MJ store. The 2026 numbers are the ones measured in a real
 /// F1 26 race at Spa (MGU-K 126 kW in Medium, 315 kW in Overtake falling to 135 kW above 275 km/h, 7.1 MJ harvest
-/// limit). Pace does not depend on it: the speed profile drives the car.
+/// limit), plus some harvest when lifting. Pace does not depend on it: the speed profile drives the car.
 /// <para>The driver runs Medium, Overtake through the first third of the lap from lap 2 when there is charge to spare,
 /// and None from a nearly flat battery until it has recovered.</para>
 /// </summary>
@@ -36,6 +36,7 @@ internal sealed class ErsModel(GameFormat format)
     public double DeployedThisLap { get; private set; }
 
     private double HarvestPower => _is2026 ? 350_000 : 120_000;
+    private double LiftHarvestPower => _is2026 ? 120_000 : 40_000;
 
     public void StartLap()
     {
@@ -48,16 +49,17 @@ internal sealed class ErsModel(GameFormat format)
     {
         Mode = ChooseMode(lapFraction);
 
-        if (brake > 0)
+        if (brake > 0 || throttle < 1)
         {
-            var harvest = Math.Min(Math.Min(HarvestPower * dt, HarvestLimit - HarvestedThisLap), Capacity - Store);
+            // Braking harvests hard; lifting through a corner harvests a little too.
+            var harvest = Math.Min(Math.Min((brake > 0 ? HarvestPower : LiftHarvestPower) * dt, HarvestLimit - HarvestedThisLap), Capacity - Store);
             HarvestedThisLap += Math.Max(0, harvest);
             Store += Math.Max(0, harvest);
             MgukPower = 0;
             return;
         }
 
-        var power = throttle >= 1 ? DeployPower(Mode, kmh) : 0;
+        var power = DeployPower(Mode, kmh);
         var energy = Math.Min(power * dt, Store);
         Store -= energy;
         DeployedThisLap += energy;

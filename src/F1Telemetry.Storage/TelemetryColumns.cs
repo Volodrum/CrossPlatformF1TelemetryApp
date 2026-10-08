@@ -142,12 +142,18 @@ internal static class TelemetryColumns
     public static string CreateTableSql { get; } =
         $"CREATE TABLE IF NOT EXISTS telemetry (\n    {string.Join(",\n    ", All.Select(c => $"{c.Name} {c.SqlType}"))}\n)";
 
-    public static TelemetrySample ReadRow(DbDataReader reader)
+    public static TelemetrySample ReadRow(DbDataReader reader) => ReadRow(reader, All);
+
+    /// <summary>Some of the columns, for a query that only needs part of each sample.</summary>
+    public static TelemetryColumn[] Select(params string[] names) => [.. names.Select(name => All.Single(c => c.Name == name))];
+
+    /// <summary>Reads a row selected as <paramref name="columns"/>, in that order; the other fields stay 0.</summary>
+    public static TelemetrySample ReadRow(DbDataReader reader, TelemetryColumn[] columns)
     {
         var sample = new TelemetrySample();
-        for (var i = 0; i < All.Length; i++)
+        for (var i = 0; i < columns.Length; i++)
         {
-            All[i].Read(sample, reader, i);
+            columns[i].Read(sample, reader, i);
         }
 
         return sample;

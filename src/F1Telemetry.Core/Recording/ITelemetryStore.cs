@@ -39,6 +39,12 @@ public interface ITelemetryStore : IAsyncDisposable
 
     Task<IReadOnlyList<TelemetrySample>> GetLapSamplesAsync(long recordingId, int lapNumber, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Every sample of a recording in session-time order, with only lap, time, distance, speed, pedals and the energy
+    /// fields (battery, deploy mode, per-lap harvest and deploy counters, harvest limit, MGU-K power) filled in.
+    /// </summary>
+    Task<IReadOnlyList<TelemetrySample>> GetEnergySamplesAsync(long recordingId, CancellationToken cancellationToken = default);
+
     Task<IReadOnlyList<LapAggregate>> GetLapAggregatesAsync(long recordingId, CancellationToken cancellationToken = default);
 
     Task<WheelValues> GetLatestWearAsync(long recordingId, CancellationToken cancellationToken = default);

@@ -353,6 +353,12 @@ public sealed partial class LapDetailViewModel(TelemetryRuntime runtime) : Obser
                 models.Insert(0, delta);
             }
 
+            // Right under the battery trace of both laps.
+            if (name == "Energy" && ChartCatalog.BuildBatteryDelta(samples, reference, referenceLabel, mode) is { } battery)
+            {
+                models.Insert(2, battery);
+            }
+
             Tabs.Add(new ChartTabViewModel(name.ToUpperInvariant(), models));
         }
 

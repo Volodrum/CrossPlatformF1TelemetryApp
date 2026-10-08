@@ -25,6 +25,15 @@ public static class Palette
     public static readonly IBrush Selected = Brush("#1E2129");
     public static readonly IBrush Orange = Brush("#FF8A3D");
 
+    /// <summary>ERS deploy modes None, Medium, Hotlap, Overtake: one blue ramp, lighter = more power.</summary>
+    public static readonly string[] DeployModeHex = ["#3A404C", "#1F6FB2", "#4DB5FF", "#B5E2FF"];
+    private static readonly IBrush[] DeployModeBrushes = [.. DeployModeHex.Select(Brush)];
+
+    public static IBrush DeployMode(int mode) => mode is >= 0 and < 4 ? DeployModeBrushes[mode] : LineStrong;
+
+    /// <summary>Text on a <see cref="DeployMode"/> fill: light on the two dark steps, dark on the two light ones.</summary>
+    public static IBrush OnDeployMode(int mode) => mode is 2 or 3 ? OnColor : TextHi;
+
     /// <summary>Race A / race B in the comparison tab (validated colour-blind safe on the dark panel).</summary>
     public const string RaceAHex = "#3593DA";
     public const string RaceBHex = "#E06A1F";

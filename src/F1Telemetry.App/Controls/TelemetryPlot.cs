@@ -176,7 +176,10 @@ public sealed class TelemetryPlot : ContentControl
         {
             left = Math.Min(left, segments.Min(s => s.X0));
             right = Math.Max(right, segments.Max(s => s.X1));
-            left -= (right - left) * 0.035; // room for the race badges at the start of each row
+            if (timeline.Any(r => r.Label.Length > 0))
+            {
+                left -= (right - left) * 0.035; // room for the race badges at the start of each row
+            }
         }
 
         if (right <= left)
@@ -230,19 +233,22 @@ public sealed class TelemetryPlot : ContentControl
             var mid = (y0 + y1) / 2;
             var raceColor = Color.FromHex(row.Color);
 
-            var badge = AddLabel(plot, row.Label, left, mid, LabelFont, 14, Panel);
-            badge.LabelAlignment = Alignment.MiddleLeft;
-            badge.LabelOffsetX = 4;
-            badge.LabelBackgroundColor = raceColor;
-            badge.LabelBorderRadius = 4;
-            badge.LabelPadding = 5;
+            if (row.Label.Length > 0)
+            {
+                var badge = AddLabel(plot, row.Label, left, mid, LabelFont, 14, Panel);
+                badge.LabelAlignment = Alignment.MiddleLeft;
+                badge.LabelOffsetX = 4;
+                badge.LabelBackgroundColor = raceColor;
+                badge.LabelBorderRadius = 4;
+                badge.LabelPadding = 5;
+            }
 
             for (var s = 0; s < row.Segments.Count; s++)
             {
                 var segment = row.Segments[s];
                 var edge = Color.FromHex(segment.Edge);
                 var bar = plot.Add.Rectangle(segment.X0, segment.X1, y0, y1);
-                bar.FillColor = Raised;
+                bar.FillColor = segment.Fill is { } fill ? Color.FromHex(fill) : Raised;
                 bar.LineColor = edge;
                 bar.LineWidth = 2;
 
@@ -250,6 +256,11 @@ public sealed class TelemetryPlot : ContentControl
                 var startInset = s > 0 ? 22.0 : 6.0;
                 var endInset = s < row.Segments.Count - 1 ? 24.0 : 8.0;
                 var room = (segment.X1 - segment.X0) * pixelsPerUnit - startInset - endInset;
+                if (room < 20)
+                {
+                    continue; // too short for its ring: the bar alone says it
+                }
+
                 var ring = AddLabel(plot, segment.Badge, segment.X0, mid, LabelFont, 11, edge);
                 ring.LabelAlignment = Alignment.MiddleLeft;
                 ring.LabelOffsetX = (float)startInset;

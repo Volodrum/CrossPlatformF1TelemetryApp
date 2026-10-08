@@ -17,6 +17,7 @@ public enum MainTab
     Laps,
     LapDetail,
     Strategy,
+    Energy,
     Compare,
     Position,
     Settings,
@@ -40,6 +41,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
         SessionViewModel session,
         LapDetailViewModel lapDetail,
         CompareViewModel compare,
+        EnergyViewModel energy,
         SettingsViewModel settings,
         ILogger<MainWindowViewModel> log)
     {
@@ -50,6 +52,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
         Session = session;
         LapDetail = lapDetail;
         Compare = compare;
+        Energy = energy;
         Settings = settings;
 
         Sources =
@@ -101,6 +104,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
     public SessionViewModel Session { get; }
     public LapDetailViewModel LapDetail { get; }
     public CompareViewModel Compare { get; }
+    public EnergyViewModel Energy { get; }
     public SettingsViewModel Settings { get; }
     public IReadOnlyList<SourceOption> Sources { get; }
     public ObservableCollection<RecordingItemViewModel> Recordings { get; } = [];
@@ -154,7 +158,14 @@ public sealed partial class MainWindowViewModel : ObservableObject
 
     partial void OnIsRecordingChanged(bool value) => OnPropertyChanged(nameof(RecordButtonText));
 
-    partial void OnSelectedRecordingChanged(RecordingItemViewModel? value) => _ = Session.LoadAsync(value?.Info);
+    partial void OnSelectedRecordingChanged(RecordingItemViewModel? value)
+    {
+        _ = Session.LoadAsync(value?.Info);
+        if (SelectedTab == MainTab.Energy)
+        {
+            _ = ActivateEnergyAsync();
+        }
+    }
 
     public int SelectedTabIndex
     {
@@ -175,6 +186,24 @@ public sealed partial class MainWindowViewModel : ObservableObject
         if (value == MainTab.Compare)
         {
             _ = ActivateCompareAsync();
+        }
+        else if (value == MainTab.Energy)
+        {
+            _ = ActivateEnergyAsync();
+        }
+    }
+
+    /// <summary>Shows the selected recording on the energy tab (loaded only while the tab is open).</summary>
+    public async Task ActivateEnergyAsync()
+    {
+        try
+        {
+            await Energy.LoadAsync(SelectedRecording?.Info);
+        }
+        catch (Exception ex)
+        {
+            _log.LogError(ex, "Energy analysis failed");
+            StatusMessage = $"Energy analysis failed: {ex.Message}";
         }
     }
 
@@ -320,6 +349,11 @@ public sealed partial class MainWindowViewModel : ObservableObject
         if (Session.Recording is { } info)
         {
             SelectedRecording?.Update(info);
+        }
+
+        if (SelectedTab == MainTab.Energy)
+        {
+            await Energy.RefreshAsync();
         }
     }
 }
