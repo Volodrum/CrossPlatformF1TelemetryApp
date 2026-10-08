@@ -26,7 +26,9 @@ public static class RecordingCaptures
             return null;
         }
 
-        var parts = Path.GetFileNameWithoutExtension(path).Split('-');
+        // Both separators, not just this OS's: a Windows path must parse on Linux too.
+        var name = path[(path.LastIndexOfAny(['/', '\\']) + 1)..^PacketFile.Extension.Length];
+        var parts = name.Split('-');
         return parts is ["recording", var id, var date, var time]
                && long.TryParse(id, NumberStyles.None, CultureInfo.InvariantCulture, out var recordingId)
                && DateTime.TryParseExact($"{date}-{time}", TimeFormat, CultureInfo.InvariantCulture, DateTimeStyles.None, out var start)

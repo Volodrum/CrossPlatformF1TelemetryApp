@@ -27,6 +27,7 @@ public sealed class RecordingCapturesTests : IDisposable
 
         Assert.Equal("recording-17-20261006-162009.f1rec", RecordingCaptures.FileName(17, start));
         Assert.Equal((17L, start), RecordingCaptures.Parse(@"C:\data\captures\recording-17-20261006-162009.f1rec"));
+        Assert.Equal((17L, start), RecordingCaptures.Parse("/home/me/.local/share/F1Telemetry/captures/recording-17-20261006-162009.f1rec"));
         Assert.Null(RecordingCaptures.Parse("capture-20261006-162009.f1rec"));
         Assert.Null(RecordingCaptures.Parse("recording-17-20261006-162009.txt"));
     }
