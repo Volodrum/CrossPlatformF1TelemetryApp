@@ -62,6 +62,20 @@ public sealed class EndToEndTests : IAsyncLifetime
         Assert.Equal(srtt.Right[10].Z, json.Right[10].Z, 3);
     }
 
+    [Fact]
+    public void Madring_map_reads_from_srtt_and_json_alike()
+    {
+        // Built from a driven line in game coordinates (no UNAmedia file exists yet): one point per metre, 6 m each side.
+        var srtt = SrttReader.Read(Path.Combine(AppContext.BaseDirectory, "tracks", "Madring.srtt"));
+        var json = new TrackLibrary(Path.Combine(AppContext.BaseDirectory, "track_maps")).ForTrackId(42)!;
+        Assert.Equal("Madring", Tracks.Get(42).Name);
+        Assert.Equal(srtt.Left.Count, json.Left.Count);
+        Assert.Equal(srtt.Left[10].X, json.Left[10].X, 3);
+        Assert.Equal(srtt.Left[10].Z, json.Left[10].Z, 3);
+        Assert.InRange(srtt.MaxX - srtt.MinX, 1000, 1300);
+        Assert.InRange(srtt.MaxZ - srtt.MinZ, 1700, 2000);
+    }
+
     [Theory]
     [InlineData(GameFormat.F1_25)]
     [InlineData(GameFormat.F1_26)]

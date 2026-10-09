@@ -43,7 +43,7 @@ public static class Tracks
         new(39, "Silverstone (Reverse)", "Silverstone (reverse)"),
         new(40, "Austria (Reverse)", "Austria (reverse)"),
         new(41, "Zandvoort (Reverse)", "Zandvoort (reverse)"),
-        new(42, "Madrid", null),
+        new(42, "Madring", "Madring"),
     }.ToDictionary(t => t.Id);
 
     public static TrackInfo Get(sbyte id) => ById.TryGetValue(id, out var info) ? info : new TrackInfo(id, $"Track {id}", null);
