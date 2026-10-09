@@ -6,6 +6,19 @@
              xmlns:energy="using:F1Telemetry.Core.Energy"
              x:Class="F1Telemetry.App.Views.EnergyView"
              x:DataType="vm:EnergyViewModel">
+  <UserControl.Resources>
+    <!-- A deploy-mode letter chip with the distance run in it. -->
+    <DataTemplate x:Key="ModeDistance" x:DataType="vm:ModeShare">
+      <StackPanel Orientation="Horizontal" Spacing="4" ToolTip.Tip="{Binding Name}">
+        <Border Width="24" Height="22" CornerRadius="5" Background="{Binding Fill}">
+          <TextBlock Text="{Binding Letter}" FontFamily="{StaticResource DataFont}" FontSize="13" FontWeight="ExtraBold"
+                     Foreground="{Binding Foreground}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+        </Border>
+        <TextBlock Classes="mono" FontSize="13" Text="{Binding Distance}" VerticalAlignment="Center" />
+      </StackPanel>
+    </DataTemplate>
+  </UserControl.Resources>
+
   <DockPanel Margin="0,16,0,0">
     <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="0,0,8,12">
       <StackPanel Spacing="4">
@@ -23,325 +36,335 @@
       </Border>
     </Grid>
 
-    <TextBlock DockPanel.Dock="Top" Classes="body" Text="{Binding EmptyText}" IsVisible="{Binding !HasData}" />
+    <!-- Pages: the session as driven, the plan built on it, the car model behind the plan -->
+    <Border DockPanel.Dock="Top" Classes="segmented" HorizontalAlignment="Left" Margin="0,0,0,12">
+      <StackPanel Orientation="Horizontal">
+        <Button Theme="{StaticResource ModeToggle}" Content="SESSION" Classes.selected="{Binding IsSessionPage}"
+                Command="{Binding SetPageCommand}" CommandParameter="{x:Static vm:EnergyPage.Session}"
+                ToolTip.Tip="What you ran: the battery over the session and on every lap" />
+        <Button Theme="{StaticResource ModeToggle}" Content="ERS PLAN" Classes.selected="{Binding IsPlanPage}"
+                Command="{Binding SetPageCommand}" CommandParameter="{x:Static vm:EnergyPage.Plan}"
+                ToolTip.Tip="A deploy mode per zone, simulated on the car model" />
+        <Button Theme="{StaticResource ModeToggle}" Content="CAR MODEL" Classes.selected="{Binding IsModelPage}"
+                Command="{Binding SetPageCommand}" CommandParameter="{x:Static vm:EnergyPage.Model}"
+                ToolTip.Tip="What the car's ERS delivers, learned from every lap at this track" />
+      </StackPanel>
+    </Border>
 
-    <ScrollViewer IsVisible="{Binding HasData}">
-      <StackPanel Spacing="12" Margin="0,0,8,0">
-        <Grid ColumnDefinitions="*,340" ColumnSpacing="12" Height="440">
-          <!-- Battery map: the session as driven, or the plan -->
-          <Border Classes="panel" Padding="0" ClipToBounds="True">
-            <Panel>
-              <controls:TrackMapControl Outline="{Binding Outline}" ActiveLap="{Binding Samples}" ColorByInputs="True" Coloring="{Binding Layer}" />
-              <StackPanel Margin="16,14" HorizontalAlignment="Left" VerticalAlignment="Top" Spacing="2" IsHitTestVisible="False">
-                <TextBlock Classes="h2" Text="{Binding TrackName}" FontSize="20" />
-                <TextBlock Classes="label" Text="{Binding MapTitle}" />
-              </StackPanel>
-              <StackPanel Margin="14" HorizontalAlignment="Right" VerticalAlignment="Top" Spacing="8">
-                <Border Classes="segmented" HorizontalAlignment="Right">
-                  <StackPanel Orientation="Horizontal">
-                    <Button Theme="{StaticResource ModeToggle}" Content="MODE" Classes.selected="{Binding IsModeLayer}"
-                            Command="{Binding SetLayerCommand}" CommandParameter="{x:Static controls:MapColoring.DeployMode}" />
-                    <Button Theme="{StaticResource ModeToggle}" Content="BATTERY" Classes.selected="{Binding IsBatteryLayer}"
-                            Command="{Binding SetLayerCommand}" CommandParameter="{x:Static controls:MapColoring.Battery}" />
+    <Panel>
+      <!-- SESSION and ERS PLAN share the map and the battery trace -->
+      <DockPanel IsVisible="{Binding !IsModelPage}">
+        <TextBlock DockPanel.Dock="Top" Classes="body" Text="{Binding EmptyText}" IsVisible="{Binding !HasData}" />
+
+        <ScrollViewer IsVisible="{Binding HasData}">
+          <StackPanel Spacing="12" Margin="0,0,8,0">
+            <Grid ColumnDefinitions="*,340" ColumnSpacing="12" MinHeight="440">
+              <!-- Battery map: the session as driven, or the plan -->
+              <Border Classes="panel" Padding="0" ClipToBounds="True">
+                <Panel>
+                  <controls:TrackMapControl Outline="{Binding Outline}" ActiveLap="{Binding Samples}" ColorByInputs="True" Coloring="{Binding Layer}" />
+                  <StackPanel Margin="16,14" HorizontalAlignment="Left" VerticalAlignment="Top" Spacing="2" IsHitTestVisible="False">
+                    <TextBlock Classes="h2" Text="{Binding TrackName}" FontSize="20" />
+                    <TextBlock Classes="label" Text="{Binding MapTitle}" />
                   </StackPanel>
-                </Border>
-                <Border Classes="segmented" HorizontalAlignment="Right" IsVisible="{Binding Plan.HasPlan}">
-                  <StackPanel Orientation="Horizontal">
-                    <Button Theme="{StaticResource ModeToggle}" Content="SESSION" Classes.selected="{Binding IsDrivenOnMap}"
-                            Command="{Binding SetMapSourceCommand}" CommandParameter="driven"
-                            ToolTip.Tip="What you ran: the session's laps averaged" />
-                    <Button Theme="{StaticResource ModeToggle}" Content="PLAN" Classes.selected="{Binding ShowPlanOnMap}"
-                            Command="{Binding SetMapSourceCommand}" CommandParameter="plan"
-                            ToolTip.Tip="The race or qualifying plan chosen below" />
-                  </StackPanel>
-                </Border>
-              </StackPanel>
-              <ItemsControl ItemsSource="{Binding Legend}" Margin="16,14" HorizontalAlignment="Right" VerticalAlignment="Bottom" IsHitTestVisible="False">
-                <ItemsControl.ItemsPanel>
-                  <ItemsPanelTemplate>
-                    <StackPanel Spacing="8" />
-                  </ItemsPanelTemplate>
-                </ItemsControl.ItemsPanel>
-                <ItemsControl.ItemTemplate>
-                  <DataTemplate x:DataType="vm:LegendEntry">
-                    <StackPanel Orientation="Horizontal" Spacing="8">
-                      <Border Width="24" Height="{Binding Thickness}" CornerRadius="3" Background="{Binding Swatch}" VerticalAlignment="Center" />
-                      <TextBlock Classes="label strong" Text="{Binding Label}" VerticalAlignment="Center" />
+                  <Border Classes="segmented" Margin="14" HorizontalAlignment="Right" VerticalAlignment="Top">
+                    <StackPanel Orientation="Horizontal">
+                      <Button Theme="{StaticResource ModeToggle}" Content="MODE" Classes.selected="{Binding IsModeLayer}"
+                              Command="{Binding SetLayerCommand}" CommandParameter="{x:Static controls:MapColoring.DeployMode}" />
+                      <Button Theme="{StaticResource ModeToggle}" Content="BATTERY" Classes.selected="{Binding IsBatteryLayer}"
+                              Command="{Binding SetLayerCommand}" CommandParameter="{x:Static controls:MapColoring.Battery}" />
                     </StackPanel>
-                  </DataTemplate>
-                </ItemsControl.ItemTemplate>
-              </ItemsControl>
-            </Panel>
-          </Border>
-
-          <!-- Session summary -->
-          <Border Grid.Column="1" Classes="panel" Padding="18">
-            <StackPanel Spacing="14">
-              <StackPanel Spacing="4">
-                <TextBlock Classes="h2" Text="{Binding SessionTitle}" />
-                <TextBlock Classes="body" FontSize="13" Text="{Binding SessionNote}" TextWrapping="Wrap" />
-              </StackPanel>
-              <StackPanel Spacing="4">
-                <TextBlock Classes="label" Text="{Binding UnitLabel, StringFormat='BATTERY AT THE LINE · START → END · {0}'}" />
-                <StackPanel Orientation="Horizontal" Spacing="10">
-                  <TextBlock Classes="data-l" Text="{Binding StartLevel}" Foreground="{Binding StartBrush}" />
-                  <TextBlock Classes="data-m" Text="→" Foreground="{StaticResource TextLoBrush}" VerticalAlignment="Center" />
-                  <TextBlock Classes="data-l" Text="{Binding EndLevel}" Foreground="{Binding EndBrush}" />
-                </StackPanel>
-                <TextBlock Classes="body" FontSize="13" Text="{Binding DeployNote}" TextWrapping="Wrap" />
-              </StackPanel>
-              <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
-                <StackPanel Spacing="4">
-                  <TextBlock Classes="label" Text="{Binding UnitLabel, StringFormat='HARVESTED / LAP · {0}'}" />
-                  <TextBlock Classes="data-m" Text="{Binding Harvested}" />
-                </StackPanel>
-                <StackPanel Grid.Column="1" Spacing="4">
-                  <TextBlock Classes="label" Text="{Binding UnitLabel, StringFormat='DEPLOYED / LAP · {0}'}" />
-                  <TextBlock Classes="data-m" Text="{Binding Deployed}" />
-                </StackPanel>
-              </Grid>
-              <TextBlock Classes="body" FontSize="13" Text="{Binding HarvestNote}" TextWrapping="Wrap" />
-              <StackPanel Spacing="6">
-                <TextBlock Classes="label" Text="DEPLOY MODES · DISTANCE PER LAP" />
-                <ItemsControl ItemsSource="{Binding Modes}">
-                  <ItemsControl.ItemsPanel>
-                    <ItemsPanelTemplate>
-                      <WrapPanel />
-                    </ItemsPanelTemplate>
-                  </ItemsControl.ItemsPanel>
-                  <ItemsControl.ItemTemplate>
-                    <DataTemplate x:DataType="vm:ModeShare">
-                      <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,0,14,6" ToolTip.Tip="{Binding Name}">
-                        <Border Width="28" Height="26" CornerRadius="5" Background="{Binding Fill}">
-                          <TextBlock Text="{Binding Letter}" FontFamily="{StaticResource DataFont}" FontSize="14" FontWeight="ExtraBold"
-                                     Foreground="{Binding Foreground}" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                        </Border>
-                        <TextBlock Classes="data-s" FontSize="16" Text="{Binding Distance}" VerticalAlignment="Center" />
-                      </StackPanel>
-                    </DataTemplate>
-                  </ItemsControl.ItemTemplate>
-                </ItemsControl>
-              </StackPanel>
-              <ItemsControl ItemsSource="{Binding Issues}" IsVisible="{Binding HasIssues}">
-                <ItemsControl.ItemTemplate>
-                  <DataTemplate x:DataType="x:String">
-                    <TextBlock Classes="body" FontSize="13" Text="{Binding}" TextWrapping="Wrap" Margin="0,0,0,6" Foreground="{StaticResource SlowerBrush}" />
-                  </DataTemplate>
-                </ItemsControl.ItemTemplate>
-              </ItemsControl>
-            </StackPanel>
-          </Border>
-        </Grid>
-
-        <!-- Battery along the lap: every lap, their average and the plan; deploy modes underneath -->
-        <Border Classes="panel" Padding="0" Height="300">
-          <controls:TelemetryPlot Model="{Binding Trace}" />
-        </Border>
-
-        <!-- ERS plan for the session -->
-        <Border Classes="panel" Padding="18,14" DataContext="{Binding Plan}">
-          <StackPanel Spacing="14">
-            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
-              <StackPanel Spacing="4" VerticalAlignment="Center">
-                <TextBlock Classes="label strong" Text="ERS PLAN · DEPLOY MODE PER ZONE, SIMULATED ON THE CAR MODEL" />
-                <TextBlock Classes="body" FontSize="13" TextWrapping="Wrap"
-                           Text="RACE: a lap that deploys exactly what it harvests, so it ends with the charge it started with and every race lap can run it. QUALIFYING: one push lap from a full battery. Corners and braking keep your speeds; on the straights the plan changes what the MGU-K gives." />
-                <TextBlock Classes="body" FontSize="13" Text="{Binding Basis}" TextWrapping="Wrap" Foreground="{StaticResource TextHiBrush}"
-                           IsVisible="{Binding Basis, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-              </StackPanel>
-              <Border Grid.Column="1" Classes="segmented" VerticalAlignment="Top" IsVisible="{Binding CanPlan}">
-                <StackPanel Orientation="Horizontal">
-                  <Button Theme="{StaticResource ModeToggle}" Content="RACE" Classes.selected="{Binding IsRace}"
-                          Command="{Binding SetKindCommand}" CommandParameter="{x:Static energy:PlanKind.Race}" />
-                  <Button Theme="{StaticResource ModeToggle}" Content="QUALIFYING" Classes.selected="{Binding IsQualifying}"
-                          Command="{Binding SetKindCommand}" CommandParameter="{x:Static energy:PlanKind.Qualifying}" />
-                </StackPanel>
-              </Border>
-            </Grid>
-
-            <TextBlock Classes="body" Text="{Binding Note}" TextWrapping="Wrap" Foreground="{StaticResource SlowerBrush}"
-                       IsVisible="{Binding Note, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-            <TextBlock Classes="muted" Text="Planning…" IsVisible="{Binding IsBusy}" />
-
-            <StackPanel Spacing="14" IsVisible="{Binding HasPlan}">
-              <UniformGrid Columns="5">
-                <StackPanel Spacing="4" Margin="0,0,16,0">
-                  <TextBlock Classes="label" Text="PREDICTED LAP" />
-                  <TextBlock Classes="data-m" Text="{Binding Predicted}" />
-                  <TextBlock Classes="data-s" Text="{Binding Gain}" Foreground="{StaticResource FasterBrush}" />
-                </StackPanel>
-                <StackPanel Spacing="4" Margin="0,0,16,0">
-                  <TextBlock Classes="label" Text="{Binding UnitLabel, StringFormat='BATTERY AT THE LINE · {0}'}" />
-                  <TextBlock Classes="data-m" Text="{Binding Battery}" />
-                  <TextBlock Classes="body" FontSize="13" Text="{Binding BatteryNote}" TextWrapping="Wrap" />
-                </StackPanel>
-                <StackPanel Spacing="4" Margin="0,0,16,0">
-                  <TextBlock Classes="label" Text="{Binding UnitLabel, StringFormat='HARVEST / DEPLOY PER LAP · {0}'}" />
-                  <TextBlock Classes="data-m" Text="{Binding Energy}" />
-                  <TextBlock Classes="body" FontSize="13" Text="{Binding EnergyNote}" TextWrapping="Wrap" />
-                </StackPanel>
-                <StackPanel Spacing="4" Margin="0,0,16,0">
-                  <TextBlock Classes="label" Text="BATTLE BUDGET" />
-                  <TextBlock Classes="data-m" Text="{Binding Budget}" />
-                  <TextBlock Classes="body" FontSize="13" Text="{Binding BudgetNote}" TextWrapping="Wrap" />
-                </StackPanel>
-                <StackPanel Spacing="6">
-                  <TextBlock Classes="label" Text="CONFIDENCE" />
-                  <ContentControl Content="{Binding Confidence}" HorizontalAlignment="Left" />
-                  <TextBlock Classes="body" FontSize="13" Text="{Binding ConfidenceNote}" TextWrapping="Wrap" />
-                </StackPanel>
-              </UniformGrid>
-
-              <Grid ColumnDefinitions="52,120,170,*,120,80" ColumnSpacing="12" Margin="0,4,0,0">
-                <TextBlock Classes="label" Text="ZONE" />
-                <TextBlock Grid.Column="1" Classes="label" Text="LAP DISTANCE" />
-                <TextBlock Grid.Column="2" Classes="label" Text="YOU RAN" />
-                <TextBlock Grid.Column="3" Classes="label" Text="PLAN" />
-                <TextBlock Grid.Column="4" Classes="label" Text="{Binding UnitLabel, StringFormat='BATTERY · {0}'}" HorizontalAlignment="Right" />
-                <TextBlock Grid.Column="5" Classes="label" Text="Δ TIME · S" HorizontalAlignment="Right" />
-              </Grid>
-              <ItemsControl ItemsSource="{Binding Zones}">
-                <ItemsControl.ItemTemplate>
-                  <DataTemplate x:DataType="vm:ZoneRowViewModel">
-                    <Border Background="{StaticResource CardBrush}" CornerRadius="6" Padding="0,8" Margin="0,0,0,4">
-                      <Grid ColumnDefinitions="52,120,170,*,120,80" ColumnSpacing="12" Margin="10,0">
-                        <TextBlock Classes="h2" FontSize="15" Text="{Binding Number}" VerticalAlignment="Center" />
-                        <TextBlock Grid.Column="1" Classes="mono" Text="{Binding Range}" VerticalAlignment="Center" />
-                        <ItemsControl Grid.Column="2" ItemsSource="{Binding Driven}" VerticalAlignment="Center">
-                          <ItemsControl.ItemsPanel>
-                            <ItemsPanelTemplate>
-                              <WrapPanel ItemSpacing="6" LineSpacing="4" />
-                            </ItemsPanelTemplate>
-                          </ItemsControl.ItemsPanel>
-                          <ItemsControl.ItemTemplate>
-                            <DataTemplate x:DataType="vm:ModeShare">
-                              <StackPanel Orientation="Horizontal" Spacing="4" ToolTip.Tip="{Binding Name}">
-                                <Border Width="24" Height="22" CornerRadius="5" Background="{Binding Fill}">
-                                  <TextBlock Text="{Binding Letter}" FontFamily="{StaticResource DataFont}" FontSize="13" FontWeight="ExtraBold"
-                                             Foreground="{Binding Foreground}" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                </Border>
-                                <TextBlock Classes="mono" FontSize="13" Text="{Binding Distance}" VerticalAlignment="Center" />
-                              </StackPanel>
-                            </DataTemplate>
-                          </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                        <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                          <ItemsControl ItemsSource="{Binding Plan}" VerticalAlignment="Center">
-                            <ItemsControl.ItemsPanel>
-                              <ItemsPanelTemplate>
-                                <StackPanel Orientation="Horizontal" Spacing="4" />
-                              </ItemsPanelTemplate>
-                            </ItemsControl.ItemsPanel>
-                            <ItemsControl.ItemTemplate>
-                              <DataTemplate x:DataType="vm:ModeShare">
-                                <Border Width="24" Height="22" CornerRadius="5" Background="{Binding Fill}" ToolTip.Tip="{Binding Name}">
-                                  <TextBlock Text="{Binding Letter}" FontFamily="{StaticResource DataFont}" FontSize="13" FontWeight="ExtraBold"
-                                             Foreground="{Binding Foreground}" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                </Border>
-                              </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                          </ItemsControl>
-                          <TextBlock Classes="body" FontSize="13" Text="{Binding Description}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
-                        </StackPanel>
-                        <TextBlock Grid.Column="4" Classes="mono" Text="{Binding Battery}" HorizontalAlignment="Right" VerticalAlignment="Center" />
-                        <TextBlock Grid.Column="5" Classes="data-s" FontSize="16" Text="{Binding Gain}" Foreground="{Binding GainBrush}" HorizontalAlignment="Right" VerticalAlignment="Center" />
-                      </Grid>
-                    </Border>
-                  </DataTemplate>
-                </ItemsControl.ItemTemplate>
-              </ItemsControl>
-            </StackPanel>
-          </StackPanel>
-        </Border>
-
-        <!-- Every lap: a breakdown of the session, not a selector -->
-        <Border Classes="panel" Padding="8">
-          <DockPanel>
-            <StackPanel DockPanel.Dock="Top" Spacing="2" Margin="12,6,12,10">
-              <TextBlock Classes="label strong" Text="LAP BY LAP" />
-            </StackPanel>
-            <Grid DockPanel.Dock="Top" ColumnDefinitions="60,110,72,72,72,96,96,96,*" ColumnSpacing="12" Margin="12,0,12,8">
-              <TextBlock Classes="label" Text="LAP" />
-              <TextBlock Grid.Column="1" Classes="label" Text="TIME" HorizontalAlignment="Center" />
-              <TextBlock Grid.Column="2" Classes="label" Text="START" HorizontalAlignment="Right" />
-              <TextBlock Grid.Column="3" Classes="label" Text="END" HorizontalAlignment="Right" />
-              <TextBlock Grid.Column="4" Classes="label" Text="NET" HorizontalAlignment="Right" />
-              <TextBlock Grid.Column="5" Classes="label" Text="HARVESTED" HorizontalAlignment="Right" />
-              <TextBlock Grid.Column="6" Classes="label" Text="DEPLOYED" HorizontalAlignment="Right" />
-              <TextBlock Grid.Column="7" Classes="label" Text="LIMIT AT" HorizontalAlignment="Right" />
-              <TextBlock Grid.Column="8" Classes="label" Text="WASTE" Margin="8,0,0,0" />
-            </Grid>
-            <ItemsControl ItemsSource="{Binding Laps}">
-              <ItemsControl.ItemTemplate>
-                <DataTemplate x:DataType="vm:EnergyLapRow">
-                  <Border Padding="12,6" MinHeight="44" Opacity="{Binding Opacity}" ToolTip.Tip="{Binding Tip}" Background="Transparent">
-                    <Grid ColumnDefinitions="60,110,72,72,72,96,96,96,*" ColumnSpacing="12">
-                      <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-                        <TextBlock Classes="h2" Text="{Binding Label}" />
-                        <TextBlock Text="{Binding Kind}" FontFamily="{StaticResource DisplayFont}" FontSize="12" FontWeight="Bold" Foreground="{StaticResource SlowerBrush}" VerticalAlignment="Center" />
-                      </StackPanel>
-                      <ContentControl Grid.Column="1" Content="{Binding Time}" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                      <TextBlock Grid.Column="2" Classes="data-s" Text="{Binding Start}" Foreground="{Binding StartBrush}" HorizontalAlignment="Right" VerticalAlignment="Center" />
-                      <TextBlock Grid.Column="3" Classes="data-s" Text="{Binding End}" Foreground="{Binding EndBrush}" HorizontalAlignment="Right" VerticalAlignment="Center" />
-                      <TextBlock Grid.Column="4" Classes="data-s" Text="{Binding Net}" HorizontalAlignment="Right" VerticalAlignment="Center" />
-                      <TextBlock Grid.Column="5" Classes="data-s" Text="{Binding Harvested}" HorizontalAlignment="Right" VerticalAlignment="Center" />
-                      <TextBlock Grid.Column="6" Classes="data-s" Text="{Binding Deployed}" HorizontalAlignment="Right" VerticalAlignment="Center" />
-                      <TextBlock Grid.Column="7" Classes="data-s" Text="{Binding LimitAt}" HorizontalAlignment="Right" VerticalAlignment="Center" />
-                      <ItemsControl Grid.Column="8" ItemsSource="{Binding Flags}" Margin="8,0,0,0" VerticalAlignment="Center">
-                        <ItemsControl.ItemsPanel>
-                          <ItemsPanelTemplate>
-                            <WrapPanel ItemSpacing="8" LineSpacing="6" />
-                          </ItemsPanelTemplate>
-                        </ItemsControl.ItemsPanel>
-                      </ItemsControl>
-                    </Grid>
                   </Border>
-                </DataTemplate>
-              </ItemsControl.ItemTemplate>
-            </ItemsControl>
-          </DockPanel>
-        </Border>
-        <TextBlock Classes="body" Text="{Binding TableNote}" TextWrapping="Wrap" />
+                  <ItemsControl ItemsSource="{Binding Legend}" Margin="16,14" HorizontalAlignment="Right" VerticalAlignment="Bottom" IsHitTestVisible="False">
+                    <ItemsControl.ItemsPanel>
+                      <ItemsPanelTemplate>
+                        <StackPanel Spacing="8" />
+                      </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate x:DataType="vm:LegendEntry">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                          <Border Width="24" Height="{Binding Thickness}" CornerRadius="3" Background="{Binding Swatch}" VerticalAlignment="Center" />
+                          <TextBlock Classes="label strong" Text="{Binding Label}" VerticalAlignment="Center" />
+                        </StackPanel>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                </Panel>
+              </Border>
 
-        <!-- Car model learned from every lap at this track -->
-        <StackPanel Spacing="4" Margin="0,16,0,0" IsVisible="{Binding Model, Converter={x:Static ObjectConverters.IsNotNull}}">
-          <TextBlock Classes="label strong" Text="{Binding ModelHeader}" />
-          <TextBlock Classes="body" Text="{Binding ModelNote}" TextWrapping="Wrap" />
-        </StackPanel>
-        <ItemsControl ItemsSource="{Binding Fits}">
-          <ItemsControl.ItemsPanel>
-            <ItemsPanelTemplate>
-              <UniformGrid Rows="1" />
-            </ItemsPanelTemplate>
-          </ItemsControl.ItemsPanel>
-          <ItemsControl.ItemTemplate>
-            <DataTemplate x:DataType="vm:FitTile">
-              <Border Classes="panel" Padding="18,14" Margin="0,0,12,0">
-                <StackPanel Spacing="8">
-                  <TextBlock Classes="label strong" Text="{Binding Title}" />
-                  <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
-                    <StackPanel Spacing="2">
-                      <TextBlock Classes="label" Text="DRAG AREA · CdA · M²" />
-                      <TextBlock Classes="data-m" Text="{Binding DragArea}" />
+              <!-- SESSION: summary of the session as driven -->
+              <Border Grid.Column="1" Classes="panel" Padding="18" IsVisible="{Binding IsSessionPage}">
+                <StackPanel Spacing="14">
+                  <StackPanel Spacing="4">
+                    <TextBlock Classes="h2" Text="{Binding SessionTitle}" />
+                    <TextBlock Classes="body" FontSize="13" Text="{Binding SessionNote}" TextWrapping="Wrap" />
+                  </StackPanel>
+                  <StackPanel Spacing="4">
+                    <TextBlock Classes="label" Text="{Binding UnitLabel, StringFormat='BATTERY AT THE LINE · START → END · {0}'}" TextWrapping="Wrap" />
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                      <TextBlock Classes="data-l" Text="{Binding StartLevel}" Foreground="{Binding StartBrush}" />
+                      <TextBlock Classes="data-m" Text="→" Foreground="{StaticResource TextLoBrush}" VerticalAlignment="Center" />
+                      <TextBlock Classes="data-l" Text="{Binding EndLevel}" Foreground="{Binding EndBrush}" />
                     </StackPanel>
-                    <StackPanel Grid.Column="1" Spacing="2">
-                      <TextBlock Classes="label" Text="POWER TO ROAD · %" />
-                      <TextBlock Classes="data-m" Text="{Binding Efficiency}" />
+                    <TextBlock Classes="body" FontSize="13" Text="{Binding DeployNote}" TextWrapping="Wrap" />
+                  </StackPanel>
+                  <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+                    <StackPanel Spacing="4">
+                      <TextBlock Classes="label" Text="{Binding UnitLabel, StringFormat='HARVESTED / LAP · {0}'}" TextWrapping="Wrap" />
+                      <TextBlock Classes="data-m" Text="{Binding Harvested}" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" Spacing="4">
+                      <TextBlock Classes="label" Text="{Binding UnitLabel, StringFormat='DEPLOYED / LAP · {0}'}" TextWrapping="Wrap" />
+                      <TextBlock Classes="data-m" Text="{Binding Deployed}" />
                     </StackPanel>
                   </Grid>
-                  <TextBlock Classes="mono" FontSize="13" Text="{Binding Quality}" Foreground="{StaticResource TextMidBrush}" />
+                  <TextBlock Classes="body" FontSize="13" Text="{Binding HarvestNote}" TextWrapping="Wrap" />
+                  <StackPanel Spacing="6">
+                    <TextBlock Classes="label" Text="DEPLOY MODES · DISTANCE PER LAP" />
+                    <ItemsControl ItemsSource="{Binding Modes}">
+                      <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                          <WrapPanel />
+                        </ItemsPanelTemplate>
+                      </ItemsControl.ItemsPanel>
+                      <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:ModeShare">
+                          <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,0,14,6" ToolTip.Tip="{Binding Name}">
+                            <Border Width="28" Height="26" CornerRadius="5" Background="{Binding Fill}">
+                              <TextBlock Text="{Binding Letter}" FontFamily="{StaticResource DataFont}" FontSize="14" FontWeight="ExtraBold"
+                                         Foreground="{Binding Foreground}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            </Border>
+                            <TextBlock Classes="data-s" FontSize="16" Text="{Binding Distance}" VerticalAlignment="Center" />
+                          </StackPanel>
+                        </DataTemplate>
+                      </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                  </StackPanel>
+                  <ItemsControl ItemsSource="{Binding Issues}" IsVisible="{Binding HasIssues}">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate x:DataType="x:String">
+                        <TextBlock Classes="body" FontSize="13" Text="{Binding}" TextWrapping="Wrap" Margin="0,0,0,6" Foreground="{StaticResource SlowerBrush}" />
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
                 </StackPanel>
               </Border>
-            </DataTemplate>
-          </ItemsControl.ItemTemplate>
-        </ItemsControl>
-        <Border Classes="panel" Padding="0" Height="280" IsVisible="{Binding HasDeployChart}">
-          <controls:TelemetryPlot Model="{Binding DeployChart}" />
-        </Border>
-        <Border Classes="panel" Padding="0" Height="280" IsVisible="{Binding HasAlongLapChart}">
-          <controls:TelemetryPlot Model="{Binding AlongLapChart}" />
-        </Border>
-      </StackPanel>
-    </ScrollViewer>
+
+              <!-- ERS PLAN: what the plan predicts -->
+              <Border Grid.Column="1" Classes="panel" Padding="18" IsVisible="{Binding IsPlanPage}">
+                <StackPanel Spacing="14" DataContext="{Binding Plan}">
+                  <Border Classes="segmented" HorizontalAlignment="Left" IsVisible="{Binding CanPlan}">
+                    <StackPanel Orientation="Horizontal">
+                      <Button Theme="{StaticResource ModeToggle}" Content="RACE" Classes.selected="{Binding IsRace}"
+                              Command="{Binding SetKindCommand}" CommandParameter="{x:Static energy:PlanKind.Race}"
+                              ToolTip.Tip="A lap that deploys exactly what it harvests, so every race lap can run it" />
+                      <Button Theme="{StaticResource ModeToggle}" Content="QUALIFYING" Classes.selected="{Binding IsQualifying}"
+                              Command="{Binding SetKindCommand}" CommandParameter="{x:Static energy:PlanKind.Qualifying}"
+                              ToolTip.Tip="One push lap from a full battery" />
+                    </StackPanel>
+                  </Border>
+                  <TextBlock Classes="body" Text="{Binding Note}" TextWrapping="Wrap" Foreground="{StaticResource SlowerBrush}"
+                             IsVisible="{Binding Note, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                  <TextBlock Classes="muted" Text="Planning…" IsVisible="{Binding IsBusy}" />
+
+                  <StackPanel Spacing="14" IsVisible="{Binding HasPlan}">
+                    <StackPanel Spacing="2">
+                      <TextBlock Classes="label" Text="PREDICTED LAP" />
+                      <StackPanel Orientation="Horizontal" Spacing="10">
+                        <TextBlock Classes="data-l" Text="{Binding Predicted}" />
+                        <TextBlock Classes="data-s" Text="{Binding Gain}" Foreground="{StaticResource FasterBrush}" VerticalAlignment="Bottom" Margin="0,0,0,6" />
+                      </StackPanel>
+                    </StackPanel>
+                    <StackPanel Spacing="2">
+                      <TextBlock Classes="label" Text="{Binding UnitLabel, StringFormat='BATTERY AT THE LINE · {0}'}" />
+                      <TextBlock Classes="data-m" Text="{Binding Battery}" />
+                      <TextBlock Classes="body" FontSize="13" Text="{Binding BatteryNote}" TextWrapping="Wrap" />
+                    </StackPanel>
+                    <StackPanel Spacing="2">
+                      <TextBlock Classes="label" Text="{Binding UnitLabel, StringFormat='HARVEST / DEPLOY PER LAP · {0}'}" />
+                      <TextBlock Classes="data-m" Text="{Binding Energy}" />
+                      <TextBlock Classes="body" FontSize="13" Text="{Binding EnergyNote}" TextWrapping="Wrap" />
+                    </StackPanel>
+                    <StackPanel Spacing="2">
+                      <TextBlock Classes="label" Text="BATTLE BUDGET" />
+                      <TextBlock Classes="data-m" Text="{Binding Budget}" />
+                      <TextBlock Classes="body" FontSize="13" Text="{Binding BudgetNote}" TextWrapping="Wrap" />
+                    </StackPanel>
+                    <StackPanel Spacing="4">
+                      <TextBlock Classes="label" Text="CONFIDENCE" />
+                      <ContentControl Content="{Binding Confidence}" HorizontalAlignment="Left" />
+                      <TextBlock Classes="body" FontSize="13" Text="{Binding ConfidenceNote}" TextWrapping="Wrap" />
+                    </StackPanel>
+                  </StackPanel>
+                </StackPanel>
+              </Border>
+            </Grid>
+
+            <!-- Battery along the lap: every lap, their average and the plan; deploy modes underneath -->
+            <Border Classes="panel" Padding="0" Height="300">
+              <controls:TelemetryPlot Model="{Binding Trace}" />
+            </Border>
+
+            <!-- SESSION: every lap, a breakdown of the session (not a selector) -->
+            <StackPanel Spacing="12" IsVisible="{Binding IsSessionPage}">
+              <Border Classes="panel" Padding="8">
+                <DockPanel>
+                  <TextBlock DockPanel.Dock="Top" Classes="label strong" Text="LAP BY LAP" Margin="12,6,12,10" />
+                  <Grid DockPanel.Dock="Top" ColumnDefinitions="60,110,72,72,72,96,96,96,*" ColumnSpacing="12" Margin="12,0,12,8">
+                    <TextBlock Classes="label" Text="LAP" />
+                    <TextBlock Grid.Column="1" Classes="label" Text="TIME" HorizontalAlignment="Center" />
+                    <TextBlock Grid.Column="2" Classes="label" Text="START" HorizontalAlignment="Right" />
+                    <TextBlock Grid.Column="3" Classes="label" Text="END" HorizontalAlignment="Right" />
+                    <TextBlock Grid.Column="4" Classes="label" Text="NET" HorizontalAlignment="Right" />
+                    <TextBlock Grid.Column="5" Classes="label" Text="HARVESTED" HorizontalAlignment="Right" />
+                    <TextBlock Grid.Column="6" Classes="label" Text="DEPLOYED" HorizontalAlignment="Right" />
+                    <TextBlock Grid.Column="7" Classes="label" Text="LIMIT AT" HorizontalAlignment="Right" />
+                    <TextBlock Grid.Column="8" Classes="label" Text="WASTE" Margin="8,0,0,0" />
+                  </Grid>
+                  <ItemsControl ItemsSource="{Binding Laps}">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate x:DataType="vm:EnergyLapRow">
+                        <Border Padding="12,6" MinHeight="44" Opacity="{Binding Opacity}" ToolTip.Tip="{Binding Tip}" Background="Transparent">
+                          <Grid ColumnDefinitions="60,110,72,72,72,96,96,96,*" ColumnSpacing="12">
+                            <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                              <TextBlock Classes="h2" Text="{Binding Label}" />
+                              <TextBlock Text="{Binding Kind}" FontFamily="{StaticResource DisplayFont}" FontSize="12" FontWeight="Bold" Foreground="{StaticResource SlowerBrush}" VerticalAlignment="Center" />
+                            </StackPanel>
+                            <ContentControl Grid.Column="1" Content="{Binding Time}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            <TextBlock Grid.Column="2" Classes="data-s" Text="{Binding Start}" Foreground="{Binding StartBrush}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                            <TextBlock Grid.Column="3" Classes="data-s" Text="{Binding End}" Foreground="{Binding EndBrush}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                            <TextBlock Grid.Column="4" Classes="data-s" Text="{Binding Net}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                            <TextBlock Grid.Column="5" Classes="data-s" Text="{Binding Harvested}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                            <TextBlock Grid.Column="6" Classes="data-s" Text="{Binding Deployed}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                            <TextBlock Grid.Column="7" Classes="data-s" Text="{Binding LimitAt}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                            <ItemsControl Grid.Column="8" ItemsSource="{Binding Flags}" Margin="8,0,0,0" VerticalAlignment="Center">
+                              <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                  <WrapPanel ItemSpacing="8" LineSpacing="6" />
+                                </ItemsPanelTemplate>
+                              </ItemsControl.ItemsPanel>
+                            </ItemsControl>
+                          </Grid>
+                        </Border>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                </DockPanel>
+              </Border>
+              <TextBlock Classes="body" Text="{Binding TableNote}" TextWrapping="Wrap" />
+            </StackPanel>
+
+            <!-- ERS PLAN: deploy mode per zone -->
+            <Border Classes="panel" Padding="18,14" IsVisible="{Binding IsPlanPage}">
+              <StackPanel Spacing="14" DataContext="{Binding Plan}">
+                <StackPanel Spacing="4">
+                  <TextBlock Classes="label strong" Text="DEPLOY MODE PER ZONE · SIMULATED ON THE CAR MODEL" />
+                  <TextBlock Classes="body" FontSize="13" TextWrapping="Wrap"
+                             Text="RACE: a lap that deploys exactly what it harvests, so it ends with the charge it started with and every race lap can run it. QUALIFYING: one push lap from a full battery. Corners and braking keep your speeds; on the straights the plan changes what the MGU-K gives." />
+                  <TextBlock Classes="body" FontSize="13" Text="{Binding Basis}" TextWrapping="Wrap" Foreground="{StaticResource TextHiBrush}"
+                             IsVisible="{Binding Basis, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                </StackPanel>
+
+                <StackPanel Spacing="4" IsVisible="{Binding HasPlan}">
+                  <Grid ColumnDefinitions="52,120,170,*,120,80" ColumnSpacing="12" Margin="10,0">
+                    <TextBlock Classes="label" Text="ZONE" />
+                    <TextBlock Grid.Column="1" Classes="label" Text="LAP DISTANCE" />
+                    <TextBlock Grid.Column="2" Classes="label" Text="YOU RAN" />
+                    <TextBlock Grid.Column="3" Classes="label" Text="PLAN" />
+                    <TextBlock Grid.Column="4" Classes="label" Text="{Binding UnitLabel, StringFormat='BATTERY · {0}'}" HorizontalAlignment="Right" />
+                    <TextBlock Grid.Column="5" Classes="label" Text="Δ TIME · S" HorizontalAlignment="Right" />
+                  </Grid>
+                  <ItemsControl ItemsSource="{Binding Zones}">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate x:DataType="vm:ZoneRowViewModel">
+                        <Border Background="{StaticResource CardBrush}" CornerRadius="6" Padding="0,8" Margin="0,0,0,4">
+                          <Grid ColumnDefinitions="52,120,170,*,120,80" ColumnSpacing="12" Margin="10,0">
+                            <TextBlock Classes="h2" FontSize="15" Text="{Binding Number}" VerticalAlignment="Center" />
+                            <TextBlock Grid.Column="1" Classes="mono" Text="{Binding Range}" VerticalAlignment="Center" />
+                            <ItemsControl Grid.Column="2" ItemsSource="{Binding Driven}" ItemTemplate="{StaticResource ModeDistance}" VerticalAlignment="Center">
+                              <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                  <WrapPanel ItemSpacing="6" LineSpacing="4" />
+                                </ItemsPanelTemplate>
+                              </ItemsControl.ItemsPanel>
+                            </ItemsControl>
+                            <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                              <ItemsControl ItemsSource="{Binding Plan}" VerticalAlignment="Center">
+                                <ItemsControl.ItemsPanel>
+                                  <ItemsPanelTemplate>
+                                    <StackPanel Orientation="Horizontal" Spacing="4" />
+                                  </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                  <DataTemplate x:DataType="vm:ModeShare">
+                                    <Border Width="24" Height="22" CornerRadius="5" Background="{Binding Fill}" ToolTip.Tip="{Binding Name}">
+                                      <TextBlock Text="{Binding Letter}" FontFamily="{StaticResource DataFont}" FontSize="13" FontWeight="ExtraBold"
+                                                 Foreground="{Binding Foreground}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                    </Border>
+                                  </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                              </ItemsControl>
+                              <TextBlock Classes="body" FontSize="13" Text="{Binding Description}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                            </StackPanel>
+                            <TextBlock Grid.Column="4" Classes="mono" Text="{Binding Battery}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                            <TextBlock Grid.Column="5" Classes="data-s" FontSize="16" Text="{Binding Gain}" Foreground="{Binding GainBrush}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                          </Grid>
+                        </Border>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                </StackPanel>
+              </StackPanel>
+            </Border>
+          </StackPanel>
+        </ScrollViewer>
+      </DockPanel>
+
+      <!-- CAR MODEL: learned from every lap at this track -->
+      <ScrollViewer IsVisible="{Binding IsModelPage}">
+        <StackPanel Spacing="12" Margin="0,0,8,0">
+          <TextBlock Classes="body" TextWrapping="Wrap" IsVisible="{Binding ModelHeader, Converter={x:Static StringConverters.IsNullOrEmpty}}"
+                     Text="No car model for this track yet. It is learned from the laps you record here, and the ERS plans are built on it." />
+          <StackPanel Spacing="4" IsVisible="{Binding ModelHeader, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+            <TextBlock Classes="label strong" Text="{Binding ModelHeader}" />
+            <TextBlock Classes="body" Text="{Binding ModelNote}" TextWrapping="Wrap" />
+          </StackPanel>
+          <ItemsControl ItemsSource="{Binding Fits}">
+            <ItemsControl.ItemsPanel>
+              <ItemsPanelTemplate>
+                <UniformGrid Rows="1" />
+              </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:FitTile">
+                <Border Classes="panel" Padding="18,14" Margin="0,0,12,0">
+                  <StackPanel Spacing="8">
+                    <TextBlock Classes="label strong" Text="{Binding Title}" />
+                    <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+                      <StackPanel Spacing="2">
+                        <TextBlock Classes="label" Text="DRAG AREA · CdA · M²" />
+                        <TextBlock Classes="data-m" Text="{Binding DragArea}" />
+                      </StackPanel>
+                      <StackPanel Grid.Column="1" Spacing="2">
+                        <TextBlock Classes="label" Text="POWER TO ROAD · %" />
+                        <TextBlock Classes="data-m" Text="{Binding Efficiency}" />
+                      </StackPanel>
+                    </Grid>
+                    <TextBlock Classes="mono" FontSize="13" Text="{Binding Quality}" Foreground="{StaticResource TextMidBrush}" />
+                  </StackPanel>
+                </Border>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+          <Border Classes="panel" Padding="0" Height="280" IsVisible="{Binding HasDeployChart}">
+            <controls:TelemetryPlot Model="{Binding DeployChart}" />
+          </Border>
+          <Border Classes="panel" Padding="0" Height="280" IsVisible="{Binding HasAlongLapChart}">
+            <controls:TelemetryPlot Model="{Binding AlongLapChart}" />
+          </Border>
+        </StackPanel>
+      </ScrollViewer>
+    </Panel>
   </DockPanel>
 </UserControl>

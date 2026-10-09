@@ -11,6 +11,10 @@ namespace F1Telemetry.App.ViewModels;
 
 public sealed record SourceOption(SourceKind Kind, string Label);
 
+/// <summary>
+/// Every place the main window can show. <see cref="MainSection"/> (the rail) and the session sub-tab are derived from it;
+/// <see cref="LapDetail"/> is the laps sub-tab drilled into one lap.
+/// </summary>
 public enum MainTab
 {
     Live,
@@ -22,6 +26,15 @@ public enum MainTab
     Setups,
 }
 
+/// <summary>The navigation rail: what the user is doing. Only <see cref="Session"/> follows the recordings sidebar.</summary>
+public enum MainSection
+{
+    Live,
+    Session,
+    Compare,
+    Setups,
+}
+
 public sealed partial class MainWindowViewModel : ObservableObject
 {
     private readonly TelemetryRuntime _runtime;
@@ -29,6 +42,12 @@ public sealed partial class MainWindowViewModel : ObservableObject
     private readonly ILogger _log;
     private readonly DispatcherTimer _liveRefresh;
     private bool _switchingSource;
+
+    /// <summary>The session sub-tab to come back to from another section (the laps tab remembers an open lap).</summary>
+    private MainTab _lastSessionTab = MainTab.Laps;
+
+    /// <summary>Recording of the lap open in the lap detail.</summary>
+    private long? _lapRecordingId;
 
     public MainWindowViewModel(
         TelemetryRuntime runtime,
@@ -67,9 +86,11 @@ public sealed partial class MainWindowViewModel : ObservableObject
 
         session.LapOpened += async (recording, lap, reference) =>
         {
+            _lapRecordingId = recording.Id;
             SelectedTab = MainTab.LapDetail;
             await lapDetail.LoadAsync(recording, lap, reference);
         };
+        lapDetail.BackRequested += BackToLaps;
 
         hub.RecordingChanged += OnRecordingChanged;
         hub.LapCompleted += _ => ScheduleLiveRefresh();
@@ -173,22 +194,100 @@ public sealed partial class MainWindowViewModel : ObservableObject
     {
         PendingDelete = null;
         _ = Session.LoadAsync(value?.Info);
+
+        // An open lap belongs to the recording it came from; another recording starts on its lap list.
+        if (value?.Info.Id != _lapRecordingId)
+        {
+            _lapRecordingId = null;
+            if (_lastSessionTab == MainTab.LapDetail)
+            {
+                _lastSessionTab = MainTab.Laps;
+            }
+
+            if (SelectedTab == MainTab.LapDetail)
+            {
+                SelectedTab = MainTab.Laps;
+            }
+        }
+
         if (SelectedTab == MainTab.Energy)
         {
             _ = ActivateEnergyAsync();
         }
     }
 
-    public int SelectedTabIndex
+    public MainSection Section => SelectedTab switch
     {
-        get => (int)SelectedTab;
-        set => SelectedTab = (MainTab)value;
+        MainTab.Live => MainSection.Live,
+        MainTab.Compare => MainSection.Compare,
+        MainTab.Setups => MainSection.Setups,
+        _ => MainSection.Session,
+    };
+
+    // What is on screen: one section, or the settings page in place of all of them. Also the rail's highlight.
+    public bool IsLiveActive => !IsSettingsOpen && Section == MainSection.Live;
+    public bool IsSessionActive => !IsSettingsOpen && Section == MainSection.Session;
+    public bool IsCompareActive => !IsSettingsOpen && Section == MainSection.Compare;
+    public bool IsSetupsActive => !IsSettingsOpen && Section == MainSection.Setups;
+
+    /// <summary>The laps sub-tab shows one lap instead of the list.</summary>
+    public bool IsLapOpen => SelectedTab == MainTab.LapDetail;
+
+    /// <summary>Session sub-tabs: 0 laps (list or one lap), 1 strategy, 2 energy.</summary>
+    public int SessionTabIndex
+    {
+        get => _lastSessionTab switch { MainTab.Strategy => 1, MainTab.Energy => 2, _ => 0 };
+        set
+        {
+            // The hidden tab strip re-syncs while another section is shown; only a click inside the session navigates.
+            if (Section != MainSection.Session || value == SessionTabIndex)
+            {
+                return;
+            }
+
+            SelectedTab = value switch
+            {
+                1 => MainTab.Strategy,
+                2 => MainTab.Energy,
+                _ => _lapRecordingId is not null && _lapRecordingId == SelectedRecording?.Info.Id ? MainTab.LapDetail : MainTab.Laps,
+            };
+        }
+    }
+
+    [RelayCommand]
+    private void Navigate(MainSection section)
+    {
+        IsSettingsOpen = false;
+        SelectedTab = section switch
+        {
+            MainSection.Live => MainTab.Live,
+            MainSection.Compare => MainTab.Compare,
+            MainSection.Setups => MainTab.Setups,
+            _ => _lastSessionTab,
+        };
+    }
+
+    /// <summary>From one lap back to the lap list.</summary>
+    [RelayCommand]
+    private void BackToLaps()
+    {
+        _lapRecordingId = null;
+        Session.SelectedLap = null; // so the same lap can be opened again
+        SelectedTab = MainTab.Laps;
     }
 
     partial void OnSelectedTabChanged(MainTab value)
     {
         IsSettingsOpen = false;
-        OnPropertyChanged(nameof(SelectedTabIndex));
+        if (Section == MainSection.Session)
+        {
+            _lastSessionTab = value;
+        }
+
+        OnPropertyChanged(nameof(Section));
+        OnPropertyChanged(nameof(SessionTabIndex));
+        OnPropertyChanged(nameof(IsLapOpen));
+        RaiseActiveChanged();
 
         if (value == MainTab.Compare)
         {
@@ -211,6 +310,16 @@ public sealed partial class MainWindowViewModel : ObservableObject
         {
             Settings.PreviewOverlays = false;
         }
+
+        RaiseActiveChanged();
+    }
+
+    private void RaiseActiveChanged()
+    {
+        OnPropertyChanged(nameof(IsLiveActive));
+        OnPropertyChanged(nameof(IsSessionActive));
+        OnPropertyChanged(nameof(IsCompareActive));
+        OnPropertyChanged(nameof(IsSetupsActive));
     }
 
     [RelayCommand]

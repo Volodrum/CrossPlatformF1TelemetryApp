@@ -112,7 +112,8 @@ public sealed record StartupOptions(GameFormat? Mode, SourceKind? Source, string
 
         if (Tab is { } tab)
         {
-            viewModel.SelectedTab = tab;
+            // Lap detail is the laps tab drilled into a lap: without --lap there is none to show.
+            viewModel.SelectedTab = tab == MainTab.LapDetail && !viewModel.IsLapOpen ? MainTab.Laps : tab;
         }
 
         if (OpenSettings)

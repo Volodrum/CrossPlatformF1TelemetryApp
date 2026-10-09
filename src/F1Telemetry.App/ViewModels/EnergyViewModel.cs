@@ -110,6 +110,14 @@ public static class EnergyText
     }
 }
 
+/// <summary>The energy tab's pages: the session as driven, the ERS plan built on it, and the car model behind the plan.</summary>
+public enum EnergyPage
+{
+    Session,
+    Plan,
+    Model,
+}
+
 /// <summary>
 /// Energy tab: what the battery did over the selected session. The map, the battery trace and the summary describe the
 /// session as a whole: its typical lap (the laps without pit stops, safety cars or big mistakes, averaged), or the ERS
@@ -151,8 +159,10 @@ public sealed partial class EnergyViewModel : ObservableObject
     [ObservableProperty] public partial MapColoring Layer { get; set; } = MapColoring.DeployMode;
     [ObservableProperty] public partial EnergyUnit Unit { get; set; }
 
-    /// <summary>The map and trace show the plan (when there is one) rather than the session as driven.</summary>
-    [ObservableProperty] public partial bool ShowPlanOnMap { get; set; } = true;
+    [ObservableProperty] public partial EnergyPage Page { get; set; }
+
+    /// <summary>The map shows the plan (when there is one) rather than the session as driven: on the plan page.</summary>
+    [ObservableProperty] public partial bool ShowPlanOnMap { get; set; }
     [ObservableProperty] public partial TrackOutline? Outline { get; set; }
     [ObservableProperty] public partial IReadOnlyList<TelemetrySample>? Samples { get; set; }
     [ObservableProperty] public partial ChartModel? Trace { get; set; }
@@ -228,19 +238,25 @@ public sealed partial class EnergyViewModel : ObservableObject
         }
     }
 
-    public bool IsDrivenOnMap => !ShowPlanOnMap;
+    public bool IsSessionPage => Page == EnergyPage.Session;
+    public bool IsPlanPage => Page == EnergyPage.Plan;
+    public bool IsModelPage => Page == EnergyPage.Model;
 
-    partial void OnShowPlanOnMapChanged(bool value)
+    partial void OnPageChanged(EnergyPage value)
     {
-        OnPropertyChanged(nameof(IsDrivenOnMap));
-        ShowGraphics();
+        OnPropertyChanged(nameof(IsSessionPage));
+        OnPropertyChanged(nameof(IsPlanPage));
+        OnPropertyChanged(nameof(IsModelPage));
+        ShowPlanOnMap = value == EnergyPage.Plan;
     }
+
+    partial void OnShowPlanOnMapChanged(bool value) => ShowGraphics();
+
+    [RelayCommand]
+    private void SetPage(EnergyPage page) => Page = page;
 
     [RelayCommand]
     private void SetLayer(MapColoring layer) => Layer = layer;
-
-    [RelayCommand]
-    private void SetMapSource(string source) => ShowPlanOnMap = source == "plan";
 
     [RelayCommand]
     private void SetUnit(EnergyUnit unit) => Unit = unit;

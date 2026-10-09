@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 using F1Telemetry.App.Services;
 using F1Telemetry.Core.Formatting;
 using F1Telemetry.Core.Models;
@@ -67,6 +68,12 @@ public sealed partial class LapDetailViewModel(TelemetryRuntime runtime) : Obser
 
     [ObservableProperty] public partial string Context { get; set; } = "LAP DETAIL";
     [ObservableProperty] public partial string Title { get; set; } = "Open a lap from the Laps tab";
+
+    /// <summary>Raised by the back button: return to the lap list.</summary>
+    public event Action? BackRequested;
+
+    [RelayCommand]
+    private void Back() => BackRequested?.Invoke();
     [ObservableProperty] public partial string LapTime { get; set; } = "";
     [ObservableProperty] public partial Chip? DeltaChip { get; set; }
     [ObservableProperty] public partial string Compound { get; set; } = "Unknown";

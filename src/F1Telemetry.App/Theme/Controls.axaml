@@ -83,6 +83,45 @@
         </Style>
       </ControlTheme>
 
+      <!-- Navigation rail item: icon over label; the selected section gets a brand-red bar on the left edge. -->
+      <ControlTheme x:Key="RailButton" TargetType="Button">
+        <Setter Property="Focusable" Value="False" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="Foreground" Value="{StaticResource TextLoBrush}" />
+        <Setter Property="FontFamily" Value="{StaticResource DisplayFont}" />
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="FontWeight" Value="Bold" />
+        <Setter Property="Height" Value="76" />
+        <Setter Property="HorizontalAlignment" Value="Stretch" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Template">
+          <ControlTemplate>
+            <Panel>
+              <Border Name="PART_Root" Background="{TemplateBinding Background}" CornerRadius="8" Margin="8,0" />
+              <Border Name="PART_Indicator" Width="4" CornerRadius="2" Margin="0,16" HorizontalAlignment="Left"
+                      Background="{StaticResource BrandBrush}" IsVisible="False" />
+              <ContentPresenter Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}"
+                                Foreground="{TemplateBinding Foreground}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+            </Panel>
+          </ControlTemplate>
+        </Setter>
+        <Style Selector="^:pointerover">
+          <Setter Property="Foreground" Value="{StaticResource TextMidBrush}" />
+        </Style>
+        <Style Selector="^:pointerover /template/ Border#PART_Root">
+          <Setter Property="Background" Value="{StaticResource RaisedBrush}" />
+        </Style>
+        <Style Selector="^.selected">
+          <Setter Property="Foreground" Value="{StaticResource TextHiBrush}" />
+        </Style>
+        <Style Selector="^.selected /template/ Border#PART_Root">
+          <Setter Property="Background" Value="{StaticResource SelectedBrush}" />
+        </Style>
+        <Style Selector="^.selected /template/ Border#PART_Indicator">
+          <Setter Property="IsVisible" Value="True" />
+        </Style>
+      </ControlTheme>
+
       <!-- Segmented two-state toggle (F1 25 / F1 26, chart groups). Selected = inverted (white fill). -->
       <ControlTheme x:Key="ModeToggle" TargetType="Button">
         <Setter Property="Focusable" Value="False" />

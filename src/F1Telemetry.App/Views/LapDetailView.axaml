@@ -6,8 +6,16 @@
              x:DataType="vm:LapDetailViewModel">
   <!-- Design: LapDetail.dc.html -->
   <DockPanel Margin="0,16,0,0">
-    <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="16" Margin="0,0,0,16">
-      <StackPanel Spacing="4">
+    <Grid DockPanel.Dock="Top" ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="16" Margin="0,0,0,16">
+      <!-- The lap detail is the laps tab drilled into one lap: back returns to the list. -->
+      <Button Theme="{StaticResource SecondaryButton}" Padding="12,0" Command="{Binding BackCommand}" VerticalAlignment="Center"
+              ToolTip.Tip="Back to all laps (Esc)" AutomationProperties.Name="Back to all laps">
+        <StackPanel Orientation="Horizontal" Spacing="6">
+          <PathIcon Width="16" Height="16" Data="M20,11 L7.83,11 L13.42,5.41 L12,4 L4,12 L12,20 L13.41,18.59 L7.83,13 L20,13 Z" />
+          <TextBlock Text="ALL LAPS" VerticalAlignment="Center" />
+        </StackPanel>
+      </Button>
+      <StackPanel Grid.Column="1" Spacing="4">
         <TextBlock Classes="label" Text="{Binding Context}" />
         <StackPanel Orientation="Horizontal" Spacing="14">
           <TextBlock Classes="h1" Text="{Binding Title}" />
@@ -15,8 +23,8 @@
           <TextBlock Classes="muted" Text="Loading…" IsVisible="{Binding IsLoading}" VerticalAlignment="Center" />
         </StackPanel>
       </StackPanel>
-      <ContentControl Grid.Column="1" Content="{Binding DeltaChip}" VerticalAlignment="Center" />
-      <controls:CompoundBadge Grid.Column="2" Compound="{Binding Compound}" Width="44" Height="44" VerticalAlignment="Center" />
+      <ContentControl Grid.Column="2" Content="{Binding DeltaChip}" VerticalAlignment="Center" />
+      <controls:CompoundBadge Grid.Column="3" Compound="{Binding Compound}" Width="44" Height="44" VerticalAlignment="Center" />
     </Grid>
 
     <!-- Lap comparison: any lap of this session vs any lap of any recording on the same track. -->

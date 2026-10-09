@@ -20,13 +20,26 @@ public partial class MainWindow : Window
         };
     }
 
-    /// <summary>Esc leaves the settings page. Runs after SettingsView's tunnelling capture handler, which marks Esc handled while capturing.</summary>
+    /// <summary>
+    /// Esc leaves the settings page, or an open lap for the lap list. Runs after SettingsView's tunnelling capture handler,
+    /// which marks Esc handled while capturing, and after an open drop-down, which closes on it.
+    /// </summary>
     protected override void OnKeyDown(KeyEventArgs e)
     {
         base.OnKeyDown(e);
-        if (!e.Handled && e.Key == Key.Escape && DataContext is MainWindowViewModel { IsSettingsOpen: true } vm)
+        if (e.Handled || e.Key != Key.Escape || DataContext is not MainWindowViewModel vm)
+        {
+            return;
+        }
+
+        if (vm.IsSettingsOpen)
         {
             vm.IsSettingsOpen = false;
+            e.Handled = true;
+        }
+        else if (vm.IsSessionActive && vm.IsLapOpen)
+        {
+            vm.BackToLapsCommand.Execute(null);
             e.Handled = true;
         }
     }
