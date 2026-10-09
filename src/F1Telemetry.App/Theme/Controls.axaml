@@ -5,7 +5,8 @@
 -->
 <Styles xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:vm="using:F1Telemetry.App.ViewModels">
+        xmlns:vm="using:F1Telemetry.App.ViewModels"
+        xmlns:c="using:F1Telemetry.App.Controls">
   <Styles.Resources>
     <ResourceDictionary>
       <ResourceDictionary.MergedDictionaries>
@@ -81,6 +82,80 @@
         <Style Selector="^:disabled">
           <Setter Property="Opacity" Value="0.45" />
         </Style>
+      </ControlTheme>
+
+      <!-- ⓘ with the explanation in a tooltip (help text never takes page space). -->
+      <ControlTheme x:Key="{x:Type c:HelpTip}" TargetType="c:HelpTip">
+        <Setter Property="Width" Value="20" />
+        <Setter Property="Height" Value="20" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderBrush" Value="{StaticResource TextLoBrush}" />
+        <Setter Property="Foreground" Value="{StaticResource TextMidBrush}" />
+        <Setter Property="Cursor" Value="Help" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="Template">
+          <ControlTemplate>
+            <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="2" CornerRadius="10">
+              <TextBlock Text="i" FontFamily="{StaticResource DisplayFont}" FontSize="12" FontWeight="Bold" Foreground="{TemplateBinding Foreground}"
+                         HorizontalAlignment="Center" VerticalAlignment="Center" />
+            </Border>
+          </ControlTemplate>
+        </Setter>
+        <Style Selector="^:pointerover">
+          <Setter Property="BorderBrush" Value="{StaticResource TextHiBrush}" />
+          <Setter Property="Foreground" Value="{StaticResource TextHiBrush}" />
+        </Style>
+      </ControlTheme>
+
+      <!-- Page header: context line (+ ⓘ) over the title; the page's own tools on the right. -->
+      <ControlTheme x:Key="{x:Type c:PageHeader}" TargetType="c:PageHeader">
+        <Setter Property="Margin" Value="0,0,0,12" />
+        <Setter Property="Template">
+          <ControlTemplate>
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
+              <StackPanel Spacing="4" VerticalAlignment="Bottom">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                  <TextBlock Classes="label" Text="{TemplateBinding Eyebrow}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                  <c:HelpTip Text="{TemplateBinding Help}" Width="18" Height="18" />
+                </StackPanel>
+                <TextBlock Classes="h1" Text="{TemplateBinding Title}" TextTrimming="CharacterEllipsis" />
+              </StackPanel>
+              <ContentPresenter Name="PART_ContentPresenter" Grid.Column="1" Content="{TemplateBinding Content}"
+                                ContentTemplate="{TemplateBinding ContentTemplate}" VerticalAlignment="Bottom" />
+            </Grid>
+          </ControlTemplate>
+        </Setter>
+      </ControlTheme>
+
+      <!-- A vs B picker shared by every comparison: a lettered tag in each side's trace colour. -->
+      <ControlTheme x:Key="{x:Type c:CompareBar}" TargetType="c:CompareBar">
+        <Setter Property="ABrush" Value="{StaticResource TextHiBrush}" />
+        <Setter Property="BBrush" Value="{StaticResource TextLoBrush}" />
+        <Setter Property="Template">
+          <ControlTemplate>
+            <Border Classes="panel" Padding="14,10">
+              <WrapPanel Orientation="Horizontal" ItemSpacing="24" LineSpacing="10">
+                <StackPanel Orientation="Horizontal" Spacing="10">
+                  <Border Width="26" Height="26" CornerRadius="6" Background="{TemplateBinding ABrush}" VerticalAlignment="Center">
+                    <TextBlock Text="A" FontFamily="{StaticResource DisplayFont}" FontSize="14" FontWeight="Bold" Foreground="{StaticResource OnColorBrush}"
+                               HorizontalAlignment="Center" VerticalAlignment="Center" />
+                  </Border>
+                  <TextBlock Classes="label strong" Text="{TemplateBinding ALabel}" VerticalAlignment="Center" />
+                  <ContentPresenter Content="{TemplateBinding AContent}" VerticalAlignment="Center" />
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Spacing="10">
+                  <Border Width="26" Height="26" CornerRadius="6" Background="{TemplateBinding BBrush}" VerticalAlignment="Center">
+                    <TextBlock Text="B" FontFamily="{StaticResource DisplayFont}" FontSize="14" FontWeight="Bold" Foreground="{StaticResource OnColorBrush}"
+                               HorizontalAlignment="Center" VerticalAlignment="Center" />
+                  </Border>
+                  <TextBlock Classes="label strong" Text="{TemplateBinding BLabel}" VerticalAlignment="Center" />
+                  <ContentPresenter Content="{TemplateBinding BContent}" VerticalAlignment="Center" />
+                </StackPanel>
+                <ContentPresenter Content="{TemplateBinding Extra}" VerticalAlignment="Center" />
+              </WrapPanel>
+            </Border>
+          </ControlTemplate>
+        </Setter>
       </ControlTheme>
 
       <!-- Navigation rail item: icon over label; the selected section gets a brand-red bar on the left edge. -->

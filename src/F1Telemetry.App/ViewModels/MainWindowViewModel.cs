@@ -12,8 +12,9 @@ namespace F1Telemetry.App.ViewModels;
 public sealed record SourceOption(SourceKind Kind, string Label);
 
 /// <summary>
-/// Every place the main window can show. <see cref="MainSection"/> (the rail) and the session sub-tab are derived from it;
-/// <see cref="LapDetail"/> is the laps sub-tab drilled into one lap.
+/// Every place the main window can show. <see cref="MainSection"/> (the rail) and the sub-tabs are derived from it;
+/// <see cref="LapDetail"/> is the laps sub-tab drilled into one lap, <see cref="Compare"/> compares races and
+/// <see cref="CompareLaps"/> laps.
 /// </summary>
 public enum MainTab
 {
@@ -23,7 +24,9 @@ public enum MainTab
     Strategy,
     Energy,
     Compare,
+    CompareLaps,
     Setups,
+    Overlays,
 }
 
 /// <summary>The navigation rail: what the user is doing. Only <see cref="Session"/> follows the recordings sidebar.</summary>
@@ -33,6 +36,7 @@ public enum MainSection
     Session,
     Compare,
     Setups,
+    Overlays,
 }
 
 public sealed partial class MainWindowViewModel : ObservableObject
@@ -45,6 +49,9 @@ public sealed partial class MainWindowViewModel : ObservableObject
 
     /// <summary>The session sub-tab to come back to from another section (the laps tab remembers an open lap).</summary>
     private MainTab _lastSessionTab = MainTab.Laps;
+
+    /// <summary>The compare sub-tab to come back to.</summary>
+    private MainTab _lastCompareTab = MainTab.Compare;
 
     /// <summary>Recording of the lap open in the lap detail.</summary>
     private long? _lapRecordingId;
@@ -71,6 +78,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
         Live = live;
         Session = session;
         LapDetail = lapDetail;
+        LapCompare = new LapDetailViewModel(runtime) { IsWorkspace = true };
         Compare = compare;
         Energy = energy;
         Setups = setups;
@@ -128,6 +136,9 @@ public sealed partial class MainWindowViewModel : ObservableObject
     public LiveViewModel Live { get; }
     public SessionViewModel Session { get; }
     public LapDetailViewModel LapDetail { get; }
+
+    /// <summary>Lap vs lap in the compare section: any lap of any recording against any lap on the same track.</summary>
+    public LapDetailViewModel LapCompare { get; }
     public CompareViewModel Compare { get; }
     public EnergyViewModel Energy { get; }
     public SetupsViewModel Setups { get; }
@@ -219,8 +230,9 @@ public sealed partial class MainWindowViewModel : ObservableObject
     public MainSection Section => SelectedTab switch
     {
         MainTab.Live => MainSection.Live,
-        MainTab.Compare => MainSection.Compare,
+        MainTab.Compare or MainTab.CompareLaps => MainSection.Compare,
         MainTab.Setups => MainSection.Setups,
+        MainTab.Overlays => MainSection.Overlays,
         _ => MainSection.Session,
     };
 
@@ -229,6 +241,20 @@ public sealed partial class MainWindowViewModel : ObservableObject
     public bool IsSessionActive => !IsSettingsOpen && Section == MainSection.Session;
     public bool IsCompareActive => !IsSettingsOpen && Section == MainSection.Compare;
     public bool IsSetupsActive => !IsSettingsOpen && Section == MainSection.Setups;
+    public bool IsOverlaysActive => !IsSettingsOpen && Section == MainSection.Overlays;
+
+    /// <summary>Compare sub-tabs: 0 races, 1 laps.</summary>
+    public int CompareTabIndex
+    {
+        get => _lastCompareTab == MainTab.CompareLaps ? 1 : 0;
+        set
+        {
+            if (Section == MainSection.Compare && value != CompareTabIndex)
+            {
+                SelectedTab = value == 1 ? MainTab.CompareLaps : MainTab.Compare;
+            }
+        }
+    }
 
     /// <summary>The laps sub-tab shows one lap instead of the list.</summary>
     public bool IsLapOpen => SelectedTab == MainTab.LapDetail;
@@ -261,8 +287,9 @@ public sealed partial class MainWindowViewModel : ObservableObject
         SelectedTab = section switch
         {
             MainSection.Live => MainTab.Live,
-            MainSection.Compare => MainTab.Compare,
+            MainSection.Compare => _lastCompareTab,
             MainSection.Setups => MainTab.Setups,
+            MainSection.Overlays => MainTab.Overlays,
             _ => _lastSessionTab,
         };
     }
@@ -283,15 +310,30 @@ public sealed partial class MainWindowViewModel : ObservableObject
         {
             _lastSessionTab = value;
         }
+        else if (Section == MainSection.Compare)
+        {
+            _lastCompareTab = value;
+        }
+
+        // Overlay preview is opt-in on the overlays page and never outlives it.
+        if (value != MainTab.Overlays)
+        {
+            Settings.PreviewOverlays = false;
+        }
 
         OnPropertyChanged(nameof(Section));
         OnPropertyChanged(nameof(SessionTabIndex));
+        OnPropertyChanged(nameof(CompareTabIndex));
         OnPropertyChanged(nameof(IsLapOpen));
         RaiseActiveChanged();
 
         if (value == MainTab.Compare)
         {
             _ = ActivateCompareAsync();
+        }
+        else if (value == MainTab.CompareLaps)
+        {
+            _ = ActivateLapCompareAsync();
         }
         else if (value == MainTab.Energy)
         {
@@ -305,8 +347,8 @@ public sealed partial class MainWindowViewModel : ObservableObject
 
     partial void OnIsSettingsOpenChanged(bool value)
     {
-        // Overlay preview is opt-in on the settings page and never outlives it.
-        if (!value)
+        // The settings page covers the overlays page, and the preview with it.
+        if (value)
         {
             Settings.PreviewOverlays = false;
         }
@@ -320,6 +362,21 @@ public sealed partial class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(IsSessionActive));
         OnPropertyChanged(nameof(IsCompareActive));
         OnPropertyChanged(nameof(IsSetupsActive));
+        OnPropertyChanged(nameof(IsOverlaysActive));
+    }
+
+    /// <summary>Opens lap vs lap on the sidebar's recordings, starting from the selected one.</summary>
+    public async Task ActivateLapCompareAsync()
+    {
+        try
+        {
+            await LapCompare.ActivateAsync([.. Recordings.Select(r => r.Info)], SelectedRecording?.Info);
+        }
+        catch (Exception ex)
+        {
+            _log.LogError(ex, "Lap comparison failed");
+            StatusMessage = $"Lap comparison failed: {ex.Message}";
+        }
     }
 
     [RelayCommand]

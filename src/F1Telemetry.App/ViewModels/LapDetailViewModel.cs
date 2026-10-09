@@ -74,6 +74,77 @@ public sealed partial class LapDetailViewModel(TelemetryRuntime runtime) : Obser
 
     [RelayCommand]
     private void Back() => BackRequested?.Invoke();
+
+    /// <summary>
+    /// The compare section's lap vs lap: lap A's recording is picked here too, not opened from a lap list, so there is
+    /// no back button. (The session's instance is a drill-in from the laps tab.)
+    /// </summary>
+    public bool IsWorkspace { get; init; }
+
+    public bool ShowBack => !IsWorkspace;
+
+    /// <summary>Workspace only: every recording lap A can come from.</summary>
+    public ObservableCollection<RecordingOption> Recordings { get; } = [];
+
+    [ObservableProperty] public partial RecordingOption? SelectedRecording { get; set; }
+
+    partial void OnSelectedRecordingChanged(RecordingOption? value)
+    {
+        if (!_suppress && value is not null && value.Recording.Id != _recording?.Id)
+        {
+            _ = OpenRecordingAsync(value.Recording);
+        }
+    }
+
+    /// <summary>Workspace: lists <paramref name="recordings"/> for lap A and, the first time, opens <paramref name="preferred"/>.</summary>
+    public async Task ActivateAsync(IReadOnlyList<RecordingInfo> recordings, RecordingInfo? preferred)
+    {
+        _suppress = true;
+        try
+        {
+            Fill(Recordings, recordings.Select(r => new RecordingOption(r, $"{r.TrackName} · {SessionTypes.Name(r.SessionType)} · #{r.Id}")));
+            SelectedRecording = Recordings.FirstOrDefault(r => r.Recording.Id == _recording?.Id);
+        }
+        finally
+        {
+            _suppress = false;
+        }
+
+        OnPropertyChanged(nameof(ShowPickers));
+        if (SelectedRecording is null && (preferred ?? recordings.FirstOrDefault()) is { } open)
+        {
+            await OpenRecordingAsync(open);
+        }
+        else if (Recordings.Count == 0)
+        {
+            Title = "No recordings yet";
+        }
+    }
+
+    /// <summary>Workspace: lap A becomes the best lap of <paramref name="recording"/>, lap B the best of another recording on the track.</summary>
+    private async Task OpenRecordingAsync(RecordingInfo recording)
+    {
+        var laps = await runtime.Analysis.GetClassifiedLapsAsync(recording);
+        var lap = laps.FirstOrDefault(l => l.IsBestLap) ?? laps.Where(l => l.HasTime).MinBy(l => l.LapTimeMs) ?? laps.FirstOrDefault();
+        if (lap is null)
+        {
+            Title = "No laps in this recording";
+            return;
+        }
+
+        _suppress = true;
+        SelectedRecording = Recordings.FirstOrDefault(r => r.Recording.Id == recording.Id);
+        _suppress = false;
+        await LoadAsync(recording, lap, null);
+
+        if (CompareRecordings.FirstOrDefault(r => r.Recording.Id != recording.Id) is { } other)
+        {
+            SelectedCompareRecording = other;
+        }
+    }
+
+    /// <summary>The pickers show once a lap is open, and in the workspace always (lap A's recording is picked there).</summary>
+    public bool ShowPickers => HasLapOptions || IsWorkspace;
     [ObservableProperty] public partial string LapTime { get; set; } = "";
     [ObservableProperty] public partial Chip? DeltaChip { get; set; }
     [ObservableProperty] public partial string Compound { get; set; } = "Unknown";
@@ -143,17 +214,20 @@ public sealed partial class LapDetailViewModel(TelemetryRuntime runtime) : Obser
 
             Fill(LapOptions, laps.Select(l => LapOption.For(recording, l)));
             OnPropertyChanged(nameof(HasLapOptions));
+            OnPropertyChanged(nameof(ShowPickers));
             SelectedLap = LapOptions.First(o => o.Lap!.LapNumber == lap.LapNumber);
 
+            // Lap A's own recording: "this session" in the session's drill-in, "same as A" in the compare workspace.
+            var own = $"{(IsWorkspace ? "SAME AS A" : "THIS SESSION")} · #{recording.Id}";
             var recordings = await runtime.Store.GetRecordingsAsync();
             Fill(CompareRecordings, recordings
                 .Where(r => r.TrackId == recording.TrackId)
                 .Select(r => new RecordingOption(r, r.Id == recording.Id
-                    ? $"THIS SESSION · #{r.Id}"
+                    ? own
                     : $"#{r.Id} · {SessionTypes.Name(r.SessionType)} · {r.StartTime.LocalDateTime:g}")));
             if (CompareRecordings.All(r => r.Recording.Id != recording.Id))
             {
-                CompareRecordings.Insert(0, new RecordingOption(recording, $"THIS SESSION · #{recording.Id}"));
+                CompareRecordings.Insert(0, new RecordingOption(recording, own));
             }
 
             SelectedCompareRecording = CompareRecordings.First(r => r.Recording.Id == recording.Id);

@@ -8,10 +8,11 @@ namespace F1Telemetry.App;
 
 /// <summary>
 /// Command-line switches:
-/// <c>--mode f1-25|f1-26</c>, <c>--source udp|demo|replay=&lt;file&gt;</c>, <c>--record</c>, <c>--tab live|laps|lapdetail|strategy|energy|compare|setups|settings</c>
+/// <c>--mode f1-25|f1-26</c>, <c>--source udp|demo|replay=&lt;file&gt;</c>, <c>--record</c>,
+/// <c>--tab live|laps|lapdetail|strategy|energy|compare|comparelaps|setups|overlays|settings</c>
 /// (<c>settings</c> opens the settings page; <c>position</c> still works and opens strategy, where the position chart now lives),
 /// <c>--select-latest</c> (open the newest recording), <c>--lap &lt;n&gt;</c> (open that lap of it),
-/// <c>--preview-overlays</c> (with <c>--tab settings</c>: overlay preview on), <c>--exit-after &lt;seconds&gt;</c> (unattended smoke
+/// <c>--preview-overlays</c> (opens the overlays page with the preview on), <c>--exit-after &lt;seconds&gt;</c> (unattended smoke
 /// tests; exits cleanly so the store is flushed).
 /// </summary>
 public sealed record StartupOptions(GameFormat? Mode, SourceKind? Source, string? ReplayPath, bool Record, MainTab? Tab, double? ExitAfterSeconds, bool SelectLatest, int? OpenLap, bool PreviewOverlays = false, bool OpenSettings = false)
@@ -119,7 +120,12 @@ public sealed record StartupOptions(GameFormat? Mode, SourceKind? Source, string
         if (OpenSettings)
         {
             viewModel.IsSettingsOpen = true;
-            viewModel.Settings.PreviewOverlays = PreviewOverlays;
+        }
+        else if (PreviewOverlays)
+        {
+            // The preview lives on the overlays page.
+            viewModel.SelectedTab = MainTab.Overlays;
+            viewModel.Settings.PreviewOverlays = true;
         }
 
         if (ExitAfterSeconds is { } seconds)

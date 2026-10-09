@@ -1,0 +1,116 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:F1Telemetry.App.ViewModels"
+             xmlns:services="using:F1Telemetry.App.Services"
+             xmlns:controls="using:F1Telemetry.App.Controls"
+             xmlns:models="using:F1Telemetry.Core.Models"
+             xmlns:engine="using:F1Telemetry.Core.Engine"
+             x:Class="F1Telemetry.App.Views.OverlaysView"
+             x:DataType="vm:SettingsViewModel">
+  <!-- The HUD overlays drawn over the game: visibility, size, opacity and place of each, with a live preview to drag them. -->
+  <DockPanel Margin="0,16,0,0" MaxWidth="1100" HorizontalAlignment="Left">
+    <controls:PageHeader DockPanel.Dock="Top" Eyebrow="HUD OVERLAYS · DRAWN OVER THE GAME" Title="Overlays"
+                         Help="Each overlay is a click-through window over the game. ALWAYS = always visible, SESSION = only while recording, NEVER = hidden. The OVERLAYS switch in the toolbar (or its hotkey) hides or shows them all. Turn on PREVIEW OVERLAYS to see them with sample data and drag them into place; leaving this page ends the preview." />
+
+    <!-- Fixed (never scrolls) so previewed overlays can be kept off it: see OverlayManager.KeepClearArea. -->
+    <Border x:Name="PreviewBar" DockPanel.Dock="Top" Classes="panel" Padding="18,12" Margin="0,0,0,16">
+      <DockPanel>
+        <ToggleSwitch DockPanel.Dock="Left" IsChecked="{Binding PreviewOverlays}" OnContent="PREVIEW OVERLAYS" OffContent="PREVIEW OVERLAYS" VerticalAlignment="Center" Margin="0,0,20,0" />
+        <TextBlock Classes="body" VerticalAlignment="Center" TextWrapping="Wrap"
+                   Text="Shows every overlay with sample data: drag one to move it. This bar stays clickable even under an overlay." />
+      </DockPanel>
+    </Border>
+
+    <ScrollViewer>
+      <ItemsControl ItemsSource="{Binding Overlays}">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="vm:OverlaySettingsViewModel">
+            <Border Classes="raised" Margin="0,0,0,8">
+              <Grid ColumnDefinitions="240,*,150" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="12" RowSpacing="8">
+                <StackPanel Spacing="2" VerticalAlignment="Center">
+                  <TextBlock Classes="h2" Text="{Binding Name}" />
+                  <TextBlock Classes="mono" Text="{Binding Position}" FontSize="13" Foreground="{StaticResource TextLoBrush}" />
+                </StackPanel>
+                <TextBlock Grid.Column="1" Classes="body" Text="{Binding Description}" VerticalAlignment="Center" TextWrapping="Wrap" />
+                <ComboBox Grid.Column="2" ItemsSource="{Binding Modes}" SelectedItem="{Binding Mode}" HorizontalAlignment="Stretch" VerticalAlignment="Center" />
+
+                <WrapPanel Grid.Row="1" Grid.ColumnSpan="3" Orientation="Horizontal">
+                  <StackPanel Orientation="Horizontal" Spacing="12" Margin="0,0,28,6">
+                    <TextBlock Classes="label" Text="SIZE" VerticalAlignment="Center" Width="40" />
+                    <Slider Minimum="{Binding MinScale}" Maximum="{Binding MaxScale}" Value="{Binding Scale}"
+                            TickFrequency="0.05" IsSnapToTickEnabled="True" SmallChange="0.05" LargeChange="0.25"
+                            Width="200" VerticalAlignment="Center" />
+                    <TextBlock Classes="data-s" Text="{Binding ScaleText}" Width="64" VerticalAlignment="Center" />
+                    <Button Theme="{StaticResource SecondaryButton}" Content="100%" Command="{Binding ResetScaleCommand}" />
+                  </StackPanel>
+                  <StackPanel Orientation="Horizontal" Spacing="12" Margin="0,0,28,6">
+                    <TextBlock Classes="label" Text="OPACITY" VerticalAlignment="Center" />
+                    <Slider Minimum="{Binding MinOpacity}" Maximum="1" Value="{Binding Opacity}"
+                            TickFrequency="0.05" IsSnapToTickEnabled="True" SmallChange="0.05" LargeChange="0.2"
+                            Width="200" VerticalAlignment="Center" />
+                    <TextBlock Classes="data-s" Text="{Binding OpacityText}" Width="64" VerticalAlignment="Center" />
+                    <Button Theme="{StaticResource SecondaryButton}" Content="100%" Command="{Binding ResetOpacityCommand}" />
+                  </StackPanel>
+                  <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,0,0,6">
+                    <TextBlock Classes="label" Text="PLACE" VerticalAlignment="Center" Margin="0,0,6,0" />
+                    <Button Theme="{StaticResource SecondaryButton}" Content="TOP LEFT" Command="{Binding PresetCommand}" CommandParameter="{x:Static services:OverlayPreset.TopLeft}" />
+                    <Button Theme="{StaticResource SecondaryButton}" Content="TOP RIGHT" Command="{Binding PresetCommand}" CommandParameter="{x:Static services:OverlayPreset.TopRight}" />
+                    <Button Theme="{StaticResource SecondaryButton}" Content="LEFT" Command="{Binding PresetCommand}" CommandParameter="{x:Static services:OverlayPreset.LeftCenter}" />
+                    <Button Theme="{StaticResource SecondaryButton}" Content="TOP" Command="{Binding PresetCommand}" CommandParameter="{x:Static services:OverlayPreset.TopCenter}" />
+                    <Button Theme="{StaticResource SecondaryButton}" Content="CENTRE" Command="{Binding PresetCommand}" CommandParameter="{x:Static services:OverlayPreset.Center}" />
+                    <Button Theme="{StaticResource SecondaryButton}" Content="RIGHT" Command="{Binding PresetCommand}" CommandParameter="{x:Static services:OverlayPreset.RightCenter}" />
+                    <Button Theme="{StaticResource SecondaryButton}" Content="BOTTOM" Command="{Binding PresetCommand}" CommandParameter="{x:Static services:OverlayPreset.BottomCenter}" />
+                    <Button Theme="{StaticResource SecondaryButton}" Content="BOTTOM RIGHT" Command="{Binding PresetCommand}" CommandParameter="{x:Static services:OverlayPreset.BottomRight}" />
+                  </StackPanel>
+                </WrapPanel>
+
+                <!-- Overlay-specific option (at most one per overlay). -->
+                <Panel Grid.Row="2" Grid.ColumnSpan="3">
+                  <StackPanel Orientation="Horizontal" Spacing="12" IsVisible="{Binding HasHistory}">
+                    <TextBlock Classes="label" Text="HISTORY" VerticalAlignment="Center" />
+                    <NumericUpDown Value="{Binding HistorySeconds}" Minimum="1" Maximum="30" Increment="1" FormatString="0" Width="150" />
+                    <TextBlock Classes="body" Text="seconds of throttle / brake shown (1–30)" VerticalAlignment="Center" />
+                  </StackPanel>
+
+                  <StackPanel Orientation="Horizontal" Spacing="12" IsVisible="{Binding HasReference}">
+                    <TextBlock Classes="label" Text="GAP TO" VerticalAlignment="Center" />
+                    <Border Classes="segmented">
+                      <StackPanel Orientation="Horizontal">
+                        <Button Theme="{StaticResource ModeToggle}" Content="SESSION BEST" Classes.selected="{Binding IsSessionBestReference}"
+                                Command="{Binding SetReferenceCommand}" CommandParameter="{x:Static models:SectorReference.SessionBest}" />
+                        <Button Theme="{StaticResource ModeToggle}" Content="PERSONAL BEST" Classes.selected="{Binding IsPersonalBestReference}"
+                                Command="{Binding SetReferenceCommand}" CommandParameter="{x:Static models:SectorReference.PersonalBest}" />
+                      </StackPanel>
+                    </Border>
+                    <TextBlock Classes="body" Text="what the gap after each sector is measured against" VerticalAlignment="Center" />
+                  </StackPanel>
+
+                  <StackPanel Orientation="Horizontal" Spacing="12" IsVisible="{Binding HasGapMode}">
+                    <TextBlock Classes="label" Text="RACE GAP" VerticalAlignment="Center" />
+                    <Border Classes="segmented">
+                      <StackPanel Orientation="Horizontal">
+                        <Button Theme="{StaticResource ModeToggle}" Content="GAP TO ME" Classes.selected="{Binding IsGapToMe}"
+                                Command="{Binding SetGapModeCommand}" CommandParameter="{x:Static engine:TowerGapMode.GapToMe}" />
+                        <Button Theme="{StaticResource ModeToggle}" Content="INTERVAL" Classes.selected="{Binding IsInterval}"
+                                Command="{Binding SetGapModeCommand}" CommandParameter="{x:Static engine:TowerGapMode.Interval}" />
+                      </StackPanel>
+                    </Border>
+                    <TextBlock Classes="body" Text="time between each car and you, or to the car directly ahead" VerticalAlignment="Center" />
+                  </StackPanel>
+
+                  <StackPanel Orientation="Horizontal" Spacing="12" IsVisible="{Binding HasDamagePage}">
+                    <TextBlock Classes="label" Text="DAMAGE POP-UP" VerticalAlignment="Center" />
+                    <ToggleSwitch IsChecked="{Binding DamagePopup}" OnContent="" OffContent="" VerticalAlignment="Center" />
+                    <NumericUpDown Value="{Binding DamagePopupSeconds}" Minimum="1" Maximum="60" Increment="1" FormatString="0" Width="150"
+                                   IsEnabled="{Binding DamagePopup}" />
+                    <TextBlock Classes="body" Text="seconds on the damage page after new damage (tyre wear is ignored)" VerticalAlignment="Center" />
+                  </StackPanel>
+                </Panel>
+              </Grid>
+            </Border>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </ScrollViewer>
+  </DockPanel>
+</UserControl>

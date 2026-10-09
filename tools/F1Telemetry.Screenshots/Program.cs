@@ -138,14 +138,11 @@ if (window.GetVisualDescendants().OfType<StrategyView>().FirstOrDefault()?.GetVi
 // Settings is a page opened from the toolbar; the controls table is at its top.
 vm.IsSettingsOpen = true;
 Capture(window, "12-controller");
-if (window.GetVisualDescendants().OfType<SettingsView>().FirstOrDefault()?.GetVisualDescendants().OfType<ScrollViewer>().FirstOrDefault() is { } settingsScroll)
-{
-    settingsScroll.Offset = settingsScroll.Offset.WithY(464);
-    Capture(window, "06-settings");
-    settingsScroll.Offset = default;
-}
-
 vm.IsSettingsOpen = false;
+
+// Overlays have their own page in the rail.
+vm.SelectedTab = MainTab.Overlays;
+Capture(window, "06-overlays");
 
 // Race vs race: the one-stop race as A, the two-stop race as B; the second shot scrolls down to the charts.
 vm.SelectedRecording = vm.Recordings.First(r => r.Description == "One stop");
@@ -156,9 +153,14 @@ vm.Compare.SelectedB = vm.Compare.RecordingsB.First(r => r.Description == "Two s
 Capture(window, "09-compare");
 if (window.GetVisualDescendants().OfType<CompareView>().FirstOrDefault()?.GetVisualDescendants().OfType<ScrollViewer>().FirstOrDefault() is { } compareScroll)
 {
-    compareScroll.Offset = compareScroll.Offset.WithY(860);
+    compareScroll.Offset = compareScroll.Offset.WithY(640);
     Capture(window, "10-compare-charts");
 }
+
+// Lap vs lap: the one-stop race's best lap against the best lap of another recording at the track.
+vm.SelectedTab = MainTab.CompareLaps;
+Pump(vm.ActivateLapCompareAsync(), 1500);
+Capture(window, "17-compare-laps");
 
 vm.SelectedRecording = vm.Recordings.First(r => r.Description == "Two stops");
 Pump(vm.Session.RefreshAsync(), 300);

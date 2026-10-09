@@ -1,13 +1,12 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:F1Telemetry.App.ViewModels"
+             xmlns:controls="using:F1Telemetry.App.Controls"
              x:Class="F1Telemetry.App.Views.SetupsView"
              x:DataType="vm:SetupsViewModel">
   <DockPanel Margin="0,16,0,0">
-    <StackPanel DockPanel.Dock="Top" Spacing="4" Margin="0,0,0,12">
-      <TextBlock Classes="label" Text="SETUP LIBRARY · EVERY SETUP YOU DROVE, WITH ITS CONDITIONS AND RESULTS" />
-      <TextBlock Classes="h1" Text="{Binding Header}" />
-    </StackPanel>
+    <controls:PageHeader DockPanel.Dock="Top" Eyebrow="SETUP LIBRARY" Title="{Binding Header}"
+                         Help="Every setup you drive in a recorded session lands here with its track, weather and lap times. Star favourites, tick setups to export them as a .f1setups file, or import one. Select a setup to rename it, add notes and compare it with another." />
 
     <TextBlock DockPanel.Dock="Bottom" Classes="body" Text="{Binding Status}" Margin="0,10,0,0" IsVisible="{Binding Status, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
 

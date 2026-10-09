@@ -20,13 +20,10 @@
   </UserControl.Resources>
 
   <DockPanel Margin="0,16,0,0">
-    <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="0,0,8,12">
-      <StackPanel Spacing="4">
-        <TextBlock Classes="label" Text="ENERGY · BATTERY, HARVEST AND DEPLOYMENT OVER THE SESSION" />
-        <TextBlock Classes="h1" Text="{Binding Header}" />
-      </StackPanel>
+    <controls:PageHeader DockPanel.Dock="Top" Eyebrow="ENERGY · BATTERY, HARVEST AND DEPLOYMENT" Title="{Binding Header}" Margin="0,0,8,12"
+                         Help="The whole session, not one lap: it is analysed on its typical laps (pit, safety car and VSC laps and laps more than 3% off the median are left out). SESSION: what you ran. ERS PLAN: a deploy mode per zone, simulated on the car model. CAR MODEL: what the car's ERS delivers, learned from every lap at this track.">
       <!-- Units for every energy on the tab -->
-      <Border Grid.Column="1" Classes="segmented" VerticalAlignment="Bottom" ToolTip.Tip="Show energy in megajoules or in percent of the 4 MJ battery">
+      <Border Classes="segmented" ToolTip.Tip="Show energy in megajoules or in percent of the 4 MJ battery">
         <StackPanel Orientation="Horizontal">
           <Button Theme="{StaticResource ModeToggle}" Content="MJ" Classes.selected="{Binding IsMj}"
                   Command="{Binding SetUnitCommand}" CommandParameter="{x:Static services:EnergyUnit.Mj}" />
@@ -34,7 +31,7 @@
                   Command="{Binding SetUnitCommand}" CommandParameter="{x:Static services:EnergyUnit.Percent}" />
         </StackPanel>
       </Border>
-    </Grid>
+    </controls:PageHeader>
 
     <!-- Pages: the session as driven, the plan built on it, the car model behind the plan -->
     <Border DockPanel.Dock="Top" Classes="segmented" HorizontalAlignment="Left" Margin="0,0,0,12">
@@ -210,7 +207,10 @@
             <StackPanel Spacing="12" IsVisible="{Binding IsSessionPage}">
               <Border Classes="panel" Padding="8">
                 <DockPanel>
-                  <TextBlock DockPanel.Dock="Top" Classes="label strong" Text="LAP BY LAP" Margin="12,6,12,10" />
+                  <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="8" Margin="12,6,12,10">
+                    <TextBlock Classes="label strong" Text="LAP BY LAP" VerticalAlignment="Center" />
+                    <controls:HelpTip Width="18" Height="18" Text="{Binding TableNote}" />
+                  </StackPanel>
                   <Grid DockPanel.Dock="Top" ColumnDefinitions="60,110,72,72,72,96,96,96,*" ColumnSpacing="12" Margin="12,0,12,8">
                     <TextBlock Classes="label" Text="LAP" />
                     <TextBlock Grid.Column="1" Classes="label" Text="TIME" HorizontalAlignment="Center" />
@@ -252,16 +252,17 @@
                   </ItemsControl>
                 </DockPanel>
               </Border>
-              <TextBlock Classes="body" Text="{Binding TableNote}" TextWrapping="Wrap" />
             </StackPanel>
 
             <!-- ERS PLAN: deploy mode per zone -->
             <Border Classes="panel" Padding="18,14" IsVisible="{Binding IsPlanPage}">
               <StackPanel Spacing="14" DataContext="{Binding Plan}">
                 <StackPanel Spacing="4">
-                  <TextBlock Classes="label strong" Text="DEPLOY MODE PER ZONE · SIMULATED ON THE CAR MODEL" />
-                  <TextBlock Classes="body" FontSize="13" TextWrapping="Wrap"
-                             Text="RACE: a lap that deploys exactly what it harvests, so it ends with the charge it started with and every race lap can run it. QUALIFYING: one push lap from a full battery. Corners and braking keep your speeds; on the straights the plan changes what the MGU-K gives." />
+                  <StackPanel Orientation="Horizontal" Spacing="8">
+                    <TextBlock Classes="label strong" Text="DEPLOY MODE PER ZONE · SIMULATED ON THE CAR MODEL" VerticalAlignment="Center" />
+                    <controls:HelpTip Width="18" Height="18"
+                                      Text="RACE: a lap that deploys exactly what it harvests, so it ends with the charge it started with and every race lap can run it. QUALIFYING: one push lap from a full battery. Corners and braking keep your speeds; on the straights the plan changes what the MGU-K gives." />
+                  </StackPanel>
                   <TextBlock Classes="body" FontSize="13" Text="{Binding Basis}" TextWrapping="Wrap" Foreground="{StaticResource TextHiBrush}"
                              IsVisible="{Binding Basis, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                 </StackPanel>

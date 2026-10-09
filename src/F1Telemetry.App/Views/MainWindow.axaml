@@ -2,6 +2,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:F1Telemetry.App.ViewModels"
         xmlns:views="using:F1Telemetry.App.Views"
+        xmlns:controls="using:F1Telemetry.App.Controls"
         xmlns:protocol="using:F1Telemetry.Protocol"
         x:Class="F1Telemetry.App.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
@@ -112,6 +113,15 @@
             <TextBlock Text="SETUPS" HorizontalAlignment="Center" />
           </StackPanel>
         </Button>
+        <Button Theme="{StaticResource RailButton}" Classes.selected="{Binding IsOverlaysActive}"
+                Command="{Binding NavigateCommand}" CommandParameter="{x:Static vm:MainSection.Overlays}"
+                ToolTip.Tip="HUD overlays over the game: what shows, where and how big" AutomationProperties.Name="Overlays">
+          <StackPanel Spacing="6">
+            <PathIcon Width="24" Height="24" HorizontalAlignment="Center"
+                      Data="M12,16L19.36,10.27L21,9L12,2L3,9L4.63,10.27M12,18.54L4.62,12.81L3,14.07L12,21.07L21,14.07L19.37,12.8L12,18.54Z" />
+            <TextBlock Text="OVERLAYS" HorizontalAlignment="Center" />
+          </StackPanel>
+        </Button>
       </StackPanel>
     </Border>
 
@@ -172,14 +182,10 @@
     <!-- Main area: the rail's section, or the settings page (opened from the toolbar) in its place -->
     <Panel>
       <DockPanel Margin="20,12,20,16" MaxWidth="1100" HorizontalAlignment="Left" IsVisible="{Binding IsSettingsOpen}">
-        <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" ColumnSpacing="16" Margin="0,4,0,0">
-          <StackPanel Spacing="4" VerticalAlignment="Center">
-            <TextBlock Classes="label" Text="APP · CONTROLS, OVERLAYS, CONNECTION AND DATA" />
-            <TextBlock Classes="h1" Text="Settings" />
-          </StackPanel>
-          <Button Grid.Column="1" Theme="{StaticResource SecondaryButton}" Content="DONE" Command="{Binding CloseSettingsCommand}" MinWidth="120"
-                  VerticalAlignment="Center" ToolTip.Tip="Back (Esc)" />
-        </Grid>
+        <controls:PageHeader DockPanel.Dock="Top" Eyebrow="APP · CONTROLS, CONNECTION AND DATA" Title="Settings" Margin="0,4,0,0"
+                             Help="Overlays are set up on their own page: OVERLAYS in the rail.">
+          <Button Theme="{StaticResource SecondaryButton}" Content="DONE" Command="{Binding CloseSettingsCommand}" MinWidth="120" ToolTip.Tip="Back (Esc)" />
+        </controls:PageHeader>
         <views:SettingsView DataContext="{Binding Settings}" />
       </DockPanel>
 
@@ -208,11 +214,21 @@
         </TabItem>
       </TabControl>
 
-      <Panel Margin="20,12,20,16" IsVisible="{Binding IsCompareActive}">
-        <views:CompareView DataContext="{Binding Compare}" />
-      </Panel>
+      <!-- Compare: race vs race, or lap vs lap across recordings of a track. -->
+      <TabControl Classes="sections" SelectedIndex="{Binding CompareTabIndex}" Margin="20,12,20,16" IsVisible="{Binding IsCompareActive}">
+        <TabItem Header="RACES">
+          <views:CompareView DataContext="{Binding Compare}" />
+        </TabItem>
+        <TabItem Header="LAPS">
+          <views:LapDetailView DataContext="{Binding LapCompare}" />
+        </TabItem>
+      </TabControl>
+
       <Panel Margin="20,12,20,16" IsVisible="{Binding IsSetupsActive}">
         <views:SetupsView DataContext="{Binding Setups}" />
+      </Panel>
+      <Panel Margin="20,12,20,16" IsVisible="{Binding IsOverlaysActive}">
+        <views:OverlaysView DataContext="{Binding Settings}" />
       </Panel>
     </Panel>
   </DockPanel>

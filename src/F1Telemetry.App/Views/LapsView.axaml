@@ -5,10 +5,8 @@
              x:Class="F1Telemetry.App.Views.LapsView"
              x:DataType="vm:SessionViewModel">
   <DockPanel Margin="0,16,0,0">
-    <StackPanel DockPanel.Dock="Top" Spacing="4" Margin="0,0,0,12">
-      <TextBlock Classes="label" Text="SESSION LAPS · CLICK A LAP TO OPEN ITS TELEMETRY AND COMPARE IT WITH ANY OTHER LAP" />
-      <TextBlock Classes="h1" Text="{Binding Header}" />
-    </StackPanel>
+    <controls:PageHeader DockPanel.Dock="Top" Eyebrow="SESSION LAPS" Title="{Binding Header}"
+                         Help="Click a lap to open its telemetry and compare it with any other lap of any recording on the same track. Purple: fastest of the session. Outlined red: an invalid lap. PIT, SC and VSC laps are marked under TYRE / TYPE." />
     <Border Classes="panel" Padding="8">
       <DockPanel>
         <Grid DockPanel.Dock="Top" ColumnDefinitions="60,120,96,96,96,100,190,60" ColumnSpacing="12" Margin="12,6,12,8">

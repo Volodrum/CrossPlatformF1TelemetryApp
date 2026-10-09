@@ -7,10 +7,8 @@
   <!-- Design: Strategy.dc.html -->
   <ScrollViewer Margin="0,16,0,0">
     <StackPanel Spacing="16">
-      <StackPanel Spacing="4">
-        <TextBlock Classes="label" Text="RACE STRATEGY · STINTS FROM THE GAME'S TYRE HISTORY" />
-        <TextBlock Classes="h1" Text="{Binding Header}" />
-      </StackPanel>
+      <controls:PageHeader Eyebrow="RACE STRATEGY" Title="{Binding Header}" Margin="0"
+                           Help="Stints come from the game's tyre history. Pit, safety-car and out-laps are excluded from every average. Pick a stint to see its tyre life, degradation and fuel; the fuel calculator uses the selected stint's rate." />
 
       <Grid ColumnDefinitions="Auto,*" ColumnSpacing="16">
         <ListBox Classes="cards horizontal" ItemsSource="{Binding Stints}" SelectedItem="{Binding SelectedStint}">
@@ -31,7 +29,6 @@
             </DataTemplate>
           </ListBox.ItemTemplate>
         </ListBox>
-        <TextBlock Grid.Column="1" Classes="body" VerticalAlignment="Center" Text="Pit, safety-car and out-laps are excluded from every average." />
       </Grid>
 
       <ContentControl Content="{Binding SelectedStint}">
