@@ -7,7 +7,7 @@
     <Deterministic>true</Deterministic>
     <Authors>Volodrum</Authors>
     <Product>F1 Telemetry</Product>
-    <Version>0.3.0-beta</Version>
+    <Version>0.3.0</Version>
     <!-- Keep the build honest: nullable warnings are errors. -->
     <WarningsAsErrors>nullable</WarningsAsErrors>
   </PropertyGroup>
