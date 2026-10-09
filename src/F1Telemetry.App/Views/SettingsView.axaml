@@ -20,58 +20,99 @@
 
     <ScrollViewer>
       <StackPanel Spacing="16" MaxWidth="1100" HorizontalAlignment="Left">
+        <!-- Controls: one row per action, one column per input method -->
         <Border Classes="panel" Padding="18">
           <StackPanel Spacing="12">
-            <TextBlock Classes="label strong" Text="GLOBAL HOTKEYS" FontSize="14" />
-            <TextBlock Classes="body" Text="Work while the game has focus. macOS: grant the Accessibility permission. Not available on Wayland." />
-            <Grid ColumnDefinitions="260,220,Auto" RowDefinitions="Auto,Auto,Auto,Auto,Auto" RowSpacing="10" ColumnSpacing="12">
-              <TextBlock Classes="h2" Text="Start / stop recording" VerticalAlignment="Center" />
-              <TextBlock Grid.Column="1" Classes="data-s" Text="{Binding StartStopHotkey}" VerticalAlignment="Center" />
-              <Button Grid.Column="2" Theme="{StaticResource SecondaryButton}" Content="CHANGE…" Command="{Binding BeginCaptureCommand}" CommandParameter="startStop" />
-              <TextBlock Grid.Row="1" Classes="h2" Text="Toggle overlays" VerticalAlignment="Center" />
-              <TextBlock Grid.Row="1" Grid.Column="1" Classes="data-s" Text="{Binding ToggleOverlaysHotkey}" VerticalAlignment="Center" />
-              <Button Grid.Row="1" Grid.Column="2" Theme="{StaticResource SecondaryButton}" Content="CHANGE…" Command="{Binding BeginCaptureCommand}" CommandParameter="toggleOverlays" />
-              <TextBlock Grid.Row="2" Classes="h2" Text="Strategy / damage page" VerticalAlignment="Center" />
-              <TextBlock Grid.Row="2" Grid.Column="1" Classes="data-s" Text="{Binding StrategyPageHotkey}" VerticalAlignment="Center" />
-              <Button Grid.Row="2" Grid.Column="2" Theme="{StaticResource SecondaryButton}" Content="CHANGE…" Command="{Binding BeginCaptureCommand}" CommandParameter="strategyPage" />
-              <TextBlock Grid.Row="4" Classes="h2" Text="ERS plan: next mode" VerticalAlignment="Center" />
-              <TextBlock Grid.Row="4" Grid.Column="1" Classes="data-s" Text="{Binding ErsPlanHotkey}" VerticalAlignment="Center" />
-              <Button Grid.Row="4" Grid.Column="2" Theme="{StaticResource SecondaryButton}" Content="CHANGE…" Command="{Binding BeginCaptureCommand}" CommandParameter="ersPlan" />
-              <TextBlock Grid.Row="3" Classes="h2" Text="Strategy / damage page (wheel)" VerticalAlignment="Center" />
-              <ComboBox Grid.Row="3" Grid.Column="1" ItemsSource="{Binding WheelButtons}" SelectedIndex="{Binding StrategyPageUdpAction}"
-                        HorizontalAlignment="Stretch" VerticalAlignment="Center" />
-            </Grid>
-            <TextBlock Classes="body"
-                       Text="Wheel or pad: in the game's controls settings, bind a button to the UDP Action chosen above. The press arrives with the telemetry, so any wheel works, on every OS and without a keyboard hook." />
-            <TextBlock Text="{Binding CaptureHint}" Foreground="{StaticResource DangerBrush}" FontWeight="SemiBold" />
-          </StackPanel>
-        </Border>
-
-        <Border Classes="panel" Padding="18">
-          <StackPanel Spacing="12">
-            <TextBlock Classes="label strong" Text="CONTROLLER BUTTONS" FontSize="14" />
+            <TextBlock Classes="label strong" Text="CONTROLS" FontSize="14" />
             <TextBlock Classes="body" TextWrapping="Wrap"
-                       Text="Read straight from the pad (DualSense over USB or Bluetooth, DualShock, Xbox, Switch Pro…), also while the game has focus. Press SET, then a button, or hold one button and press another for a combo such as Touchpad + D-pad Right. The game still sees the press, so pick a button or combo it doesn't use." />
-            <TextBlock Classes="mono" Text="{Binding ControllerStatus}" FontSize="13" Foreground="{StaticResource TextLoBrush}" TextWrapping="Wrap" />
-            <Grid ColumnDefinitions="260,220,Auto,Auto" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="10" ColumnSpacing="12">
-              <TextBlock Classes="h2" Text="Start / stop recording" VerticalAlignment="Center" />
-              <controls:PadBindingView Grid.Column="1" BindingText="{Binding StartStopPad}" Family="{Binding PadFamily}" HorizontalAlignment="Left" VerticalAlignment="Center" />
-              <Button Grid.Column="2" Theme="{StaticResource SecondaryButton}" Content="SET…" Command="{Binding BeginPadCaptureCommand}" CommandParameter="startStop" />
-              <Button Grid.Column="3" Theme="{StaticResource SecondaryButton}" Content="CLEAR" Command="{Binding ClearPadBindingCommand}" CommandParameter="startStop" />
-              <TextBlock Grid.Row="1" Classes="h2" Text="Toggle overlays" VerticalAlignment="Center" />
-              <controls:PadBindingView Grid.Row="1" Grid.Column="1" BindingText="{Binding ToggleOverlaysPad}" Family="{Binding PadFamily}" HorizontalAlignment="Left" VerticalAlignment="Center" />
-              <Button Grid.Row="1" Grid.Column="2" Theme="{StaticResource SecondaryButton}" Content="SET…" Command="{Binding BeginPadCaptureCommand}" CommandParameter="toggleOverlays" />
-              <Button Grid.Row="1" Grid.Column="3" Theme="{StaticResource SecondaryButton}" Content="CLEAR" Command="{Binding ClearPadBindingCommand}" CommandParameter="toggleOverlays" />
-              <TextBlock Grid.Row="2" Classes="h2" Text="Strategy / damage page" VerticalAlignment="Center" />
-              <controls:PadBindingView Grid.Row="2" Grid.Column="1" BindingText="{Binding StrategyPagePad}" Family="{Binding PadFamily}" HorizontalAlignment="Left" VerticalAlignment="Center" />
-              <Button Grid.Row="2" Grid.Column="2" Theme="{StaticResource SecondaryButton}" Content="SET…" Command="{Binding BeginPadCaptureCommand}" CommandParameter="strategyPage" />
-              <Button Grid.Row="2" Grid.Column="3" Theme="{StaticResource SecondaryButton}" Content="CLEAR" Command="{Binding ClearPadBindingCommand}" CommandParameter="strategyPage" />
-              <TextBlock Grid.Row="3" Classes="h2" Text="ERS plan: next mode" VerticalAlignment="Center" />
-              <controls:PadBindingView Grid.Row="3" Grid.Column="1" BindingText="{Binding ErsPlanPad}" Family="{Binding PadFamily}" HorizontalAlignment="Left" VerticalAlignment="Center" />
-              <Button Grid.Row="3" Grid.Column="2" Theme="{StaticResource SecondaryButton}" Content="SET…" Command="{Binding BeginPadCaptureCommand}" CommandParameter="ersPlan" />
-              <Button Grid.Row="3" Grid.Column="3" Theme="{StaticResource SecondaryButton}" Content="CLEAR" Command="{Binding ClearPadBindingCommand}" CommandParameter="ersPlan" />
+                       Text="Every input works while the game has focus. Bind an action to a key, a controller button, or both." />
+            <Grid ColumnDefinitions="220,Auto,Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto" RowSpacing="10" ColumnSpacing="24">
+              <TextBlock Classes="label" Text="ACTION" />
+              <TextBlock Grid.Column="1" Classes="label" Text="KEYBOARD" />
+              <TextBlock Grid.Column="2" Classes="label" Text="CONTROLLER" />
+              <TextBlock Grid.Column="3" Classes="label" Text="WHEEL · UDP ACTION" />
+
+              <!-- Start / stop recording -->
+              <TextBlock Grid.Row="1" Classes="h2" Text="Start / stop recording" VerticalAlignment="Center" />
+              <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                <TextBlock Classes="data-s" Text="{Binding StartStopHotkey}" Width="150" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                <Button Theme="{StaticResource SecondaryButton}" Content="SET…" Command="{Binding BeginCaptureCommand}" CommandParameter="startStop" ToolTip.Tip="Press SET…, then the new key combination" />
+              </StackPanel>
+              <StackPanel Grid.Row="1" Grid.Column="2" Orientation="Horizontal" Spacing="8">
+                <Panel Width="140" VerticalAlignment="Center">
+                  <controls:PadBindingView BindingText="{Binding StartStopPad}" Family="{Binding PadFamily}" HorizontalAlignment="Left" />
+                </Panel>
+                <Button Theme="{StaticResource SecondaryButton}" Content="SET…" Command="{Binding BeginPadCaptureCommand}" CommandParameter="startStop" />
+                <Button Theme="{StaticResource SecondaryButton}" Content="CLEAR" Command="{Binding ClearPadBindingCommand}" CommandParameter="startStop" />
+              </StackPanel>
+              <TextBlock Grid.Row="1" Grid.Column="3" Classes="muted" Text="—" VerticalAlignment="Center" />
+
+              <!-- Toggle overlays -->
+              <TextBlock Grid.Row="2" Classes="h2" Text="Toggle overlays" VerticalAlignment="Center" />
+              <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                <TextBlock Classes="data-s" Text="{Binding ToggleOverlaysHotkey}" Width="150" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                <Button Theme="{StaticResource SecondaryButton}" Content="SET…" Command="{Binding BeginCaptureCommand}" CommandParameter="toggleOverlays" ToolTip.Tip="Press SET…, then the new key combination" />
+              </StackPanel>
+              <StackPanel Grid.Row="2" Grid.Column="2" Orientation="Horizontal" Spacing="8">
+                <Panel Width="140" VerticalAlignment="Center">
+                  <controls:PadBindingView BindingText="{Binding ToggleOverlaysPad}" Family="{Binding PadFamily}" HorizontalAlignment="Left" />
+                </Panel>
+                <Button Theme="{StaticResource SecondaryButton}" Content="SET…" Command="{Binding BeginPadCaptureCommand}" CommandParameter="toggleOverlays" />
+                <Button Theme="{StaticResource SecondaryButton}" Content="CLEAR" Command="{Binding ClearPadBindingCommand}" CommandParameter="toggleOverlays" />
+              </StackPanel>
+              <TextBlock Grid.Row="2" Grid.Column="3" Classes="muted" Text="—" VerticalAlignment="Center" />
+
+              <!-- Strategy / damage page: the only action a wheel can trigger through the game's UDP actions -->
+              <TextBlock Grid.Row="3" Classes="h2" Text="Strategy / damage page" VerticalAlignment="Center" />
+              <StackPanel Grid.Row="3" Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                <TextBlock Classes="data-s" Text="{Binding StrategyPageHotkey}" Width="150" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                <Button Theme="{StaticResource SecondaryButton}" Content="SET…" Command="{Binding BeginCaptureCommand}" CommandParameter="strategyPage" ToolTip.Tip="Press SET…, then the new key combination" />
+              </StackPanel>
+              <StackPanel Grid.Row="3" Grid.Column="2" Orientation="Horizontal" Spacing="8">
+                <Panel Width="140" VerticalAlignment="Center">
+                  <controls:PadBindingView BindingText="{Binding StrategyPagePad}" Family="{Binding PadFamily}" HorizontalAlignment="Left" />
+                </Panel>
+                <Button Theme="{StaticResource SecondaryButton}" Content="SET…" Command="{Binding BeginPadCaptureCommand}" CommandParameter="strategyPage" />
+                <Button Theme="{StaticResource SecondaryButton}" Content="CLEAR" Command="{Binding ClearPadBindingCommand}" CommandParameter="strategyPage" />
+              </StackPanel>
+              <ComboBox Grid.Row="3" Grid.Column="3" ItemsSource="{Binding WheelButtons}" SelectedIndex="{Binding StrategyPageUdpAction}"
+                        MinWidth="170" HorizontalAlignment="Left" VerticalAlignment="Center" />
+
+              <!-- ERS plan: next mode -->
+              <TextBlock Grid.Row="4" Classes="h2" Text="ERS plan: next mode" VerticalAlignment="Center" />
+              <StackPanel Grid.Row="4" Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                <TextBlock Classes="data-s" Text="{Binding ErsPlanHotkey}" Width="150" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                <Button Theme="{StaticResource SecondaryButton}" Content="SET…" Command="{Binding BeginCaptureCommand}" CommandParameter="ersPlan" ToolTip.Tip="Press SET…, then the new key combination" />
+              </StackPanel>
+              <StackPanel Grid.Row="4" Grid.Column="2" Orientation="Horizontal" Spacing="8">
+                <Panel Width="140" VerticalAlignment="Center">
+                  <controls:PadBindingView BindingText="{Binding ErsPlanPad}" Family="{Binding PadFamily}" HorizontalAlignment="Left" />
+                </Panel>
+                <Button Theme="{StaticResource SecondaryButton}" Content="SET…" Command="{Binding BeginPadCaptureCommand}" CommandParameter="ersPlan" />
+                <Button Theme="{StaticResource SecondaryButton}" Content="CLEAR" Command="{Binding ClearPadBindingCommand}" CommandParameter="ersPlan" />
+              </StackPanel>
+              <TextBlock Grid.Row="4" Grid.Column="3" Classes="muted" Text="—" VerticalAlignment="Center" />
             </Grid>
-            <TextBlock Text="{Binding PadCaptureHint}" Foreground="{StaticResource DangerBrush}" FontWeight="SemiBold" />
+
+            <TextBlock Text="{Binding CaptureHint}" Foreground="{StaticResource DangerBrush}" FontWeight="SemiBold"
+                       IsVisible="{Binding CaptureHint, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+            <TextBlock Text="{Binding PadCaptureHint}" Foreground="{StaticResource DangerBrush}" FontWeight="SemiBold"
+                       IsVisible="{Binding PadCaptureHint, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+
+            <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="12" RowSpacing="6">
+              <TextBlock Classes="label strong" Text="KEYBOARD" />
+              <TextBlock Grid.Column="1" Classes="body" FontSize="13" TextWrapping="Wrap"
+                         Text="Global hotkeys. macOS: grant the Accessibility permission. Not available on Wayland." />
+              <TextBlock Grid.Row="1" Classes="label strong" Text="CONTROLLER" />
+              <StackPanel Grid.Row="1" Grid.Column="1" Spacing="2">
+                <TextBlock Classes="body" FontSize="13" TextWrapping="Wrap"
+                           Text="Read straight from the pad (DualSense, DualShock, Xbox, Switch Pro…). Press SET…, then a button, or hold one button and press another for a combo. The game still sees the press, so pick one it doesn't use." />
+                <TextBlock Classes="mono" Text="{Binding ControllerStatus}" FontSize="13" Foreground="{StaticResource TextLoBrush}" TextWrapping="Wrap" />
+              </StackPanel>
+              <TextBlock Grid.Row="2" Classes="label strong" Text="WHEEL" />
+              <TextBlock Grid.Row="2" Grid.Column="1" Classes="body" FontSize="13" TextWrapping="Wrap"
+                         Text="In the game's controls settings, bind a wheel button to the UDP Action chosen above. The press arrives with the telemetry, so any wheel works, on every OS." />
+            </Grid>
           </StackPanel>
         </Border>
 

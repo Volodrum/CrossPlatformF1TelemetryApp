@@ -73,6 +73,11 @@
         <Style Selector="^:pressed /template/ Border#PART_Root">
           <Setter Property="Background" Value="{StaticResource SelectedBrush}" />
         </Style>
+        <!-- On state for toggling buttons (e.g. the toolbar's settings button while settings is open). -->
+        <Style Selector="^.selected /template/ Border#PART_Root">
+          <Setter Property="Background" Value="{StaticResource SelectedBrush}" />
+          <Setter Property="BorderBrush" Value="{StaticResource TextHiBrush}" />
+        </Style>
         <Style Selector="^:disabled">
           <Setter Property="Opacity" Value="0.45" />
         </Style>

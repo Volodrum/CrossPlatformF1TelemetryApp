@@ -154,6 +154,11 @@
         </StackPanel>
       </Border>
 
+      <!-- Position history (was its own tab) -->
+      <Border Classes="panel" Padding="0" Height="260" IsVisible="{Binding PositionChart, Converter={x:Static ObjectConverters.IsNotNull}}">
+        <controls:TelemetryPlot Model="{Binding PositionChart}" />
+      </Border>
+
       <!-- Fuel load calculator (session-level: uses the selected stint's rate) -->
       <Border Classes="panel" HorizontalAlignment="Left" MinWidth="460" Padding="18">
         <StackPanel Spacing="12">

@@ -8,12 +8,13 @@ namespace F1Telemetry.App;
 
 /// <summary>
 /// Command-line switches:
-/// <c>--mode f1-25|f1-26</c>, <c>--source udp|demo|replay=&lt;file&gt;</c>, <c>--record</c>, <c>--tab live|laps|lapdetail|strategy|energy|compare|position|setups|settings</c>,
+/// <c>--mode f1-25|f1-26</c>, <c>--source udp|demo|replay=&lt;file&gt;</c>, <c>--record</c>, <c>--tab live|laps|lapdetail|strategy|energy|compare|setups|settings</c>
+/// (<c>settings</c> opens the settings page; <c>position</c> still works and opens strategy, where the position chart now lives),
 /// <c>--select-latest</c> (open the newest recording), <c>--lap &lt;n&gt;</c> (open that lap of it),
 /// <c>--preview-overlays</c> (with <c>--tab settings</c>: overlay preview on), <c>--exit-after &lt;seconds&gt;</c> (unattended smoke
 /// tests; exits cleanly so the store is flushed).
 /// </summary>
-public sealed record StartupOptions(GameFormat? Mode, SourceKind? Source, string? ReplayPath, bool Record, MainTab? Tab, double? ExitAfterSeconds, bool SelectLatest, int? OpenLap, bool PreviewOverlays = false)
+public sealed record StartupOptions(GameFormat? Mode, SourceKind? Source, string? ReplayPath, bool Record, MainTab? Tab, double? ExitAfterSeconds, bool SelectLatest, int? OpenLap, bool PreviewOverlays = false, bool OpenSettings = false)
 {
     public static StartupOptions Parse(string[] args)
     {
@@ -26,6 +27,7 @@ public sealed record StartupOptions(GameFormat? Mode, SourceKind? Source, string
         var selectLatest = false;
         int? openLap = null;
         var previewOverlays = false;
+        var openSettings = false;
 
         for (var i = 0; i < args.Length; i++)
         {
@@ -55,7 +57,10 @@ public sealed record StartupOptions(GameFormat? Mode, SourceKind? Source, string
                     record = true;
                     break;
                 case "--tab":
-                    tab = Enum.TryParse<MainTab>(Next(), ignoreCase: true, out var t) ? t : null;
+                    var name = Next() ?? "";
+                    openSettings = name.Equals("settings", StringComparison.OrdinalIgnoreCase);
+                    tab = name.Equals("position", StringComparison.OrdinalIgnoreCase) ? MainTab.Strategy
+                        : Enum.TryParse<MainTab>(name, ignoreCase: true, out var t) ? t : null;
                     break;
                 case "--preview-overlays":
                     previewOverlays = true;
@@ -73,7 +78,7 @@ public sealed record StartupOptions(GameFormat? Mode, SourceKind? Source, string
             }
         }
 
-        return new StartupOptions(mode, source, replay, record, tab, exitAfter, selectLatest, openLap, previewOverlays);
+        return new StartupOptions(mode, source, replay, record, tab, exitAfter, selectLatest, openLap, previewOverlays, openSettings);
     }
 
     public async Task ApplyAsync(TelemetryRuntime runtime, MainWindowViewModel viewModel, IClassicDesktopStyleApplicationLifetime desktop)
@@ -108,7 +113,12 @@ public sealed record StartupOptions(GameFormat? Mode, SourceKind? Source, string
         if (Tab is { } tab)
         {
             viewModel.SelectedTab = tab;
-            viewModel.Settings.PreviewOverlays = PreviewOverlays && tab == MainTab.Settings;
+        }
+
+        if (OpenSettings)
+        {
+            viewModel.IsSettingsOpen = true;
+            viewModel.Settings.PreviewOverlays = PreviewOverlays;
         }
 
         if (ExitAfterSeconds is { } seconds)

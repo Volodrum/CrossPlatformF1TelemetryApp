@@ -11,7 +11,7 @@
     <!-- Toolbar (design: Toolbar.dc.html) -->
     <Border DockPanel.Dock="Top" Height="72" Background="{StaticResource ChromeBrush}" Padding="20,0"
             BorderBrush="{StaticResource DividerBrush}" BorderThickness="0,0,0,2">
-      <Grid ColumnDefinitions="Auto,Auto,Auto,*,Auto,Auto" ColumnSpacing="20" VerticalAlignment="Center">
+      <Grid ColumnDefinitions="Auto,Auto,Auto,*,Auto,Auto,Auto" ColumnSpacing="20" VerticalAlignment="Center">
         <Button Theme="{StaticResource PrimaryButton}" Content="{Binding RecordButtonText}" Command="{Binding ToggleRecordingCommand}" MinWidth="200" />
 
         <!-- Telemetry mode: must match the game's Settings → Telemetry → UDP Format -->
@@ -50,6 +50,12 @@
         </Border>
 
         <ToggleSwitch Grid.Column="5" IsChecked="{Binding OverlaysEnabled}" OnContent="OVERLAYS" OffContent="OVERLAYS" VerticalAlignment="Center" />
+
+        <Button Grid.Column="6" Theme="{StaticResource SecondaryButton}" Padding="0" Width="44" Command="{Binding ToggleSettingsCommand}"
+                Classes.selected="{Binding IsSettingsOpen}" ToolTip.Tip="Settings" AutomationProperties.Name="Settings">
+          <PathIcon Width="20" Height="20" Foreground="{StaticResource TextMidBrush}"
+                    Data="M19.14,12.94c0.04-0.3,0.06-0.61,0.06-0.94c0-0.32-0.02-0.64-0.07-0.94l2.03-1.58c0.18-0.14,0.23-0.41,0.12-0.61l-1.92-3.32c-0.12-0.22-0.37-0.29-0.59-0.22l-2.39,0.96c-0.5-0.38-1.03-0.7-1.62-0.94L14.4,2.81c-0.04-0.24-0.24-0.41-0.48-0.41h-3.84c-0.24,0-0.43,0.17-0.47,0.41L9.25,5.35C8.66,5.59,8.12,5.92,7.63,6.29L5.24,5.33c-0.22-0.08-0.47,0-0.59,0.22L2.74,8.87C2.62,9.08,2.66,9.34,2.86,9.48l2.03,1.58C4.84,11.36,4.8,11.69,4.8,12s0.02,0.64,0.07,0.94l-2.03,1.58c-0.18,0.14-0.23,0.41-0.12,0.61l1.92,3.32c0.12,0.22,0.37,0.29,0.59,0.22l2.39-0.96c0.5,0.38,1.03,0.7,1.62,0.94l0.36,2.54c0.05,0.24,0.24,0.41,0.48,0.41h3.84c0.24,0,0.44-0.17,0.47-0.41l0.36-2.54c0.59-0.24,1.13-0.56,1.62-0.94l2.39,0.96c0.22,0.08,0.47,0,0.59-0.22l1.92-3.32c0.12-0.22,0.07-0.47-0.12-0.61L19.14,12.94z M12,15.6c-1.98,0-3.6-1.62-3.6-3.6s1.62-3.6,3.6-3.6s3.6,1.62,3.6,3.6S13.98,15.6,12,15.6z" />
+        </Button>
       </Grid>
     </Border>
 
@@ -68,8 +74,9 @@
       <TextBlock Text="{Binding StatusMessage}" Foreground="{StaticResource TextMidBrush}" FontSize="13" />
     </Border>
 
-    <!-- Recordings sidebar (design: Sidebar.dc.html) -->
-    <Border DockPanel.Dock="Left" Width="300" Background="{StaticResource ChromeBrush}" BorderBrush="{StaticResource DividerBrush}" BorderThickness="0,0,2,0">
+    <!-- Recordings sidebar (design: Sidebar.dc.html); hidden on the settings page, which has nothing to do with recordings -->
+    <Border DockPanel.Dock="Left" Width="300" Background="{StaticResource ChromeBrush}" BorderBrush="{StaticResource DividerBrush}" BorderThickness="0,0,2,0"
+            IsVisible="{Binding !IsSettingsOpen}">
       <DockPanel Margin="16,20">
         <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8" Margin="0,0,0,12">
           <TextBlock Classes="label strong" Text="RECORDINGS" LetterSpacing="2" VerticalAlignment="Center" />
@@ -84,6 +91,24 @@
                       Data="M9,3 L15,3 L15,5 L20,5 L20,7 L4,7 L4,5 L9,5 Z M6,8 L18,8 L17,21 L7,21 Z" />
           </Button>
         </Grid>
+
+        <!-- Delete confirmation: deleting also removes the recording's raw captures and can't be undone. -->
+        <Border DockPanel.Dock="Top" Background="{StaticResource WarningTintBrush}" BorderBrush="{StaticResource DangerBrush}" BorderThickness="2"
+                CornerRadius="8" Padding="12" Margin="0,0,0,12" IsVisible="{Binding PendingDelete, Converter={x:Static ObjectConverters.IsNotNull}}">
+          <StackPanel Spacing="10">
+            <StackPanel Spacing="2">
+              <TextBlock Classes="label strong" Text="DELETE THIS RECORDING?" Foreground="{StaticResource DangerBrush}" />
+              <TextBlock Classes="h2" Text="{Binding PendingDelete.Title, FallbackValue=''}" TextTrimming="CharacterEllipsis" />
+              <TextBlock Classes="mono" Text="{Binding PendingDelete.Subtitle, FallbackValue=''}" FontSize="13" Foreground="{StaticResource TextMidBrush}" TextTrimming="CharacterEllipsis" />
+            </StackPanel>
+            <TextBlock Classes="body" FontSize="13" TextWrapping="Wrap" Text="Its laps, telemetry and raw capture files go too, and its runs leave the setup library. This can't be undone." />
+            <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+              <Button Theme="{StaticResource PrimaryButton}" Content="DELETE" Command="{Binding ConfirmDeleteCommand}" HorizontalAlignment="Stretch" />
+              <Button Grid.Column="1" Theme="{StaticResource SecondaryButton}" Content="CANCEL" Command="{Binding CancelDeleteCommand}" HorizontalAlignment="Stretch" />
+            </Grid>
+          </StackPanel>
+        </Border>
+
         <ListBox Classes="cards" ItemsSource="{Binding Recordings}" SelectedItem="{Binding SelectedRecording}">
           <ListBox.ItemTemplate>
             <DataTemplate x:DataType="vm:RecordingItemViewModel">
@@ -103,35 +128,43 @@
       </DockPanel>
     </Border>
 
-    <!-- Main area: section tabs -->
-    <TabControl Classes="sections" SelectedIndex="{Binding SelectedTabIndex}" Margin="20,12,20,16">
-      <TabItem Header="LIVE">
-        <views:LiveView DataContext="{Binding Live}" />
-      </TabItem>
-      <TabItem Header="LAPS">
-        <views:LapsView DataContext="{Binding Session}" />
-      </TabItem>
-      <TabItem Header="LAP DETAIL">
-        <views:LapDetailView DataContext="{Binding LapDetail}" />
-      </TabItem>
-      <TabItem Header="STRATEGY">
-        <views:StrategyView DataContext="{Binding Session}" />
-      </TabItem>
-      <TabItem Header="ENERGY">
-        <views:EnergyView DataContext="{Binding Energy}" />
-      </TabItem>
-      <TabItem Header="COMPARE">
-        <views:CompareView DataContext="{Binding Compare}" />
-      </TabItem>
-      <TabItem Header="POSITION">
-        <views:PositionView DataContext="{Binding Session}" />
-      </TabItem>
-      <TabItem Header="SETUPS">
-        <views:SetupsView DataContext="{Binding Setups}" />
-      </TabItem>
-      <TabItem Header="SETTINGS">
+    <!-- Main area: section tabs, or the settings page (opened from the toolbar) in their place -->
+    <Panel>
+      <DockPanel Margin="20,12,20,16" MaxWidth="1100" HorizontalAlignment="Left" IsVisible="{Binding IsSettingsOpen}">
+        <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" ColumnSpacing="16" Margin="0,4,0,0">
+          <StackPanel Spacing="4" VerticalAlignment="Center">
+            <TextBlock Classes="label" Text="APP · CONTROLS, OVERLAYS, CONNECTION AND DATA" />
+            <TextBlock Classes="h1" Text="Settings" />
+          </StackPanel>
+          <Button Grid.Column="1" Theme="{StaticResource SecondaryButton}" Content="DONE" Command="{Binding CloseSettingsCommand}" MinWidth="120"
+                  VerticalAlignment="Center" ToolTip.Tip="Back to the tabs (Esc)" />
+        </Grid>
         <views:SettingsView DataContext="{Binding Settings}" />
-      </TabItem>
-    </TabControl>
+      </DockPanel>
+
+      <TabControl Classes="sections" SelectedIndex="{Binding SelectedTabIndex}" Margin="20,12,20,16" IsVisible="{Binding !IsSettingsOpen}">
+        <TabItem Header="LIVE">
+          <views:LiveView DataContext="{Binding Live}" />
+        </TabItem>
+        <TabItem Header="LAPS">
+          <views:LapsView DataContext="{Binding Session}" />
+        </TabItem>
+        <TabItem Header="LAP DETAIL">
+          <views:LapDetailView DataContext="{Binding LapDetail}" />
+        </TabItem>
+        <TabItem Header="STRATEGY">
+          <views:StrategyView DataContext="{Binding Session}" />
+        </TabItem>
+        <TabItem Header="ENERGY">
+          <views:EnergyView DataContext="{Binding Energy}" />
+        </TabItem>
+        <TabItem Header="COMPARE">
+          <views:CompareView DataContext="{Binding Compare}" />
+        </TabItem>
+        <TabItem Header="SETUPS">
+          <views:SetupsView DataContext="{Binding Setups}" />
+        </TabItem>
+      </TabControl>
+    </Panel>
   </DockPanel>
 </Window>

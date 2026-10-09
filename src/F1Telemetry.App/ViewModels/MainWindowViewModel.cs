@@ -19,9 +19,7 @@ public enum MainTab
     Strategy,
     Energy,
     Compare,
-    Position,
     Setups,
-    Settings,
 }
 
 public sealed partial class MainWindowViewModel : ObservableObject
@@ -122,6 +120,12 @@ public sealed partial class MainWindowViewModel : ObservableObject
     [ObservableProperty] public partial bool IsRecording { get; set; }
     [ObservableProperty] public partial RecordingItemViewModel? SelectedRecording { get; set; }
     [ObservableProperty] public partial MainTab SelectedTab { get; set; }
+
+    /// <summary>Settings is a page of its own, opened from the toolbar, not one of the section tabs.</summary>
+    [ObservableProperty] public partial bool IsSettingsOpen { get; set; }
+
+    /// <summary>The recording waiting for the user to confirm its deletion, or null.</summary>
+    [ObservableProperty] public partial RecordingItemViewModel? PendingDelete { get; set; }
     [ObservableProperty] public partial string StatusMessage { get; set; } = "";
 
     private SourceOption? _selectedSource;
@@ -167,6 +171,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
 
     partial void OnSelectedRecordingChanged(RecordingItemViewModel? value)
     {
+        PendingDelete = null;
         _ = Session.LoadAsync(value?.Info);
         if (SelectedTab == MainTab.Energy)
         {
@@ -182,12 +187,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
 
     partial void OnSelectedTabChanged(MainTab value)
     {
-        // Overlay preview is opt-in on the settings page and never outlives it.
-        if (value != MainTab.Settings)
-        {
-            Settings.PreviewOverlays = false;
-        }
-
+        IsSettingsOpen = false;
         OnPropertyChanged(nameof(SelectedTabIndex));
 
         if (value == MainTab.Compare)
@@ -203,6 +203,21 @@ public sealed partial class MainWindowViewModel : ObservableObject
             _ = Setups.LoadAsync();
         }
     }
+
+    partial void OnIsSettingsOpenChanged(bool value)
+    {
+        // Overlay preview is opt-in on the settings page and never outlives it.
+        if (!value)
+        {
+            Settings.PreviewOverlays = false;
+        }
+    }
+
+    [RelayCommand]
+    private void ToggleSettings() => IsSettingsOpen = !IsSettingsOpen;
+
+    [RelayCommand]
+    private void CloseSettings() => IsSettingsOpen = false;
 
     /// <summary>Shows the selected recording on the energy tab (loaded only while the tab is open).</summary>
     public async Task ActivateEnergyAsync()
@@ -251,11 +266,38 @@ public sealed partial class MainWindowViewModel : ObservableObject
         SelectedRecording = Recordings.FirstOrDefault(r => r.Info.Id == selectedId);
     }
 
+    /// <summary>First step of a delete: asks for confirmation in the sidebar (the raw captures go with it).</summary>
     [RelayCommand]
-    private async Task DeleteRecordingAsync(RecordingItemViewModel? item)
+    private void DeleteRecording(RecordingItemViewModel? item)
     {
         item ??= SelectedRecording;
-        if (item is null || item.Info.Id == _runtime.Recorder.ActiveRecordingId)
+        if (item is null)
+        {
+            return;
+        }
+
+        if (item.Info.Id == _runtime.Recorder.ActiveRecordingId)
+        {
+            StatusMessage = "Stop the recording before deleting it.";
+            return;
+        }
+
+        PendingDelete = item;
+    }
+
+    [RelayCommand]
+    private void CancelDelete() => PendingDelete = null;
+
+    [RelayCommand]
+    private async Task ConfirmDeleteAsync()
+    {
+        if (PendingDelete is not { } item)
+        {
+            return;
+        }
+
+        PendingDelete = null;
+        if (item.Info.Id == _runtime.Recorder.ActiveRecordingId)
         {
             StatusMessage = "Stop the recording before deleting it.";
             return;
@@ -322,8 +364,8 @@ public sealed partial class MainWindowViewModel : ObservableObject
 
         if (IsRecording)
         {
+            // No tab switch: a recording is often started by hotkey mid-drive, so the user stays where they are.
             _liveRefresh.Start();
-            SelectedTab = MainTab.Strategy;
             StatusMessage = state.Change == RecordingChange.AutoSplit ? $"New session detected – continued in recording #{state.RecordingId}" : $"Recording #{state.RecordingId}";
         }
         else

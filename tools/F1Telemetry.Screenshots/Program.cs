@@ -127,16 +127,25 @@ vm.SelectedTab = MainTab.LapDetail;
 Capture(window, "03-lap-detail");
 vm.SelectedTab = MainTab.Strategy;
 Capture(window, "04-strategy");
-vm.SelectedTab = MainTab.Position;
-Capture(window, "05-position");
-vm.SelectedTab = MainTab.Settings;
-Capture(window, "06-settings");
+if (window.GetVisualDescendants().OfType<StrategyView>().FirstOrDefault()?.GetVisualDescendants().OfType<ScrollViewer>().FirstOrDefault() is { } strategyScroll)
+{
+    // The position chart sits at the bottom of the strategy tab.
+    strategyScroll.Offset = strategyScroll.Offset.WithY(10_000);
+    Capture(window, "05-position");
+    strategyScroll.Offset = default;
+}
+
+// Settings is a page opened from the toolbar; the controls table is at its top.
+vm.IsSettingsOpen = true;
+Capture(window, "12-controller");
 if (window.GetVisualDescendants().OfType<SettingsView>().FirstOrDefault()?.GetVisualDescendants().OfType<ScrollViewer>().FirstOrDefault() is { } settingsScroll)
 {
-    settingsScroll.Offset = settingsScroll.Offset.WithY(400);
-    Capture(window, "12-controller");
+    settingsScroll.Offset = settingsScroll.Offset.WithY(464);
+    Capture(window, "06-settings");
     settingsScroll.Offset = default;
 }
+
+vm.IsSettingsOpen = false;
 
 // Race vs race: the one-stop race as A, the two-stop race as B; the second shot scrolls down to the charts.
 vm.SelectedRecording = vm.Recordings.First(r => r.Description == "One stop");
