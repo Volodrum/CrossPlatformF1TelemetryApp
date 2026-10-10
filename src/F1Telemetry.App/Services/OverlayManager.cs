@@ -84,7 +84,7 @@ public sealed class OverlayManager
         [OverlayKind.Inputs] = new(552, 220),
         [OverlayKind.SectorBox] = new(400, 116),
         [OverlayKind.TimingTower] = new(420, 290),
-        [OverlayKind.ErsPlan] = new(300, 300),
+        [OverlayKind.ErsPlan] = new(300, 112),
     };
 
     public event Action? StateChanged;
@@ -179,7 +179,7 @@ public sealed class OverlayManager
         {
             if (!_editMode)
             {
-                ErsPlan.Update(_ersPlan, _hub.LastSample, _hub.Field);
+                ErsPlan.Update(_ersPlan, _hub.LastSample);
             }
         };
         ApplySettings();
@@ -259,7 +259,7 @@ public sealed class OverlayManager
             SectorBox.Update(box, field?.Player?.TeamColour, SessionTypes.IsQualifying(_hub.Session?.SessionType ?? 0));
         }
 
-        ErsPlan.Update(_ersPlan, _hub.LastSample, field);
+        ErsPlan.Update(_ersPlan, _hub.LastSample);
     }
 
     /// <summary>Hotkey: flips the conditions &amp; strategy overlay between its strategy and damage pages.</summary>

@@ -265,7 +265,7 @@ overlays.ErsPlan.LoadPreview();
 var ersBoard = new Window
 {
     Width = 360,
-    Height = 370,
+    Height = 160,
     Background = new SolidColorBrush(Color.Parse("#8A929C")),
     Content = new ErsPlanOverlayView { DataContext = overlays.ErsPlan, Margin = new Thickness(24), VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top },
 };

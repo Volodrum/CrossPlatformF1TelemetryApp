@@ -19,9 +19,10 @@ public enum RaceStance
 /// <param name="OnPlan">The car runs the mode the plan wants (always true between zones).</param>
 /// <param name="NextMode">The mode to switch to next: later in this zone, or at the start of the next one.</param>
 /// <param name="NextAt">Where: "270 KM/H" for a speed switch, "340 M" for a distance.</param>
+/// <param name="NextIn">Metres to the next switch; null for a speed switch or when there is no next mode.</param>
 /// <param name="Target">The battery the plan has at this point, J.</param>
 /// <param name="Delta">Battery now minus <paramref name="Target"/>, J (above 0 = more than planned).</param>
-public sealed record CoachAdvice(ZonePlan? Zone, int? NowMode, bool OnPlan, int? NextMode, string NextAt, double Target, double Delta);
+public sealed record CoachAdvice(ZonePlan? Zone, int? NowMode, bool OnPlan, int? NextMode, string NextAt, double? NextIn, double Target, double Delta);
 
 /// <summary>Reads a <see cref="LapPlan"/> at the car's position, for the live ERS PLAN overlay.</summary>
 public static class ErsCoach
@@ -37,6 +38,7 @@ public static class ErsCoach
         int? now = null;
         int? next = null;
         var nextAt = "";
+        double? nextIn = null;
         if (zone is not null)
         {
             var choice = zone.Choice;
@@ -57,7 +59,7 @@ public static class ErsCoach
                     switched = d >= at;
                     if (!switched)
                     {
-                        (next, nextAt) = (choice.Then, Metres(at - d));
+                        (next, nextAt, nextIn) = (choice.Then, Metres(at - d), at - d);
                     }
                 }
             }
@@ -68,10 +70,10 @@ public static class ErsCoach
         if (next is null && NextZone(plan, d) is { } upcoming)
         {
             var distance = upcoming.From > d ? upcoming.From - d : upcoming.From + length - d;
-            (next, nextAt) = (upcoming.Choice.First, Metres(distance));
+            (next, nextAt, nextIn) = (upcoming.Choice.First, Metres(distance), distance);
         }
 
-        return new CoachAdvice(zone, now, now is null || now == currentMode, next, nextAt, target, store - target);
+        return new CoachAdvice(zone, now, now is null || now == currentMode, next, nextAt, nextIn, target, store - target);
     }
 
     /// <summary>The first zone that starts after <paramref name="d"/>, wrapping to the first one of the next lap.</summary>

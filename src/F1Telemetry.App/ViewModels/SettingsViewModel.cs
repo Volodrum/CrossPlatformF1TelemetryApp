@@ -225,7 +225,7 @@ public sealed partial class SettingsViewModel : ObservableObject
             new(OverlayKind.Inputs, "Input trace", "Throttle and brake history on a 0–100 % scale, updated every frame.", settings, overlays),
             new(OverlayKind.SectorBox, "Sector box", "TV-style qualifying box: sector colours, lap time, and each sector's time and gap to the reference lap.", settings, overlays),
             new(OverlayKind.TimingTower, "Timing tower", "The six cars around you: gap, tyre and age, battery charge, penalties and warnings.", settings, overlays),
-            new(OverlayKind.ErsPlan, "ERS plan", "The deploy mode the plan wants now, the next switch, and your battery against the plan. Re-plans at every line; the hotkey steps through race (normal, attack, recover) and qualifying.", settings, overlays),
+            new(OverlayKind.ErsPlan, "ERS plan", "The deploy mode the plan wants now, the next one, and how long until the switch. Re-plans at every line; the hotkey steps through race (normal, attack, recover) and qualifying.", settings, overlays),
         ];
     }
 

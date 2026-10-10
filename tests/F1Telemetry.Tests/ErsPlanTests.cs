@@ -206,6 +206,7 @@ public class ErsPlanTests
         Assert.Equal((1, DeployModes.Overtake, true, DeployModes.Medium, "250 KM/H"), (early.Zone!.Number, early.NowMode, early.OnPlan, early.NextMode, early.NextAt));
         Assert.Equal(stores[20], early.Target);
         Assert.Equal(2_900_000 - stores[20], early.Delta);
+        Assert.Null(early.NextIn); // a speed switch has no distance
 
         var fast = ErsCoach.Advise(plan, 500, 2_900_000, DeployModes.Overtake, 260);
         Assert.Equal((DeployModes.Medium, false, DeployModes.Overtake, "1250 M"), (fast.NowMode, fast.OnPlan, fast.NextMode, fast.NextAt));
@@ -216,6 +217,7 @@ public class ErsPlanTests
 
         var partial = ErsCoach.Advise(plan, 1825, 2_000_000, DeployModes.Overtake, 200);
         Assert.Equal((DeployModes.Overtake, DeployModes.None, "300 M"), (partial.NowMode, partial.NextMode, partial.NextAt)); // switch at 2125 m
+        Assert.Equal(300, partial.NextIn!.Value, 6);
 
         var last = ErsCoach.Advise(plan, 2900, 2_000_000, DeployModes.None, 150);
         Assert.Equal((DeployModes.Overtake, "400 M"), (last.NextMode, last.NextAt)); // the first zone of the next lap
