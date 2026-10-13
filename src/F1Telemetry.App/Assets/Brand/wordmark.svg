@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="232" height="32" viewBox="0 0 232 32">
+  <polygon points="0,28 8,4 14,4 6,28" fill="#E10600"/>
+  <polygon points="10,28 18,4 24,4 16,28" fill="#F4F6F9"/>
+  <polygon points="20,28 28,4 32,4 24,28" fill="#3A404C"/>
+  <text x="42" y="25" font-family="Chakra Petch, sans-serif" font-style="italic" font-weight="700" font-size="20" fill="#F4F6F9">F1</text>
+  <text x="68" y="25" font-family="Chakra Petch, sans-serif" font-style="italic" font-weight="700" font-size="20" letter-spacing="2.5" fill="#8D97A6">TELEMETRY</text>
+</svg>

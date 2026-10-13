@@ -4,6 +4,7 @@
     <AssemblyName>F1Telemetry</AssemblyName>
     <RootNamespace>F1Telemetry.App</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\Brand\app.ico</ApplicationIcon>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
     <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
@@ -32,6 +33,10 @@
     <!-- Embedded UI fonts (SIL OFL 1.1, see Assets/Fonts/OFL.txt). Also copied next to the exe so ScottPlot (Skia) can load them. -->
     <AvaloniaResource Include="Assets\Fonts\*.ttf" />
     <None Include="Assets\Fonts\*.ttf" Link="fonts\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Speed-stripes app icon: icon.svg is the master; app.ico and the PNGs are rendered from it. -->
+    <AvaloniaResource Include="Assets\Brand\app.ico" />
   </ItemGroup>
   <ItemGroup>
     <None Include="..\..\assets\track_maps\*.json" Link="track_maps\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
