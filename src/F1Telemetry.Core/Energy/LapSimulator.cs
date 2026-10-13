@@ -10,7 +10,13 @@ namespace F1Telemetry.Core.Energy;
 /// <param name="MgukPower">MGU-K output here on the reference lap, W.</param>
 /// <param name="Mode">Deploy mode the reference lap ran here.</param>
 /// <param name="ReferenceSeconds">Time the reference lap took here.</param>
-public sealed record PlanSegment(int Index, double From, bool FullThrottle, int Aero, double IcePower, double MgukPower, double Harvest, double Deploy, int Mode, double ReferenceSeconds);
+/// <param name="Override">The 2026 overtake override was on here: the MGU-K gave more than its mode does on its own.</param>
+/// <param name="Empty">
+/// The battery was (nearly) empty here, on the lap or on one of the laps averaged: it paid what it had, not what the mode
+/// asks.
+/// </param>
+public sealed record PlanSegment(int Index, double From, bool FullThrottle, int Aero, double IcePower, double MgukPower, double Harvest, double Deploy, int Mode,
+    double ReferenceSeconds, bool Override = false, bool Empty = false);
 
 /// <summary>
 /// A lap cut into <see cref="Step"/> m segments for the <see cref="LapSimulator"/>: speeds at every boundary, where it
@@ -20,6 +26,9 @@ public sealed record PlanSegment(int Index, double From, bool FullThrottle, int 
 public sealed class LapProfile
 {
     public const double Step = 25;
+
+    /// <summary>Below this the battery counts as empty, J: it can't give a mode all it asks.</summary>
+    public const double NearlyEmpty = 150_000;
 
     private LapProfile(int lapNumber, int lapCount, IReadOnlyList<PlanSegment> segments, double[] speed, double[] level, double braking, double massKg,
         double actualSeconds)
@@ -146,7 +155,9 @@ public sealed class LapProfile
                 Harvest: harvest,
                 Deploy: deploy,
                 Mode: inside.Count == 0 ? 0 : inside.GroupBy(s => s.ErsDeployMode).MaxBy(g => g.Count())!.Key,
-                ReferenceSeconds: 2 * Step / (speed[i] + speed[i + 1])));
+                ReferenceSeconds: 2 * Step / (speed[i] + speed[i + 1]),
+                Override: inside.Count(s => s.OvertakeActive != 0) * 2 > inside.Count,
+                Empty: Math.Min(level[i], level[i + 1]) <= NearlyEmpty));
         }
 
         // The braking capability the lap showed: 80th percentile of its deceleration under braking.
@@ -199,7 +210,9 @@ public sealed class LapProfile
                 Harvest: at.Average(s => s.Harvest),
                 Deploy: at.Average(s => s.Deploy),
                 Mode: at.GroupBy(s => s.Mode).MaxBy(g => g.Count())!.Key,
-                ReferenceSeconds: 2 * Step / (speed[i] + speed[i + 1])));
+                ReferenceSeconds: 2 * Step / (speed[i] + speed[i + 1]),
+                Override: at.Count(s => s.Override) * 2 > at.Count,
+                Empty: at.Any(s => s.Empty)));
         }
 
         return new LapProfile(0, laps.Count, segments, speed, level, laps.Average(l => l.Braking), laps.Average(l => l.MassKg),
@@ -263,8 +276,13 @@ public sealed record DeployOption(int First, int Then, int? UntilKmh = null, dou
 /// the car accelerates from the reference speed at the zone's start with the ICE output of the reference plus the
 /// MGU-K output of the chosen mode (<see cref="DeployMap"/>), against the fitted drag (<see cref="StraightLineFit"/>),
 /// never faster than it can still brake for the next corner. The battery takes the reference's harvest (losing what
-/// doesn't fit in it) and pays for the deployment, which stops at <see cref="Reserve"/>. Off the flat-out stretches
-/// it pays what the reference deployed there.</para>
+/// doesn't fit in it) and pays what the mode takes from it by the game's deploy counter, None included, which is more
+/// than the MGU-K gives; deployment stops at <see cref="Reserve"/>. The reference as driven pays what its deploy
+/// counter paid. Off the flat-out stretches it pays what the reference deployed there.</para>
+/// <para>The deploy map is an average over every lap at the track. What the modes cost on this lap is calibrated
+/// against the reference: <see cref="DrawScale"/> makes its own modes, at its own speeds, cost what its deploy counter
+/// paid on the flat-out stretches where the battery had charge to give and the overtake override was off. A plan
+/// never counts on the override; the model check replays the reference's override stretches as driven.</para>
 /// <para>The fit is an average over many laps; gear shifts, traction and the tow make every stretch differ from it. Each
 /// flat-out segment keeps the difference between the reference's acceleration and the fit's at the reference's power,
 /// so the reference replays as driven and the fit only decides what a change of MGU-K output does.</para>
@@ -278,6 +296,9 @@ public sealed class LapSimulator
     private const double MaxResidual = 15;
 
     private readonly double[] _residual;
+
+    // The calibration stays within this of the map: beyond it the reference is too unlike the laps the map was learned on.
+    private const double MaxDrawCorrection = 0.25;
 
     private LapSimulator(LapProfile lap, ErsCarModel model, double reserve, StraightLineFit fallbackFit)
     {
@@ -300,15 +321,41 @@ public sealed class LapSimulator
             var fitted = Fit(segment).Acceleration(segment.IcePower + segment.MgukPower, v0, lap.MassKg);
             _residual[i] = Math.Clamp(actual - fitted, -MaxResidual, MaxResidual);
         }
+
+        double paid = 0, byMap = 0;
+        for (var i = 0; i < lap.Segments.Count; i++)
+        {
+            var segment = lap.Segments[i];
+            // Where the battery was (nearly) empty it paid what it had, and under the override more: not what the mode asks.
+            if (segment.FullThrottle && !segment.Override && !segment.Empty)
+            {
+                paid += segment.Deploy;
+                byMap += (model.Deploy.Curve(segment.Mode)?.DrawAt((lap.Speed[i] + lap.Speed[i + 1]) / 2 * 3.6) ?? 0) * segment.ReferenceSeconds;
+            }
+        }
+
+        DrawScale = paid > 0 && byMap > 0 ? Math.Clamp(paid / byMap, 1 - MaxDrawCorrection, 1 + MaxDrawCorrection) : 1;
     }
+
+    /// <summary>
+    /// What the modes cost on this lap against the deploy map: the reference's flat-out deployment by its deploy counter
+    /// over what the map says its modes cost at its speeds (1 when the map is right for this lap).
+    /// </summary>
+    public double DrawScale { get; }
 
     private StraightLineFit Fit(PlanSegment segment) => _fits.GetValueOrDefault(segment.Aero, _fallbackFit);
 
     public LapProfile Lap { get; }
     public ErsCarModel Model { get; }
 
-    /// <summary>Charge kept back for fights, J: deployment stops there.</summary>
+    /// <summary>Charge kept back, J: deployment stops there (not for the reference's own modes, which are what happened).</summary>
     public double Reserve { get; }
+
+    /// <summary>
+    /// The charge a race plan never goes below, J: room for the laps not to be driven exactly as planned (a mode
+    /// switched late, traffic, a different line), so the battery doesn't run flat. A qualifying lap spends it all.
+    /// </summary>
+    public const double RaceReserve = 400_000;
 
     public const double Capacity = EnergyAnalyzer.Capacity;
 
@@ -329,6 +376,7 @@ public sealed class LapSimulator
         double time = 0, deployed = 0;
         var v = Lap.Speed[from];
         var switched = false;
+        var reserve = option.IsAsDriven ? 0 : Reserve; // the reference as driven, and its modes, are what happened
         var zoneLength = Math.Max(1, deployEnd - from);
         for (var i = from; i < to; i++)
         {
@@ -337,7 +385,7 @@ public sealed class LapSimulator
             if (i >= deployEnd || !segment.FullThrottle)
             {
                 // Not flat out: the reference speed, time and part-throttle deployment.
-                var paid = Math.Min(Math.Max(0, store - Reserve), segment.Deploy);
+                var paid = Math.Min(Math.Max(0, store - reserve), segment.Deploy);
                 store -= paid;
                 deployed += paid;
                 time += segment.ReferenceSeconds;
@@ -359,21 +407,33 @@ public sealed class LapSimulator
                 mode = switched ? option.Then : option.First;
             }
 
-            var power = option == DeployOption.AsDriven ? segment.MgukPower
-                : mode == DeployModes.None ? 0
-                : Model.Deploy.Curve(mode)?.PowerAt(kmh) ?? 0;
-            var available = Math.Max(0, store - Reserve);
-            var estimate = LapProfile.Step / v;
-            if (power * estimate > available)
+            // The mode's output at the segment's mean speed: guessed from the reference's speed-up first, then from the
+            // car's own. Out of a slow corner the output climbs steeply, and the entry speed alone undercounts it.
+            var curve = Model.Deploy.Curve(mode);
+            var available = Math.Max(0, store - reserve);
+            var next = Lap.Speed[i + 1] - Lap.Speed[i] + v;
+            double power = 0, draw = 0;
+            for (var pass = 0; pass < 2; pass++)
             {
-                power = available / estimate;
+                var mean = (v + next) / 2 * 3.6;
+                // The reference's own modes under the override did what the override does: the map doesn't know it.
+                (power, draw) = option == DeployOption.AsDriven || (option == DeployOption.AsDrivenByMap && segment.Override)
+                    ? (segment.MgukPower, segment.Deploy / segment.ReferenceSeconds)
+                    : (curve?.PowerAt(mean) ?? 0, (curve?.DrawAt(mean) ?? 0) * DrawScale);
+                var estimate = 2 * LapProfile.Step / (v + next);
+                if (draw * estimate > available)
+                {
+                    // Not enough charge for the whole segment: the output drops with what the battery can give.
+                    var share = available / (draw * estimate);
+                    (power, draw) = (power * share, draw * share);
+                }
+
+                var a = Fit(segment).Acceleration(segment.IcePower + power, v, Lap.MassKg) + _residual[i];
+                next = Math.Min(Math.Sqrt(Math.Max(25, v * v + 2 * a * LapProfile.Step)), Lap.Envelope[i + 1]);
             }
 
-            var a = Fit(segment).Acceleration(segment.IcePower + power, v, Lap.MassKg) + _residual[i];
-            var next = Math.Sqrt(Math.Max(25, v * v + 2 * a * LapProfile.Step));
-            next = Math.Min(next, Lap.Envelope[i + 1]);
             var dt = 2 * LapProfile.Step / (v + next);
-            var energy = Math.Min(available, power * dt);
+            var energy = Math.Min(available, draw * dt);
             store -= energy;
             deployed += energy;
             time += dt;

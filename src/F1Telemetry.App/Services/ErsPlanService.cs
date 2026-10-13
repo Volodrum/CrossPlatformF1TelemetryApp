@@ -7,13 +7,29 @@ using Microsoft.Extensions.Logging;
 namespace F1Telemetry.App.Services;
 
 /// <summary>
-/// The plan behind the live ERS PLAN overlay. When a session at a track starts, it learns the car model from every lap
-/// recorded there and takes the fastest clean lap with power data as the reference; then it plans every lap at the line
-/// from the battery the car actually has. Qualifying sessions and time trial plan qualifying laps, everything else race
-/// laps; <see cref="NextMode"/> steps through race (normal, attack, recover) and qualifying. UI thread.
+/// The plan behind the live ERS PLAN overlay. It plans on a session's energy map, as the energy tab's ERS PLAN shows
+/// it: races on the session's typical lap, qualifying on its fastest lap, with the car model learned from every lap at
+/// the track. The session is the newest earlier one at the track with <see cref="MinLaps"/> typical laps, or else the
+/// one being recorded once it has driven that many: the battery over a lap or two is a poor guide (out-laps, traffic,
+/// a car model learned from too little). Until then the overlay waits, and the plan is re-learned after every lap while
+/// it rests on the session being driven. Every lap at the line it plans from the battery the car actually has.
+/// Qualifying sessions and time trial plan qualifying laps, everything else race laps; <see cref="NextMode"/> steps
+/// through race (normal, attack, recover) and qualifying. UI thread.
 /// </summary>
 public sealed class ErsPlanService
 {
+    /// <summary>Typical laps a session needs before the overlay plans on it.</summary>
+    public const int MinLaps = 3;
+
+    // Planning on the session being driven, the plan is re-learned after every lap until it averages this many laps.
+    private const int SettledLaps = 10;
+
+    // Earlier sessions at the track looked at for one to plan on, newest first.
+    private const int SessionsToTry = 8;
+
+    // The time of the lap just completed reaches the store a moment after the line.
+    private static readonly TimeSpan LapTimeDelay = TimeSpan.FromSeconds(2);
+
     private static readonly (PlanKind Kind, RaceStance Stance)[] Modes =
     [
         (PlanKind.Race, RaceStance.Normal),
@@ -27,9 +43,14 @@ public sealed class ErsPlanService
     private readonly ILogger _log;
     private (GameFormat Format, int TrackId)? _track;
     private int _sessionType = -1;
-    private ErsPlanner? _planner;
+    private ErsPlanner? _race;
+    private ErsPlanner? _qualifying;
     private double _steadyStart;
     private int _version;
+    private bool _loading;
+
+    // The plan rests on the session being driven (or on an earlier one with too few laps): re-learn after every lap.
+    private bool _learning;
 
     public ErsPlanService(TelemetryRuntime runtime, LiveDataHub hub, ILogger<ErsPlanService> log)
     {
@@ -37,13 +58,13 @@ public sealed class ErsPlanService
         _hub = hub;
         _log = log;
         hub.SessionChanged += OnSession;
-        hub.LapCompleted += lap => _ = ReplanAsync();
+        hub.LapCompleted += _ => OnLapCompleted();
     }
 
     public PlanKind Kind { get; private set; } = PlanKind.Race;
     public RaceStance Stance { get; private set; } = RaceStance.Normal;
 
-    /// <summary>This lap's plan; null until a reference lap and car model are ready.</summary>
+    /// <summary>This lap's plan; null until a session to plan on and a car model are ready.</summary>
     public LapPlan? Plan { get; private set; }
 
     /// <summary>Why there is no plan, or what the plan is based on.</summary>
@@ -81,7 +102,7 @@ public sealed class ErsPlanService
         if (_track != track)
         {
             _track = track;
-            _ = LoadAsync(track);
+            _ = LoadAsync(track, fresh: true);
         }
         else
         {
@@ -89,14 +110,38 @@ public sealed class ErsPlanService
         }
     }
 
-    private async Task LoadAsync((GameFormat Format, int TrackId) track)
+    /// <summary>At the line: plan the new lap, and learn again while the plan is still settling (or there is none yet).</summary>
+    private void OnLapCompleted()
+    {
+        if (_track is { } track && (_race is null || _learning) && !_loading)
+        {
+            _ = LoadAsync(track, fresh: false);
+        }
+
+        _ = ReplanAsync();
+    }
+
+    /// <summary>
+    /// Learns the car model and picks the session to plan on. A <paramref name="fresh"/> load (a new track) drops the
+    /// plan first; otherwise the plan on show stays until a new one is ready.
+    /// </summary>
+    private async Task LoadAsync((GameFormat Format, int TrackId) track, bool fresh)
     {
         var version = ++_version;
-        _planner = null;
-        Plan = null;
-        SetStatus("Learning the car model for this track…");
+        _loading = true;
+        if (fresh)
+        {
+            (_race, _qualifying, _learning) = (null, null, false);
+            SetStatus("Learning the car model for this track…");
+        }
+
         try
         {
+            if (!fresh)
+            {
+                await Task.Delay(LapTimeDelay);
+            }
+
             var store = _runtime.Store;
             await store.FlushAsync();
             var model = await Task.Run(async () => ErsModelBuilder.Build(track.Format, track.TrackId, await store.GetModelSamplesAsync(track.Format, track.TrackId)));
@@ -107,30 +152,39 @@ public sealed class ErsPlanService
 
             if (!model.HasPowerData || model.StraightLine.Count == 0 || model.Deploy.Curves.Count == 0)
             {
-                SetStatus("No laps with ICE and MGU-K power at this track yet. Record a few laps here and the plan follows.");
+                Waiting($"No laps with ICE and MGU-K power at this track yet. Record here: the plan starts after {MinLaps} laps.");
                 return;
             }
 
-            var reference = await FindReferenceAsync(track);
+            var (session, waiting) = await FindSessionAsync(track, model);
             if (version != _version)
             {
                 return;
             }
 
-            if (reference is not { } found || LapSimulator.Create(found.Lap, model) is not { } simulator)
+            if (session is not { } found)
             {
-                SetStatus("No clean lap with power data at this track yet.");
+                Waiting(waiting);
                 return;
             }
 
-            var planner = await Task.Run(() => new ErsPlanner(simulator));
-            var steady = await Task.Run(() => planner.Plan(PlanKind.Race).Plan.StartStore);
+            if (LapSimulator.Create(found.Inputs.Race, model, LapSimulator.RaceReserve) is not { } raceLap || LapSimulator.Create(found.Inputs.Qualifying, model) is not { } qualifyingLap)
+            {
+                Waiting("The laps at this track can't be simulated yet. Record a few more.");
+                return;
+            }
+
+            var (race, qualifying, steady) = await Task.Run(() =>
+            {
+                var race = new ErsPlanner(raceLap);
+                return (race, new ErsPlanner(qualifyingLap), race.Plan(PlanKind.Race).Plan.StartStore);
+            });
             if (version != _version)
             {
                 return;
             }
 
-            (_planner, _steadyStart) = (planner, steady);
+            (_race, _qualifying, _steadyStart, _learning) = (race, qualifying, steady, found.Learning);
             Status = $"Based on {found.Label}.";
             await ReplanAsync();
         }
@@ -139,46 +193,95 @@ public sealed class ErsPlanService
             _log.LogError(ex, "Live ERS plan failed");
             if (version == _version)
             {
-                SetStatus($"Could not plan: {ex.Message}");
+                Waiting($"Could not plan: {ex.Message}");
             }
         }
-    }
-
-    /// <summary>The fastest clean lap with power data at the track, over every recording there (newest first on a tie).</summary>
-    private async Task<(LapProfile Lap, string Label)?> FindReferenceAsync((GameFormat Format, int TrackId) track)
-    {
-        var candidates = new List<(RecordingInfo Recording, LapRecord Lap)>();
-        foreach (var recording in (await _runtime.Store.GetRecordingsAsync()).Where(r => r.Format == track.Format && r.TrackId == track.TrackId))
+        finally
         {
-            var laps = await _runtime.Analysis.GetClassifiedLapsAsync(recording);
-            candidates.AddRange(laps.Where(l => l.HasTime && l.IsValid && l.LapType == LapType.Regular).Select(l => (recording, l)));
-        }
-
-        // The fastest few: an older lap may be faster but recorded before power was.
-        foreach (var (recording, lap) in candidates.OrderBy(c => c.Lap.LapTimeMs).ThenByDescending(c => c.Recording.StartTime).Take(8))
-        {
-            var samples = await _runtime.Store.GetLapSamplesAsync(recording.Id, lap.LapNumber);
-            if (LapProfile.From(samples, track.Format, lap.LapTimeMs / 1000.0) is { } profile)
+            if (version == _version)
             {
-                return (profile, $"lap {lap.LapNumber} of #{recording.Id} ({Core.Formatting.TimeFormat.Lap(lap.LapTimeMs)})");
+                _loading = false;
+            }
+        }
+    }
+
+    /// <summary>
+    /// The session to plan on: the newest earlier one at the track with <see cref="MinLaps"/> typical laps, else the
+    /// one being recorded once it has that many, else the earlier one with the most. Null, with what the overlay is
+    /// waiting for, when there is none.
+    /// </summary>
+    private async Task<((PlanInputs Inputs, string Label, bool Learning)? Session, string Waiting)> FindSessionAsync(
+        (GameFormat Format, int TrackId) track, ErsCarModel model)
+    {
+        var live = _runtime.Recorder.ActiveRecordingId;
+        var recordings = (await _runtime.Store.GetRecordingsAsync())
+            .Where(r => r.Format == track.Format && r.TrackId == track.TrackId)
+            .OrderByDescending(r => r.StartTime)
+            .ToList();
+
+        (PlanInputs Inputs, RecordingInfo Recording)? fewer = null;
+        foreach (var recording in recordings.Where(r => r.Id != live).Take(SessionsToTry))
+        {
+            if (await InputsAsync(recording, model) is not { } inputs)
+            {
+                continue;
+            }
+
+            if (inputs.RaceLaps >= MinLaps)
+            {
+                return ((inputs, Label(recording, inputs), false), "");
+            }
+
+            if (fewer is null || inputs.RaceLaps > fewer.Value.Inputs.RaceLaps)
+            {
+                fewer = (inputs, recording);
             }
         }
 
-        return null;
+        var drivenLaps = 0;
+        if (recordings.FirstOrDefault(r => r.Id == live) is { } current && await InputsAsync(current, model) is { } own)
+        {
+            drivenLaps = own.RaceLaps;
+            if (own.RaceLaps >= MinLaps)
+            {
+                var settled = own.RaceLaps >= SettledLaps;
+                return ((own, $"this session ({own.RaceLaps} typical laps{(settled ? "" : ", still learning")})", !settled), "");
+            }
+        }
+
+        if (fewer is { } earlier)
+        {
+            return ((earlier.Inputs, Label(earlier.Recording, earlier.Inputs), true), "");
+        }
+
+        return (null, live is null
+            ? $"No earlier session at this track to plan on. Record this one: the plan starts after {MinLaps} typical laps."
+            : $"Learning the battery: {drivenLaps} of {MinLaps} typical laps in this session.");
     }
+
+    /// <summary>What <paramref name="recording"/> gives the planner, as its energy tab plans it; null when it can't be planned.</summary>
+    private async Task<PlanInputs?> InputsAsync(RecordingInfo recording, ErsCarModel model)
+    {
+        var laps = await _runtime.Analysis.GetClassifiedLapsAsync(recording);
+        var (inputs, _) = await PlanInputs.LoadAsync(_runtime, recording, model, SessionLaps.Representative(laps), SessionLaps.Fastest(laps));
+        return inputs;
+    }
+
+    private static string Label(RecordingInfo recording, PlanInputs inputs) =>
+        $"{SessionTypes.Name(recording.SessionType)} #{recording.Id} ({(inputs.RaceLaps == 1 ? "1 typical lap" : $"{inputs.RaceLaps} typical laps")})";
 
     /// <summary>Plans the lap now starting from the battery the car has (the line was just crossed).</summary>
     private async Task ReplanAsync()
     {
-        if (_planner is not { } planner)
+        var kind = Kind;
+        if ((kind == PlanKind.Qualifying ? _qualifying : _race) is not { } planner)
         {
             return;
         }
 
         var version = _version;
         var store = _hub.LastSample?.ErsStoreEnergy is > 0 and var live ? live : _steadyStart;
-        var (kind, stance, steady) = (Kind, Stance, _steadyStart);
-        var target = steady + stance switch
+        var target = _steadyStart + Stance switch
         {
             RaceStance.Attack => -ErsOptimizer.OneMj,
             RaceStance.Recover => ErsOptimizer.OneMj,
@@ -188,10 +291,19 @@ public sealed class ErsPlanService
         var plan = await Task.Run(() => kind == PlanKind.Qualifying
             ? planner.PlanFrom(PlanKind.Qualifying, store, 0)
             : planner.PlanFrom(PlanKind.Race, store, Math.Clamp(target, 0, LapSimulator.Capacity)));
-        if (version == _version && _planner == planner)
+        if (version == _version && (Kind == PlanKind.Qualifying ? _qualifying : _race) == planner)
         {
             Plan = plan;
             Changed?.Invoke();
+        }
+    }
+
+    /// <summary>Shows why there is no plan, unless there already is one (a re-learn that came to nothing keeps it).</summary>
+    private void Waiting(string status)
+    {
+        if (_race is null)
+        {
+            SetStatus(status);
         }
     }
 

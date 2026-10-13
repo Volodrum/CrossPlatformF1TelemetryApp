@@ -92,9 +92,9 @@ public static class ErsOptimizer
     public static IReadOnlyList<DeployOption> Options(DeployMap deploy)
     {
         var modes = new List<int> { DeployModes.None };
-        modes.AddRange(deploy.Curves.Select(c => c.Mode));
+        modes.AddRange(deploy.Curves.Select(c => c.Mode).Where(m => m != DeployModes.None));
         var options = modes.Select(m => new DeployOption(m, m)).ToList();
-        foreach (var curve in deploy.Curves)
+        foreach (var curve in deploy.Curves.Where(c => c.Mode != DeployModes.None))
         {
             if (curve.FadeFromKmh is { } fade)
             {

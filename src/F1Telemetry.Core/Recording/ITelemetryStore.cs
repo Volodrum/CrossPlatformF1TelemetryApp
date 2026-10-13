@@ -25,6 +25,12 @@ public interface ITelemetryStore : IAsyncDisposable
 
     void UpsertLap(long recordingId, LapRecord lap);
 
+    /// <summary>
+    /// <paramref name="lapNumber"/> really starts at <paramref name="sessionTime"/>: its samples from before then move to
+    /// lap 0, driving that belongs to no lap (see <see cref="LapRestarts"/>).
+    /// </summary>
+    void RestartLap(long recordingId, int lapNumber, double sessionTime);
+
     /// <summary>Records that the player drove <paramref name="setup"/> from its lap and session time on.</summary>
     void AppendSetup(long recordingId, SetupChange setup);
 

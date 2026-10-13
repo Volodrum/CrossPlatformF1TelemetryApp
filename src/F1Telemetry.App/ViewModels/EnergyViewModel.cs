@@ -327,60 +327,11 @@ public sealed partial class EnergyViewModel : ObservableObject
         ShowGraphics();
 
         Plan.Clear(loading: true);
-        var (inputs, unavailable) = await PlanInputsAsync(recording, model, representative, fastest, line);
+        var (inputs, unavailable) = await PlanInputs.LoadAsync(runtime, recording, model, representative, fastest, line);
         if (version == _loadVersion)
         {
             await Plan.SetSessionAsync(inputs, unavailable);
         }
-    }
-
-    /// <summary>
-    /// The laps the plans are built on: race plans on the session's typical laps averaged, qualifying plans on its fastest
-    /// lap. Null, with the reason, when the session can't be planned.
-    /// </summary>
-    private async Task<(PlanInputs? Inputs, string Unavailable)> PlanInputsAsync(RecordingInfo recording, ErsCarModel? model,
-        IReadOnlyList<LapRecord> representative, LapRecord? fastest, IReadOnlyList<TelemetrySample> fastestSamples)
-    {
-        const string reimport = "Recordings made before the app stored engine power can get it from their raw capture: close the app and run "
-            + "f1tel reimport --db <telemetry.duckdb> <capture.f1rec> --replace (see the README). New recordings have it.";
-        if (model is not { HasPowerData: true })
-        {
-            return (null, "No plan: no lap at this track has ICE and MGU-K power data, so there is no car model to plan with. " + reimport);
-        }
-
-        if (model.StraightLine.Count == 0 || model.Deploy.Curves.Count == 0)
-        {
-            return (null, "No plan yet: the car model needs a straight-line fit and a deploy map first. Record a few more laps at this track.");
-        }
-
-        if (fastest is null)
-        {
-            return (null, "No plan: this session has no timed lap to build one on.");
-        }
-
-        var profiles = new List<(LapRecord Lap, LapProfile Profile)>();
-        foreach (var lap in representative)
-        {
-            var samples = lap.LapNumber == fastest.LapNumber ? fastestSamples : await runtime.Store.GetLapSamplesAsync(recording.Id, lap.LapNumber);
-            if (await Task.Run(() => LapProfile.From(samples, recording.Format, lap.LapTimeMs / 1000.0)) is { } profile)
-            {
-                profiles.Add((lap, profile));
-            }
-        }
-
-        var qualifying = LapProfile.From(fastestSamples, recording.Format, fastest.LapTimeMs / 1000.0);
-        var race = await Task.Run(() => LapProfile.Average([.. profiles.Select(p => p.Profile)]));
-        if (race is null || qualifying is null)
-        {
-            return (null, "No plan: this session has no ICE and MGU-K power data. " + reimport);
-        }
-
-        var average = TimeFormat.Lap(profiles.Average(p => (double)p.Lap.LapTimeMs));
-        var raceBasis = profiles.Count == 1
-            ? $"Built on the session's only typical lap, L{profiles[0].Lap.LapNumber} · {average}."
-            : $"Built on the session's typical lap: {profiles.Count} laps averaged ({average} on average).";
-        var qualifyingBasis = $"Built on the session's fastest lap, L{fastest.LapNumber} · {TimeFormat.Lap(fastest.LapTimeMs)}.";
-        return (new PlanInputs(model, race, raceBasis, qualifying, qualifyingBasis), "");
     }
 
     /// <summary>The car model learned from every lap at this track: deploy map, energy along the lap, straight-line fits.</summary>
@@ -404,7 +355,7 @@ public sealed partial class EnergyViewModel : ObservableObject
               + "The lap plans are built on this model, and it gets better with every lap you record here."
             : "The deploy map and straight-line fit need ICE and MGU-K power, recorded from this version on. Re-import older captures with f1tel reimport to add it.";
 
-        DeployChart = model.Deploy.Curves.Count == 0 ? null : new ChartModel("MGU-K output by speed (kW) · full throttle, charge in the battery",
+        DeployChart = model.Deploy.Curves.Count == 0 ? null : new ChartModel("MGU-K output by speed (kW) · full throttle, charge in the battery, overtake override off",
             [.. model.Deploy.Curves.Select(c => new ChartSeries($"{DeployModes.Letter(c.Mode)} · {DeployModes.Name(c.Mode)}", Palette.DeployModeHex[Math.Clamp(c.Mode, 0, 3)],
                 [.. c.Points.Select(p => p.SpeedKmh + ErsModelBuilder.SpeedBand / 2.0)], [.. c.Points.Select(p => p.PowerW / 1000)], MarkerSize: 6))],
             XLabel: "Speed (km/h)",
@@ -601,6 +552,8 @@ public sealed partial class EnergyViewModel : ObservableObject
             {
                 Legend.Add(new LegendEntry($"{DeployModes.Letter(mode)} · {DeployModes.Name(mode).ToUpperInvariant()}", Palette.DeployMode(mode)));
             }
+
+            Legend.Add(new LegendEntry("% · BATTERY AT EACH SWITCH", Palette.TextHi, 2));
         }
         else if (Unit == EnergyUnit.Percent)
         {

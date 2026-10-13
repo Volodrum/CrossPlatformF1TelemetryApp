@@ -59,7 +59,8 @@
               <!-- Battery map: the session as driven, or the plan -->
               <Border Classes="panel" Padding="0" ClipToBounds="True">
                 <Panel>
-                  <controls:TrackMapControl Outline="{Binding Outline}" ActiveLap="{Binding Samples}" ColorByInputs="True" Coloring="{Binding Layer}" />
+                  <controls:TrackMapControl Outline="{Binding Outline}" ActiveLap="{Binding Samples}" ColorByInputs="True" Coloring="{Binding Layer}"
+                                            BatteryAtModeChanges="True" />
                   <StackPanel Margin="16,14" HorizontalAlignment="Left" VerticalAlignment="Top" Spacing="2" IsHitTestVisible="False">
                     <TextBlock Classes="h2" Text="{Binding TrackName}" FontSize="20" />
                     <TextBlock Classes="label" Text="{Binding MapTitle}" />

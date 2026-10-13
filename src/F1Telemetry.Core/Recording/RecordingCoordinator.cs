@@ -20,6 +20,8 @@ public sealed record RecordingState(RecordingChange Change, long? RecordingId);
 /// <list type="bullet">
 /// <item>samples are stored only while recording, never on a formation lap, and only when session time
 /// moves forward (flashbacks rewind time; the rewound segment is skipped until time catches up);</item>
+/// <item>outside races, driving that belongs to no lap is kept off the laps (see <see cref="LapRestarts"/>): the first
+/// out-lap before the line is not stored, and when a lap number crosses the line again its samples so far move to lap 0;</item>
 /// <item>a new game session during an active recording auto-splits it (or re-tags an empty recording);</item>
 /// <item>lap summaries are upserted only when they actually change;</item>
 /// <item>the player's setup is stored when a recording starts and whenever it changes.</item>
@@ -37,6 +39,7 @@ public sealed class RecordingCoordinator : IDisposable
     private long? _recordingId;
     private string _description = "";
     private double _lastSampleTime = -1;
+    private TelemetrySample? _lastSample;
     private bool _trackTagged;
 
     // Game session the active recording belongs to (0 = not known yet).
@@ -132,6 +135,7 @@ public sealed class RecordingCoordinator : IDisposable
         _recordingId = id;
         _description = description;
         _lastSampleTime = -1;
+        _lastSample = null;
         _trackTagged = session is { TrackId: >= 0 };
         _recordingSessionUid = session?.SessionUid ?? 0;
         _writtenLaps.Clear();
@@ -207,7 +211,21 @@ public sealed class RecordingCoordinator : IDisposable
                 return;
             }
 
+            if (LapRestarts.Applies(_engine.Session?.SessionType ?? 0))
+            {
+                if (sample.LapDistance < 0)
+                {
+                    return;
+                }
+
+                if (_lastSample is { } previous && LapRestarts.IsRestart(previous, sample))
+                {
+                    _store.RestartLap(id, sample.LapNumber, sample.SessionTime);
+                }
+            }
+
             _lastSampleTime = sample.SessionTime;
+            _lastSample = sample;
             sample.RecordingId = id;
             _store.AppendSample(sample);
         }

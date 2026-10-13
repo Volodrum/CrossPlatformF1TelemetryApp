@@ -152,6 +152,38 @@ public class ErsPlanTests
         Assert.Equal(qualifying.StartStore - qualifying.EndStore, qualifying.Deployed - qualifying.Harvested, 1.0);
     }
 
+    /// <summary>
+    /// The planner's model of the battery is checked against what the lap really did: the lap's own modes, replayed with
+    /// what the map says they cost, end the lap with the charge it really had. A map that costs a tenth less than the
+    /// deploy counter paid is calibrated back.
+    /// </summary>
+    [Fact]
+    public void Replaying_the_lap_with_the_map_ends_with_the_charge_it_had()
+    {
+        var cheap = new DeployMap([new DeployCurve(DeployModes.Medium, [.. Enumerable.Range(10, 26).Select(b => new DeployPoint(b * 10, 120_000, 50, 108_000))], null)]);
+        var simulator = LapSimulator.Create(LapProfile.From(DriveLap(2_000_000), GameFormat.F1_26)!, Model with { Deploy = cheap })!;
+
+        Assert.Equal(120_000 / 108_000.0, simulator.DrawScale, 0.02);
+        var check = ErsOptimizer.Check(simulator);
+        Assert.Equal(check.ActualEndStore, check.MapEndStore, 50_000.0); // within 50 kJ of what the lap really had
+    }
+
+    /// <summary>Flat out in None at high speed the game still deploys, and the plan pays for it.</summary>
+    [Fact]
+    public void None_costs_what_it_deploys()
+    {
+        var withNone = Map with { Curves = [.. Map.Curves, new DeployCurve(DeployModes.None, [.. Enumerable.Range(10, 26).Select(b => new DeployPoint(b * 10, 60_000, 50))], null)] };
+        var lap = LapProfile.From(DriveLap(2_000_000), GameFormat.F1_26)!;
+        var zone = ErsOptimizer.Stages(lap).First(s => s.HasZone);
+        var none = new DeployOption(DeployModes.None, DeployModes.None);
+
+        var free = LapSimulator.Create(lap, Model)!.Run(zone.From, zone.DeployEnd, zone.To, none, 2_000_000);
+        var paid = LapSimulator.Create(lap, Model with { Deploy = withNone })!.Run(zone.From, zone.DeployEnd, zone.To, none, 2_000_000);
+
+        Assert.True(paid.ExitStore < free.ExitStore - 100_000, $"{free.ExitStore / 1e6:0.00} → {paid.ExitStore / 1e6:0.00} MJ");
+        Assert.True(paid.Seconds < free.Seconds);
+    }
+
     [Fact]
     public void The_typical_lap_averages_the_session_and_plans_like_its_laps()
     {

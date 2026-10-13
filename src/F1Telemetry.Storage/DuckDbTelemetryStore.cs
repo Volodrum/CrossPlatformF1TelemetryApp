@@ -100,6 +100,8 @@ public sealed partial class DuckDbTelemetryStore(string databasePath, ILogger<Du
 
     public void UpsertLap(long recordingId, LapRecord lap) => Enqueue(new LapOp(recordingId, lap));
 
+    public void RestartLap(long recordingId, int lapNumber, double sessionTime) => Enqueue(new RestartLapOp(recordingId, lapNumber, sessionTime));
+
     public void AppendSetup(long recordingId, SetupChange setup) => Enqueue(new SetupOp(recordingId, setup));
 
     public Task FlushAsync(CancellationToken cancellationToken = default)
@@ -231,6 +233,11 @@ public sealed partial class DuckDbTelemetryStore(string databasePath, ILogger<Du
 
                 case LapOp l:
                     UpsertLapRow(l.RecordingId, l.Lap);
+                    break;
+
+                case RestartLapOp r:
+                    NonQuery("UPDATE telemetry SET lap_number = 0 WHERE recording_id = $id AND lap_number = $lap AND session_time < $time",
+                        ("id", r.RecordingId), ("lap", r.LapNumber), ("time", r.SessionTime));
                     break;
 
                 case SetupOp s:
@@ -380,7 +387,7 @@ public sealed partial class DuckDbTelemetryStore(string databasePath, ILogger<Du
         QueryAsync("""
             SELECT t.lap_number, l.lap_time_ms, l.s1_ms, l.s2_ms, l.s3_ms, l.is_valid, l.is_best_lap, l.is_best_s1, l.is_best_s2,
                    l.is_best_s3, l.compound, l.actual_compound, l.stint_index, l.car_position, l.lap_type, l.pit_lane_ms, l.pit_stop_ms
-            FROM (SELECT DISTINCT lap_number FROM telemetry WHERE recording_id = $id) t
+            FROM (SELECT DISTINCT lap_number FROM telemetry WHERE recording_id = $id AND lap_number >= 1) t
             LEFT JOIN laps l ON l.recording_id = $id AND l.lap_number = t.lap_number
             ORDER BY t.lap_number
             """,
@@ -418,7 +425,7 @@ public sealed partial class DuckDbTelemetryStore(string databasePath, ILogger<Du
         QueryAsync("""
             SELECT t.recording_id, t.lap_number, t.session_time, t.lap_distance, t.speed, t.throttle, t.brake, t.steer, t.ers_store_energy,
                    t.ers_deploy_mode, t.ers_harvested_mguk, t.ers_deployed, t.engine_power_ice, t.engine_power_mguk, t.g_force_lon,
-                   t.fuel_in_tank, CASE WHEN r.game_format = 2026 THEN t.active_aero_mode ELSE t.drs END
+                   t.fuel_in_tank, CASE WHEN r.game_format = 2026 THEN t.active_aero_mode ELSE t.drs END, coalesce(t.overtake_active, 0)
             FROM telemetry t JOIN recordings r ON r.id = t.recording_id
             WHERE r.game_format = $format AND r.track_id = $track AND t.lap_number >= 1
             ORDER BY t.recording_id, t.session_time
@@ -426,7 +433,7 @@ public sealed partial class DuckDbTelemetryStore(string databasePath, ILogger<Du
             r => new ModelSample(
                 r.GetInt64(0), r.GetInt32(1), r.GetDouble(2), F(r, 3), r.GetInt32(4), F(r, 5), F(r, 6), F(r, 7), F(r, 8),
                 (byte)(r.IsDBNull(9) ? 0 : r.GetInt32(9)), F(r, 10), F(r, 11), F(r, 12), F(r, 13), F(r, 14), F(r, 15),
-                (byte)(r.IsDBNull(16) ? 0 : r.GetInt32(16))),
+                (byte)(r.IsDBNull(16) ? 0 : r.GetInt32(16)), r.GetInt32(17) != 0),
             cancellationToken, ("format", (int)format), ("track", trackId));
 
     private static float F(DbDataReader r, int i) => r.IsDBNull(i) ? 0 : (float)r.GetDouble(i);
@@ -436,7 +443,7 @@ public sealed partial class DuckDbTelemetryStore(string databasePath, ILogger<Du
             SELECT lap_number, min(fuel_in_tank), max(fuel_in_tank),
                    min(tyre_wear_fl), max(tyre_wear_fl), min(tyre_wear_fr), max(tyre_wear_fr),
                    min(tyre_wear_rl), max(tyre_wear_rl), min(tyre_wear_rr), max(tyre_wear_rr)
-            FROM telemetry WHERE recording_id = $id GROUP BY lap_number ORDER BY lap_number
+            FROM telemetry WHERE recording_id = $id AND lap_number >= 1 GROUP BY lap_number ORDER BY lap_number
             """,
             r => new LapAggregate(r.GetInt32(0), r.GetDouble(1), r.GetDouble(2), r.GetDouble(3), r.GetDouble(4), r.GetDouble(5),
                 r.GetDouble(6), r.GetDouble(7), r.GetDouble(8), r.GetDouble(9), r.GetDouble(10)),
@@ -554,6 +561,7 @@ public sealed partial class DuckDbTelemetryStore(string databasePath, ILogger<Du
     private sealed record UpdateOp(long Id, string? SessionUid, int? TrackId, string? TrackName, int? SessionType, DateTime? StartUtc, DateTime? EndUtc) : WriteOp;
     private sealed record SampleOp(TelemetrySample Sample) : WriteOp;
     private sealed record LapOp(long RecordingId, LapRecord Lap) : WriteOp;
+    private sealed record RestartLapOp(long RecordingId, int LapNumber, double SessionTime) : WriteOp;
     private sealed record SetupOp(long RecordingId, SetupChange Setup) : WriteOp;
     private sealed record FlushOp(TaskCompletionSource Done) : WriteOp;
     private sealed record DeleteOp(long Id, TaskCompletionSource Done) : WriteOp;

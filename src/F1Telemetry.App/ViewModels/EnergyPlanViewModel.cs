@@ -29,11 +29,6 @@ public sealed record ZoneRowViewModel(ZonePlan Zone, IReadOnlyList<ModeShare> Dr
         new(DeployModes.Letter(mode), DeployModes.Name(mode).ToUpperInvariant(), text, Palette.DeployMode(mode), Palette.OnDeployMode(mode));
 }
 
-/// <summary>What a session gives the planner: the car model and the lap each kind of plan is built on.</summary>
-/// <param name="Race">The session's typical lap (its laps averaged): a race plan must hold for every one of them.</param>
-/// <param name="Qualifying">The session's fastest lap: one push lap.</param>
-public sealed record PlanInputs(ErsCarModel Model, LapProfile Race, string RaceBasis, LapProfile Qualifying, string QualifyingBasis);
-
 /// <summary>
 /// The ERS lap plan for the session on the energy tab: qualifying (one fast lap from a full battery, built on the
 /// session's fastest lap) or race (a lap that deploys what it harvests, so every lap of the race can run it, built on the
@@ -146,7 +141,7 @@ public sealed partial class EnergyPlanViewModel(ILogger<EnergyPlanViewModel> log
             return;
         }
 
-        if (LapSimulator.Create(lap, inputs.Model) is not { } simulator)
+        if (LapSimulator.Create(lap, inputs.Model, kind == PlanKind.Race ? LapSimulator.RaceReserve : 0) is not { } simulator)
         {
             IsBusy = false;
             Show(null, "The car model needs a straight-line fit and a deploy map first: a few more laps at this track.");
@@ -209,7 +204,7 @@ public sealed partial class EnergyPlanViewModel(ILogger<EnergyPlanViewModel> log
         Battery = $"{EnergyText.Format(plan.StartStore, unit)} → {EnergyText.Format(plan.EndStore, unit)}";
         BatteryNote = plan.Kind == PlanKind.Qualifying
             ? "Charge the battery full on the out-lap; the lap may end empty."
-            : $"Cross the line with {E(plan.StartStore)} every lap.";
+            : $"Cross the line with {E(plan.StartStore)} every lap. The plan never takes the battery below {E(LapSimulator.RaceReserve)}: room for a lap not driven exactly to plan.";
         Energy = $"{EnergyText.Format(plan.Harvested, unit)} / {EnergyText.Format(plan.Deployed, unit)}";
         EnergyNote = plan.Kind == PlanKind.Qualifying
             ? $"Deploys {E(plan.Deployed)}: the full battery plus what the lap harvests."

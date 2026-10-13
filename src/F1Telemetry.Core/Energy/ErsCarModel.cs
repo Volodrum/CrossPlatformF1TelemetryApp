@@ -4,7 +4,14 @@ namespace F1Telemetry.Core.Energy;
 
 /// <summary>MGU-K output in one deploy mode over a 10 km/h band starting at <paramref name="SpeedKmh"/>: the median of
 /// <paramref name="Samples"/> full-throttle samples.</summary>
-public sealed record DeployPoint(int SpeedKmh, double PowerW, int Samples);
+/// <param name="DrawW">
+/// What the mode takes from the battery there, W, from the game's deploy counter: about a tenth more than the MGU-K
+/// gives. Null when unknown: the output is used.
+/// </param>
+public sealed record DeployPoint(int SpeedKmh, double PowerW, int Samples, double? DrawW = null)
+{
+    public double Draw => DrawW ?? PowerW;
+}
 
 /// <summary>
 /// MGU-K output by speed in one deploy mode, and the speed from which it fades (null when it doesn't).
@@ -13,12 +20,46 @@ public sealed record DeployCurve(int Mode, IReadOnlyList<DeployPoint> Points, in
 {
     public double PeakW => Points.Count == 0 ? 0 : Points.Max(p => p.PowerW);
 
-    /// <summary>Output at <paramref name="kmh"/>: the band it falls in, or the nearest band measured.</summary>
-    public double? PowerAt(double kmh) =>
-        Points.Count == 0 ? null : Points.MinBy(p => Math.Abs(p.SpeedKmh + ErsModelBuilder.SpeedBand / 2.0 - kmh))!.PowerW;
+    /// <summary>
+    /// Output at <paramref name="kmh"/>: between the middles of the two bands either side, in a straight line (out of a
+    /// slow corner the output climbs steeply with speed), or the nearest band past the ends of the curve.
+    /// </summary>
+    public double? PowerAt(double kmh) => At(kmh, p => p.PowerW);
+
+    /// <summary>What the mode takes from the battery at <paramref name="kmh"/>, W (see <see cref="DeployPoint.DrawW"/>).</summary>
+    public double? DrawAt(double kmh) => At(kmh, p => p.Draw);
+
+    private double? At(double kmh, Func<DeployPoint, double> value)
+    {
+        if (Points.Count == 0)
+        {
+            return null;
+        }
+
+        static double Middle(DeployPoint p) => p.SpeedKmh + ErsModelBuilder.SpeedBand / 2.0;
+        var above = Points.FirstOrDefault(p => Middle(p) >= kmh);
+        var below = Points.LastOrDefault(p => Middle(p) < kmh);
+        if (above is null || below is null)
+        {
+            return value(above ?? below!);
+        }
+
+        // Bands apart by more than one step have no data between them: take the nearer.
+        if (above.SpeedKmh - below.SpeedKmh > ErsModelBuilder.SpeedBand)
+        {
+            return value(Middle(above) - kmh < kmh - Middle(below) ? above : below);
+        }
+
+        var f = (kmh - Middle(below)) / (Middle(above) - Middle(below));
+        return value(below) + f * (value(above) - value(below));
+    }
 }
 
-/// <summary>What each deploy mode delivers, learned from full-throttle samples with charge in the battery.</summary>
+/// <summary>
+/// What each deploy mode delivers and what it costs the battery, learned from full-throttle samples with charge in the
+/// battery and the overtake override off (a plan can't count on a car ahead). None has a curve too when it deploys:
+/// flat out at high speed the game still spends charge in None.
+/// </summary>
 public sealed record DeployMap(IReadOnlyList<DeployCurve> Curves)
 {
     public static DeployMap Empty { get; } = new([]);
@@ -92,6 +133,9 @@ public static class ErsModelBuilder
     // Per-sample counter steps above this are resets or flashbacks, not harvest (2 MW at 10 Hz).
     private const double MaxCounterStep = 200_000;
 
+    // Longer gaps between samples are pauses or dropped packets: no rate to read from them.
+    private const double MaxSampleGap = 0.5;
+
     /// <summary>Minimum car mass with driver, kg: 798 in the 2025 rules, 768 in 2026.</summary>
     public static double CarMass(GameFormat format) => format == GameFormat.F1_26 ? 768 : 798;
 
@@ -104,18 +148,43 @@ public static class ErsModelBuilder
 
     public static DeployMap BuildDeployMap(IReadOnlyList<ModelSample> samples)
     {
-        var curves = samples
-            .Where(s => s.IcePower > 0 && s.Mode > 0 && s.Throttle >= 0.98f && s.Brake <= 0.01f && s.ErsStore > 300_000)
-            .GroupBy(s => (int)s.Mode)
+        // What the battery paid from each sample to the next, by the deploy counter: J and s, per sample.
+        var paid = new (double Joules, double Seconds)?[samples.Count];
+        for (var i = 1; i < samples.Count; i++)
+        {
+            var (a, b) = (samples[i - 1], samples[i]);
+            var dt = b.SessionTime - a.SessionTime;
+            var step = b.Deployed - a.Deployed;
+            if (a.RecordingId == b.RecordingId && a.LapNumber == b.LapNumber && dt is > 0 and <= MaxSampleGap && step is >= 0 and <= (float)MaxCounterStep)
+            {
+                paid[i] = (step, dt);
+            }
+        }
+
+        var bands = Enumerable.Range(0, samples.Count)
+            .Where(i => samples[i] is { IcePower: > 0, Throttle: >= 0.98f, Brake: <= 0.01f, ErsStore: > 300_000, Override: false })
+            .GroupBy(i => ((int)samples[i].Mode, (int)samples[i].Speed / SpeedBand * SpeedBand))
+            .Where(b => b.Count() >= MinBandSamples)
+            .Select(b =>
+            {
+                var steps = b.Where(i => paid[i] is not null).Select(i => paid[i]!.Value).ToList();
+                var output = Median(b.Select(i => (double)samples[i].MgukPower));
+                double? draw = steps.Count >= MinBandSamples && steps.Sum(p => p.Seconds) > 0 ? steps.Sum(p => p.Joules) / steps.Sum(p => p.Seconds) : null;
+                return (Mode: b.Key.Item1, Point: new DeployPoint(b.Key.Item2, output, b.Count(), draw));
+            })
+            .ToList();
+
+        // A band without enough counter steps pays what the measured ones pay per watt of output.
+        var measured = bands.Where(b => b.Point.DrawW is not null && b.Point.PowerW > MinPeakW).ToList();
+        var perWatt = measured.Count == 0 ? 1 : measured.Sum(b => b.Point.DrawW!.Value * b.Point.Samples) / measured.Sum(b => b.Point.PowerW * b.Point.Samples);
+
+        var curves = bands
+            .GroupBy(b => b.Mode)
             .OrderBy(g => g.Key)
             .Select(g =>
             {
-                var points = g.GroupBy(s => (int)s.Speed / SpeedBand * SpeedBand)
-                    .Where(b => b.Count() >= MinBandSamples)
-                    .OrderBy(b => b.Key)
-                    .Select(b => new DeployPoint(b.Key, Median(b.Select(s => (double)s.MgukPower)), b.Count()))
-                    .ToList();
-                return new DeployCurve(g.Key, points, FadeFrom(points));
+                var points = g.Select(b => b.Point.DrawW is null ? b.Point with { DrawW = b.Point.PowerW * perWatt } : b.Point).OrderBy(p => p.SpeedKmh).ToList();
+                return new DeployCurve(g.Key, points, g.Key == DeployModes.None ? null : FadeFrom(points));
             })
             .Where(c => c.PeakW >= MinPeakW) // a mode that gave (next to) nothing, Hotlap in a race say, has no curve
             .ToList();

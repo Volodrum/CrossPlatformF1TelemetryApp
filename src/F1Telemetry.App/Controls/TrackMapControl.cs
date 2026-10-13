@@ -1,3 +1,4 @@
+using System.Globalization;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
@@ -25,6 +26,7 @@ public enum MapColoring
 /// Circuit map: track limits from the SRTT outline, a faint reference lap, and the active lap as a
 /// trajectory or coloured by driver input (green full throttle, yellow partial, red braking, white coasting), by ERS
 /// deploy mode or by battery level (see <see cref="Coloring"/>).
+/// On the deploy-mode map, <see cref="BatteryAtModeChanges"/> labels each change of mode with the battery there.
 /// Wheel zooms around the cursor, drag pans, double-click resets. Falls back to fitting the trajectory
 /// when no outline is available for the track.
 /// <para>
@@ -49,6 +51,9 @@ public sealed class TrackMapControl : Control
 
     public static readonly StyledProperty<MapColoring> ColoringProperty =
         AvaloniaProperty.Register<TrackMapControl, MapColoring>(nameof(Coloring));
+
+    public static readonly StyledProperty<bool> BatteryAtModeChangesProperty =
+        AvaloniaProperty.Register<TrackMapControl, bool>(nameof(BatteryAtModeChanges));
 
     // Race HUD styling: dark ground, tarmac at true width (at least 6 px) with 1 px limits, a thin input ribbon (green full throttle,
     // amber partial, red braking, grey coasting), a thin solid grey reference lap and a small white car marker.
@@ -79,13 +84,24 @@ public sealed class TrackMapControl : Control
     ];
     private static readonly IPen[] BatteryPens = Pens(EnergyRibbonWidth, "#2EE88F", "#FFC23D", "#FF5A4F");
 
+    // Battery labels at the mode changes: a dot on the line, a leader, and the level in a tag edged in the new mode's colour.
+    // A run of one mode shorter than MinModeRun is noise in an averaged lap and gets no label of its own.
+    private const double MinModeRun = 75;
+    private const double LabelGap = 10;
+    private static readonly Typeface LabelFace = new(new FontFamily("avares://F1Telemetry/Assets/Fonts#JetBrains Mono"), FontStyle.Normal, FontWeight.Bold);
+    private static readonly IBrush LabelBack = new SolidColorBrush(Color.Parse("#0B0C0F"), 0.88);
+    private static readonly IBrush LabelText = new SolidColorBrush(Color.Parse("#F4F6F9"));
+    private static readonly IPen LeaderPen = new Pen(new SolidColorBrush(Color.Parse("#F4F6F9"), 0.5), 1);
+    private static readonly IPen[] LabelEdges = Pens(1.5, ["#8D97A6", .. ViewModels.Palette.DeployModeHex[1..]]);
+
     private double _zoom = 1;
     private Vector _pan;
     private Point? _dragStart;
 
     static TrackMapControl()
     {
-        AffectsRender<TrackMapControl>(OutlineProperty, ActiveLapProperty, ReferenceLapProperty, ColorByInputsProperty, ColoringProperty);
+        AffectsRender<TrackMapControl>(OutlineProperty, ActiveLapProperty, ReferenceLapProperty, ColorByInputsProperty, ColoringProperty,
+            BatteryAtModeChangesProperty);
         ClipToBoundsProperty.OverrideDefaultValue<TrackMapControl>(true);
     }
 
@@ -94,6 +110,9 @@ public sealed class TrackMapControl : Control
     public IReadOnlyList<TelemetrySample>? ReferenceLap { get => GetValue(ReferenceLapProperty); set => SetValue(ReferenceLapProperty, value); }
     public bool ColorByInputs { get => GetValue(ColorByInputsProperty); set => SetValue(ColorByInputsProperty, value); }
     public MapColoring Coloring { get => GetValue(ColoringProperty); set => SetValue(ColoringProperty, value); }
+
+    /// <summary>On the deploy-mode map, label every change of mode with the battery level there, in % of the battery.</summary>
+    public bool BatteryAtModeChanges { get => GetValue(BatteryAtModeChangesProperty); set => SetValue(BatteryAtModeChangesProperty, value); }
 
     public override void Render(DrawingContext context)
     {
@@ -171,7 +190,94 @@ public sealed class TrackMapControl : Control
             var last = Map(active[^1].WorldPosX, active[^1].WorldPosZ);
             context.DrawEllipse(null, MarkerHalo, last, MarkerRadius * 2, MarkerRadius * 2);
             context.DrawEllipse(MarkerFill, MarkerPen, last, MarkerRadius, MarkerRadius);
+
+            if (ColorByInputs && Coloring == MapColoring.DeployMode && BatteryAtModeChanges)
+            {
+                DrawBatteryLabels(context, active, Map, Map(cx, cz));
+            }
         }
+    }
+
+    /// <summary>
+    /// The battery at every change of deploy mode, in a tag beside the line: outside the circuit where there is room,
+    /// inside otherwise, left out where both would cover another tag (zoom in to see it).
+    /// </summary>
+    private static void DrawBatteryLabels(DrawingContext context, List<TelemetrySample> samples, Func<double, double, Point> map, Point centre)
+    {
+        var taken = new List<Rect>();
+        foreach (var i in ModeChanges(samples))
+        {
+            var at = map(samples[i].WorldPosX, samples[i].WorldPosZ);
+            var behind = map(samples[Math.Max(0, i - 3)].WorldPosX, samples[Math.Max(0, i - 3)].WorldPosZ);
+            var ahead = map(samples[Math.Min(samples.Count - 1, i + 3)].WorldPosX, samples[Math.Min(samples.Count - 1, i + 3)].WorldPosZ);
+            var along = ahead - behind;
+            var length = Math.Sqrt(along.X * along.X + along.Y * along.Y);
+            if (length < 1e-6)
+            {
+                continue;
+            }
+
+            var normal = new Vector(-along.Y / length, along.X / length);
+            var outward = at - centre;
+            if (normal.X * outward.X + normal.Y * outward.Y < 0)
+            {
+                normal = -normal;
+            }
+
+            var percent = Math.Clamp(samples[i].ErsStoreEnergy / EnergyAnalyzer.Capacity * 100, 0, 100);
+            var text = new FormattedText(percent.ToString("0", CultureInfo.InvariantCulture) + "%", CultureInfo.InvariantCulture,
+                FlowDirection.LeftToRight, LabelFace, 11, LabelText);
+            var size = new Size(text.Width + 8, text.Height + 2);
+            foreach (var side in new[] { normal, -normal })
+            {
+                // Far enough out that the tag clears the line whichever way it faces.
+                var reach = LabelGap + Math.Abs(side.X) * size.Width / 2 + Math.Abs(side.Y) * size.Height / 2;
+                var middle = at + side * reach;
+                var tag = new Rect(middle.X - size.Width / 2, middle.Y - size.Height / 2, size.Width, size.Height);
+                if (taken.Any(r => r.Intersects(tag.Inflate(2))))
+                {
+                    continue;
+                }
+
+                taken.Add(tag);
+                context.DrawLine(LeaderPen, at, at + side * LabelGap);
+                context.DrawEllipse(MarkerFill, MarkerPen, at, 2.5, 2.5);
+                context.DrawRectangle(LabelBack, LabelEdges[Math.Clamp(samples[i].ErsDeployMode, 0, LabelEdges.Length - 1)], tag, 3, 3);
+                context.DrawText(text, new Point(tag.X + 4, tag.Y + 1));
+                break;
+            }
+        }
+    }
+
+    /// <summary>
+    /// The samples where the deploy mode changes, the lap's start aside. A run shorter than <see cref="MinModeRun"/> m
+    /// is folded into the run before it.
+    /// </summary>
+    private static List<int> ModeChanges(List<TelemetrySample> samples)
+    {
+        var runs = new List<int>();
+        for (var i = 0; i < samples.Count; i++)
+        {
+            if (runs.Count == 0 || samples[i].ErsDeployMode != samples[runs[^1]].ErsDeployMode)
+            {
+                runs.Add(i);
+            }
+        }
+
+        var kept = new List<int>();
+        for (var r = 0; r < runs.Count; r++)
+        {
+            var end = r + 1 < runs.Count ? samples[runs[r + 1]].LapDistance : samples[^1].LapDistance;
+            if (kept.Count > 0 && (end - samples[runs[r]].LapDistance < MinModeRun
+                                   || samples[runs[r]].ErsDeployMode == samples[kept[^1]].ErsDeployMode))
+            {
+                continue;
+            }
+
+            kept.Add(runs[r]);
+        }
+
+        return kept.Skip(1).ToList();
     }
 
     private static void DrawRibbon(DrawingContext context, List<TelemetrySample> samples, Func<double, double, Point> map, IPen[] pens, Func<TelemetrySample, int> classOf)

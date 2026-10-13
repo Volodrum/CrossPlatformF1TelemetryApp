@@ -1,4 +1,5 @@
 using DuckDB.NET.Data;
+using F1Telemetry.Core.Recording;
 
 namespace F1Telemetry.Storage;
 
@@ -62,6 +63,32 @@ internal static class Schema
         [
             .. SetupColumns.AddConditionsSql,
             SetupColumns.CreateLibrarySql,
+        ],
+
+        // v5: outside races, driving that belongs to no lap moves to lap 0 (see LapRestarts): everything a lap number
+        // carried before its last line crossing (an abandoned lap, the in-lap, the garage, the out-lap), and the first
+        // out-lap before the line. Races (session types 15–17) are left as they are.
+        [
+            $"""
+            UPDATE telemetry SET lap_number = 0
+            FROM (
+                SELECT c.recording_id, c.lap_number, max(c.session_time) AS restart
+                FROM (
+                    SELECT recording_id, lap_number, session_time, lap_distance,
+                           lag(lap_distance) OVER (PARTITION BY recording_id, lap_number ORDER BY session_time) AS previous
+                    FROM telemetry WHERE lap_number >= 1
+                ) c
+                JOIN recordings r ON r.id = c.recording_id
+                WHERE r.session_type NOT BETWEEN 15 AND 17 AND c.previous - c.lap_distance > {LapRestarts.LineCrossing}
+                GROUP BY c.recording_id, c.lap_number
+            ) x
+            WHERE telemetry.recording_id = x.recording_id AND telemetry.lap_number = x.lap_number AND telemetry.session_time < x.restart
+            """,
+            """
+            UPDATE telemetry SET lap_number = 0
+            WHERE lap_number >= 1 AND lap_distance < 0
+              AND recording_id IN (SELECT id FROM recordings WHERE session_type NOT BETWEEN 15 AND 17)
+            """,
         ],
     ];
 

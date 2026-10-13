@@ -9,6 +9,7 @@ namespace F1Telemetry.Core.Energy;
 /// <param name="IcePower">Combustion engine output, W; 0 in recordings made before it was recorded.</param>
 /// <param name="GForceLongitudinal">In g, positive when accelerating.</param>
 /// <param name="Aero">Active aero mode (2026 format) or DRS open (2025 format).</param>
+/// <param name="Override">The 2026 overtake override was on: near a car ahead, the MGU-K gives far more at high speed.</param>
 public readonly record struct ModelSample(
     long RecordingId,
     int LapNumber,
@@ -26,4 +27,5 @@ public readonly record struct ModelSample(
     float MgukPower,
     float GForceLongitudinal,
     float Fuel,
-    byte Aero);
+    byte Aero,
+    bool Override = false);

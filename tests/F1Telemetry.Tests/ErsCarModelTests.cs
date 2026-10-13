@@ -35,6 +35,54 @@ public class ErsCarModelTests
         Assert.All(map.Curves.SelectMany(c => c.Points), p => Assert.Equal(30, p.Samples));
     }
 
+    /// <summary>
+    /// What a mode costs comes from the game's deploy counter, not the MGU-K output: the battery pays about a tenth more.
+    /// None gets a curve where it still deploys, flat out at high speed, and the overtake override is left out.
+    /// </summary>
+    [Fact]
+    public void Deploy_map_learns_what_each_mode_takes_from_the_battery()
+    {
+        var samples = new List<ModelSample>();
+        double t = 0;
+        float deployed = 0;
+        void Drive(int mode, float kmh, float output, float draw, bool overtakeOverride = false)
+        {
+            for (var i = 0; i < 30; i++)
+            {
+                t += 0.1;
+                deployed += draw * 0.1f;
+                samples.Add(new ModelSample(1, 1, t, 0, kmh, 1, 0, 0, 2_000_000, (byte)mode, 0, deployed, 410_000, output, 0, 10, 0, overtakeOverride));
+            }
+        }
+
+        Drive(DeployModes.Medium, 200, 180_000, 198_000);
+        Drive(DeployModes.Overtake, 250, 104_000, 116_000);
+        Drive(DeployModes.Overtake, 250, 190_000, 210_000, overtakeOverride: true); // the override: left out
+        Drive(DeployModes.None, 150, 0, 0);
+        Drive(DeployModes.None, 240, 106_000, 119_000);
+
+        var map = ErsModelBuilder.BuildDeployMap(samples);
+
+        Assert.Equal([DeployModes.None, DeployModes.Medium, DeployModes.Overtake], map.Curves.Select(c => c.Mode));
+        Assert.Equal(198_000, map.Curve(DeployModes.Medium)!.DrawAt(205)!.Value, 1_000.0);
+        Assert.Equal(180_000, map.Curve(DeployModes.Medium)!.PowerAt(205)!.Value, 1.0);
+        Assert.Equal(104_000, map.Curve(DeployModes.Overtake)!.PowerAt(255)!.Value, 1.0);
+        Assert.Equal(116_000, map.Curve(DeployModes.Overtake)!.DrawAt(255)!.Value, 1_000.0);
+        Assert.Equal(119_000, map.Curve(DeployModes.None)!.DrawAt(245)!.Value, 1_000.0);
+        Assert.Null(map.FadeSpeed(DeployModes.None));
+    }
+
+    [Fact]
+    public void Deploy_curve_reads_between_bands_in_a_straight_line()
+    {
+        var curve = new DeployCurve(DeployModes.Medium, [new DeployPoint(130, 40_000, 50), new DeployPoint(140, 140_000, 50), new DeployPoint(170, 180_000, 50)], null);
+
+        Assert.Equal(90_000, curve.PowerAt(140)!.Value, 1.0); // half way from the middle of 130–140 to the middle of 140–150
+        Assert.Equal(40_000, curve.PowerAt(100)!.Value, 1.0); // below the curve: its first band
+        Assert.Equal(140_000, curve.PowerAt(150)!.Value, 1.0); // no bands measured between 150 and 170: the nearer
+        Assert.Equal(180_000, curve.PowerAt(190)!.Value, 1.0);
+    }
+
     [Fact]
     public void Straight_line_fit_recovers_the_cars_efficiency_drag_and_resistance()
     {

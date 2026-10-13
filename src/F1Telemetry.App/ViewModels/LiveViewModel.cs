@@ -6,6 +6,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using F1Telemetry.App.Services;
 using F1Telemetry.Core.Formatting;
 using F1Telemetry.Core.Models;
+using F1Telemetry.Core.Recording;
 using F1Telemetry.Core.Tracks;
 using F1Telemetry.Protocol;
 
@@ -97,7 +98,9 @@ public sealed partial class LiveViewModel : ObservableObject
     {
         foreach (var sample in _hub.DrainSamples())
         {
-            if (sample.LapNumber != _currentLapNumber)
+            // Outside races the game can cross the line without a new lap number (a run ending in the pits): start over there too.
+            if (sample.LapNumber != _currentLapNumber
+                || (_currentLap.Count > 0 && LapRestarts.IsRestart(_currentLap[^1], sample) && LapRestarts.Applies(_hub.Session?.SessionType ?? 0)))
             {
                 _currentLap.Clear();
                 _currentLapNumber = sample.LapNumber;
