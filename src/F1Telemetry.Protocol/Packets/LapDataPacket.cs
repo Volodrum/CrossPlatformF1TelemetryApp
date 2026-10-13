@@ -19,6 +19,8 @@ public readonly record struct LapData(
     byte Penalties,
     byte TotalWarnings,
     byte CornerCuttingWarnings,
+    byte UnservedDriveThroughs,
+    byte UnservedStopGos,
     byte GridPosition,
     DriverStatus DriverStatus,
     ResultStatus ResultStatus,
@@ -47,7 +49,8 @@ public readonly record struct LapData(
         var penalties = r.U8();
         var warnings = r.U8();
         var cornerCutting = r.U8();
-        r.Skip(2); // unserved drive-through / stop-go
+        var driveThroughs = r.U8();
+        var stopGos = r.U8();
         var grid = r.U8();
         var driverStatus = (DriverStatus)r.U8();
         var resultStatus = (ResultStatus)r.U8();
@@ -58,7 +61,7 @@ public readonly record struct LapData(
         var speedTrap = r.F32();
         r.Skip(1); // speedTrapFastestLap
         return new LapData(lastLap, currentLap, s1, s2, deltaFront, deltaLeader, lapDistance, totalDistance, scDelta,
-            position, lapNum, pitStatus, numPitStops, sector, invalid, penalties, warnings, cornerCutting, grid,
+            position, lapNum, pitStatus, numPitStops, sector, invalid, penalties, warnings, cornerCutting, driveThroughs, stopGos, grid,
             driverStatus, resultStatus, pitTimerActive, pitLaneTime, pitStopTimer, speedTrap);
     }
 }

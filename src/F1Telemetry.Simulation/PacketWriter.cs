@@ -91,6 +91,8 @@ public sealed class PacketWriter(FormatLayout layout)
         s[38] = d.Penalties;
         s[39] = d.TotalWarnings;
         s[40] = d.CornerCuttingWarnings;
+        s[41] = d.UnservedDriveThroughs;
+        s[42] = d.UnservedStopGos;
         s[43] = d.GridPosition;
         s[44] = (byte)d.DriverStatus;
         s[45] = (byte)d.ResultStatus;

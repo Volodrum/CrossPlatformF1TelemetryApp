@@ -130,7 +130,8 @@ public class OverlayTimingTests
     }
 
     private static CarTiming Car(int position, string code, long gapToLeaderMs, uint interval = 500, bool player = false,
-        PitStatus pit = PitStatus.None, float distance = 20_000, uint best = 0, int penalty = 0, int warnings = 0) => new()
+        PitStatus pit = PitStatus.None, float distance = 20_000, uint best = 0, int penalty = 0, int warnings = 0, int driveThroughs = 0,
+        int stopGos = 0) => new()
     {
         CarIndex = position,
         Position = position,
@@ -145,6 +146,8 @@ public class OverlayTimingTests
         BestLapMs = best,
         PenaltySeconds = penalty,
         TrackLimitWarnings = warnings,
+        UnservedDriveThroughs = driveThroughs,
+        UnservedStopGos = stopGos,
     };
 
     [Fact]
@@ -161,8 +164,37 @@ public class OverlayTimingTests
         Assert.Equal([4, 5, 6, 7, 8, 9], board.Rows.Select(r => r.Position));
         Assert.Equal(["−3.000", "−0.644", "—", "+0.812", "PIT"], board.Rows.Skip(1).Select(r => r.Gap));
         Assert.Equal([GapTone.Normal, GapTone.Ahead, GapTone.Muted, GapTone.Threat, GapTone.Pit], board.Rows.Skip(1).Select(r => r.Tone));
-        Assert.Equal("+5s", board.Rows[2].Penalty);
-        Assert.Equal("2⚠", board.Rows[4].Warnings);
+        Assert.Equal(("+5s", PenaltyChip.Time), (board.Rows[2].Penalty, board.Rows[2].PenaltyKind));
+        Assert.Equal(("2⚠", PenaltyChip.Warnings, null), (board.Rows[4].Penalty, board.Rows[4].PenaltyKind, board.Rows[4].WarningBadge));
+    }
+
+    [Fact]
+    public void Tower_pen_cell_shows_the_most_urgent_penalty_and_keeps_warnings_as_a_badge()
+    {
+        var cars = Enumerable.Range(1, 6).Select(p => Car(p, $"C{p}", p * 1_000L)).ToList();
+        cars[0] = Car(1, "SG2", 1_000, penalty: 10, driveThroughs: 1, stopGos: 2, warnings: 3);
+        cars[1] = Car(2, "DT", 2_000, penalty: 5, driveThroughs: 1);
+        cars[2] = Car(3, "TIM", 3_000, penalty: 5, warnings: 2);
+        cars[3] = Car(4, "YOU", 4_000, player: true, warnings: 1);
+        var rows = TimingTower.Build(new FieldSnapshot(cars, 4, 15, 30, 0, 5000), TowerGapMode.GapToMe).Rows;
+
+        Assert.Equal(("2 SG", PenaltyChip.StopGo, "3"), (rows[0].Penalty, rows[0].PenaltyKind, rows[0].WarningBadge));
+        Assert.Equal(("DT", PenaltyChip.DriveThrough, null), (rows[1].Penalty, rows[1].PenaltyKind, rows[1].WarningBadge));
+        Assert.Equal(("+5s", PenaltyChip.Time, "2"), (rows[2].Penalty, rows[2].PenaltyKind, rows[2].WarningBadge));
+        Assert.Equal(("1⚠", PenaltyChip.Warnings, null), (rows[3].Penalty, rows[3].PenaltyKind, rows[3].WarningBadge));
+        Assert.Equal((null, PenaltyChip.None, null), (rows[4].Penalty, rows[4].PenaltyKind, rows[4].WarningBadge));
+    }
+
+    [Fact]
+    public void Tower_shows_the_fastest_lap_in_races_only()
+    {
+        var cars = Enumerable.Range(1, 8).Select(p => Car(p, $"C{p}", p * 1_000L)).ToList();
+        cars[2] = Car(3, "YOU", 3_000, player: true);
+        var race = new FieldSnapshot(cars, 3, 15, 30, 0, 5000) { FastestLap = new ReferenceLap(8, "", 91_447, 0, 0) };
+
+        Assert.Equal(new TowerFastestLap("C8", "1:31.447"), TimingTower.Build(race, TowerGapMode.GapToMe).FastestLap); // holder outside the six rows
+        Assert.Null(TimingTower.Build(race with { FastestLap = null }, TowerGapMode.GapToMe).FastestLap);
+        Assert.Null(TimingTower.Build(race with { SessionType = 5 }, TowerGapMode.GapToMe).FastestLap);
     }
 
     [Fact]
@@ -211,7 +243,7 @@ public class OverlayTimingTests
         var laps = new LapData[FormatLayout.F1_25.MaxCars];
         laps[0] = Lap(3, 1, 1000) with { CarPosition = 2 };
         laps[1] = Lap(3, 1, 1000) with { CarPosition = 1 };
-        laps[2] = Lap(3, 1, 1000) with { CarPosition = 3, Penalties = 10 };
+        laps[2] = Lap(3, 1, 1000) with { CarPosition = 3, Penalties = 10, UnservedDriveThroughs = 1, UnservedStopGos = 2 };
         laps[3] = Lap(3, 1, 1000) with { CarPosition = 4, ResultStatus = ResultStatus.Inactive };
         field.OnLapData(new LapDataPacket(Header(PacketId.LapData), laps, 255, 255));
         var status = new CarStatus[FormatLayout.F1_25.MaxCars];
@@ -226,8 +258,9 @@ public class OverlayTimingTests
         var online = snapshot.Cars[2];
         Assert.True(online.TelemetryRestricted);
         Assert.Null(online.ErsPercent);
-        Assert.Equal(10, online.PenaltySeconds);
+        Assert.Equal((10, 1, 2), (online.PenaltySeconds, online.UnservedDriveThroughs, online.UnservedStopGos));
         Assert.True(snapshot.Player!.IsPlayer);
+        Assert.Null(snapshot.FastestLap); // no session history yet
     }
 
     [Fact]

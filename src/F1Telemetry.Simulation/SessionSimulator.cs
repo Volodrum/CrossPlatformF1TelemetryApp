@@ -462,7 +462,7 @@ public sealed class SessionSimulator
         }
 
         _writer.WriteLapData(p, PlayerIndex, new LapData(lastLapMs, currentLapMs, s1, s2, toFront[PlayerIndex], toLeader[PlayerIndex],
-            (float)s, (float)((lap - 1) * L + s), 0, (byte)positions[PlayerIndex], (byte)lap, pit, (byte)pitStops, sector, false, 0, 0, 0, 4,
+            (float)s, (float)((lap - 1) * L + s), 0, (byte)positions[PlayerIndex], (byte)lap, pit, (byte)pitStops, sector, false, 0, 0, 0, 0, 0, 4,
             driver, result, pit != PitStatus.None, pitLaneMs, pitStopMs, 330));
 
         for (var i = 1; i < CarCount; i++)
@@ -473,7 +473,7 @@ public sealed class SessionSimulator
             var aiPit = k == 3 && lap % 3 == 2 && s / L is > 0.4 and < 0.5 ? PitStatus.Pitting : PitStatus.None;
             _writer.WriteLapData(p, i, new LapData(lastLapMs, currentLapMs, 0, 0, toFront[i], toLeader[i], (float)aiLapDistance,
                 (float)((lap - 1) * L + aiS), 0, (byte)positions[i], (byte)lap, aiPit, 0, SectorAt(aiLapDistance, L), false,
-                Penalties: k == 2 && lap >= 2 ? (byte)5 : (byte)0, 0, CornerCuttingWarnings: i == 2 ? (byte)2 : (byte)0, (byte)i,
+                Penalties: k == 2 && lap >= 2 ? (byte)5 : (byte)0, 0, CornerCuttingWarnings: i == 2 ? (byte)2 : (byte)0, 0, 0, (byte)i,
                 DriverStatus.FlyingLap, ResultStatus.Active, aiPit != PitStatus.None, 0, 0, 320));
         }
 

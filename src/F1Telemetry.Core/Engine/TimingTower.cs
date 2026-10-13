@@ -27,6 +27,26 @@ public enum GapTone
     Out,
 }
 
+/// <summary>What the PEN cell shows: only the most urgent item, so the tower keeps its width.</summary>
+public enum PenaltyChip
+{
+    None,
+
+    /// <summary>Corner-cutting warnings, no penalty.</summary>
+    Warnings,
+
+    /// <summary>Time penalties added to the race time.</summary>
+    Time,
+
+    /// <summary>Drive-through still to be served.</summary>
+    DriveThrough,
+
+    /// <summary>Stop-go still to be served.</summary>
+    StopGo,
+}
+
+/// <param name="Penalty">PEN chip text, e.g. "SG", "2 DT", "+5s" or "2⚠"; null when clean.</param>
+/// <param name="WarningBadge">Corner-cutting warnings riding on a penalty chip as a corner badge; null otherwise.</param>
 public sealed record TowerRow(
     int CarIndex,
     int Position,
@@ -39,14 +59,26 @@ public sealed record TowerRow(
     int TyreAgeLaps,
     double? ErsPercent,
     string? Penalty,
-    string? Warnings,
+    PenaltyChip PenaltyKind,
+    string? WarningBadge,
     bool CutoffBelow);
+
+/// <summary>Holder and time of the session's fastest lap, for the race footer.</summary>
+public sealed record TowerFastestLap(string Code, string Time);
 
 /// <param name="Title">Session label, e.g. "RACE · LAP" or "QUALIFYING · Q2".</param>
 /// <param name="Counter">The big number next to it: current lap in races, time left otherwise.</param>
 /// <param name="CounterTotal">"/ 30" after the lap in races, empty otherwise.</param>
 /// <param name="IsRace">Race gaps (the footer legend differs from qualifying).</param>
-public sealed record TowerBoard(string Title, string Counter, string CounterTotal, string Mode, bool IsRace, IReadOnlyList<TowerRow> Rows)
+/// <param name="FastestLap">Races only: the fastest lap so far, null until someone sets one.</param>
+public sealed record TowerBoard(
+    string Title,
+    string Counter,
+    string CounterTotal,
+    string Mode,
+    bool IsRace,
+    IReadOnlyList<TowerRow> Rows,
+    TowerFastestLap? FastestLap = null)
 {
     public static TowerBoard Empty { get; } = new("WAITING FOR DATA", "", "", "", true, []);
 }
@@ -82,20 +114,43 @@ public static class TimingTower
             var (gap, tone) = Status(car) ?? (isRace
                 ? mode == TowerGapMode.Interval ? Interval(car, previous, me, field.TrackLength) : GapToMe(car, me, field.TrackLength)
                 : BestLapGap(car, me));
+            var (penalty, kind, badge) = Penalty(car);
             rows.Add(new TowerRow(
                 car.CarIndex, car.Position, car.Code, car.TeamColour, car.IsPlayer, gap, tone, car.Compound, car.TyreAgeLaps,
-                car.ErsPercent,
-                car.PenaltySeconds > 0 ? $"+{car.PenaltySeconds}s" : null,
-                car.PenaltySeconds == 0 && car.TrackLimitWarnings > 0 ? $"{car.TrackLimitWarnings}⚠" : null,
-                cutoff == car.Position));
+                car.ErsPercent, penalty, kind, badge, cutoff == car.Position));
         }
 
         var (title, counter, total) = isRace
             ? ("RACE · LAP", Math.Max(1, me.CurrentLap).ToString(), $"/ {field.TotalLaps}")
             : (SessionTitle(field.SessionType), TimeFormat.Clock(field.SessionTimeLeftSeconds), "");
         var modeLabel = isRace ? mode == TowerGapMode.Interval ? "INTERVAL" : "GAP TO ME" : cutoff > 0 ? $"CUT-OFF P{cutoff}" : "BEST Δ";
-        return new TowerBoard(title, counter, total, modeLabel, isRace, rows);
+        var fastest = isRace && field.FastestLap is { } fl
+            ? new TowerFastestLap(cars.FirstOrDefault(c => c.CarIndex == fl.CarIndex)?.Code ?? fl.Code, TimeFormat.Lap(fl.LapMs))
+            : null;
+        return new TowerBoard(title, counter, total, modeLabel, isRace, rows, fastest);
     }
+
+    /// <summary>
+    /// The PEN cell: the most urgent of an unserved stop-go, an unserved drive-through, time penalties and corner-cutting
+    /// warnings. Warnings still count once a penalty is shown, so they ride on its chip as a badge.
+    /// </summary>
+    private static (string? Text, PenaltyChip Kind, string? WarningBadge) Penalty(CarTiming car)
+    {
+        var (text, kind) = car switch
+        {
+            { UnservedStopGos: > 0 } => (Count(car.UnservedStopGos, "SG"), PenaltyChip.StopGo),
+            { UnservedDriveThroughs: > 0 } => (Count(car.UnservedDriveThroughs, "DT"), PenaltyChip.DriveThrough),
+            { PenaltySeconds: > 0 } => ($"+{car.PenaltySeconds}s", PenaltyChip.Time),
+            { TrackLimitWarnings: > 0 } => ($"{car.TrackLimitWarnings}⚠", PenaltyChip.Warnings),
+            _ => ((string?)null, PenaltyChip.None),
+        };
+        var badge = kind is not (PenaltyChip.None or PenaltyChip.Warnings) && car.TrackLimitWarnings > 0
+            ? car.TrackLimitWarnings.ToString()
+            : null;
+        return (text, kind, badge);
+    }
+
+    private static string Count(int penalties, string code) => penalties > 1 ? $"{penalties} {code}" : code;
 
     private static int IndexOfPlayer(IReadOnlyList<CarTiming> cars)
     {

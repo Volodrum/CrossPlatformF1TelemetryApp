@@ -175,12 +175,14 @@ public sealed class FieldTracker
                 ErsPercent = status is { } st && !restricted ? Math.Clamp(st.ErsStoreEnergy / ErsCapacityJoules * 100, 0, 100) : null,
                 PenaltySeconds = lap.Penalties,
                 TrackLimitWarnings = lap.CornerCuttingWarnings,
+                UnservedDriveThroughs = lap.UnservedDriveThroughs,
+                UnservedStopGos = lap.UnservedStopGos,
                 BestLapMs = _bests[i]?.LapMs ?? 0,
             });
         }
 
         cars.Sort((a, b) => a.Position.CompareTo(b.Position));
-        return new FieldSnapshot(cars, _playerIndex, _sessionType, _totalLaps, _timeLeft, _trackLength);
+        return new FieldSnapshot(cars, _playerIndex, _sessionType, _totalLaps, _timeLeft, _trackLength) { FastestLap = SessionBestLap() };
     }
 
     /// <summary>"Max VERSTAPPEN" / "VERSTAPPEN" → "VER"; gamertags keep their first three letters.</summary>

@@ -111,7 +111,7 @@ public class FinalLapTests
     {
         var packet = Writer.Create(PacketId.LapData, 1, (float)time, 0, Player);
         Writer.WriteLapData(packet, Player, new LapData(lastLapMs, currentMs, s1, s2, 0, 0, 10, 0, 0, 1, (byte)lapNum, PitStatus.None, 0, sector,
-            false, 0, 0, 0, 1, DriverStatus.OnTrack, result, false, 0, 0, 0));
+            false, 0, 0, 0, 0, 0, 1, DriverStatus.OnTrack, result, false, 0, 0, 0));
         _engine.Process(PacketParser.Parse(packet).Packet!);
     }
 
