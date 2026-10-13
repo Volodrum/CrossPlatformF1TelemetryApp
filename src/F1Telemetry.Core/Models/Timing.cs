@@ -40,7 +40,14 @@ public sealed record CarTiming
     /// <summary>Accumulated time penalties in seconds.</summary>
     public int PenaltySeconds { get; init; }
 
+    /// <summary>Corner-cutting warnings this session (the game's running total).</summary>
     public int TrackLimitWarnings { get; init; }
+
+    /// <summary>Drive-through penalties handed out and not yet served.</summary>
+    public int UnservedDriveThroughs { get; init; }
+
+    /// <summary>Stop-go penalties handed out and not yet served.</summary>
+    public int UnservedStopGos { get; init; }
 
     /// <summary>Best lap this session (0 = none yet).</summary>
     public uint BestLapMs { get; init; }
@@ -55,6 +62,9 @@ public sealed record FieldSnapshot(
     int SessionTimeLeftSeconds,
     float TrackLength)
 {
+    /// <summary>Fastest lap of anyone this session, with its holder (null until someone sets one).</summary>
+    public ReferenceLap? FastestLap { get; init; }
+
     public CarTiming? Player => Cars.FirstOrDefault(c => c.IsPlayer);
 }
 

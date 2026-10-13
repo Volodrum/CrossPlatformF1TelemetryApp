@@ -5,7 +5,7 @@
              x:Class="F1Telemetry.App.Views.Overlays.TimingTowerOverlayView"
              x:DataType="vm:TimingTowerOverlayViewModel"
              Width="420">
-  <!-- Columns: POS 30 · team 4 · code 46 · gap * · tyre 52 · ERS 72 · penalty 44 (8 px gaps). Compact by design: 13–16 px numbers. -->
+  <!-- Columns: POS 30 · team 4 · code 46 · gap * · tyre 52 · ERS 72 · penalty 52 (8 px gaps). Compact by design: 13–16 px numbers. -->
   <Border Classes="hud" Padding="10,12,10,10">
     <StackPanel>
       <!-- Lap count (race) or session clock (qualifying) large, so it reads at a glance. -->
@@ -18,7 +18,7 @@
         </StackPanel>
         <TextBlock Grid.Column="1" Classes="label" Text="{Binding Mode}" FontSize="12" VerticalAlignment="Bottom" Margin="0,0,0,5" />
       </Grid>
-      <Grid ColumnDefinitions="30,4,46,*,52,72,44" ColumnSpacing="8" Margin="6,0,6,6">
+      <Grid ColumnDefinitions="30,4,46,*,52,72,52" ColumnSpacing="8" Margin="6,0,6,6">
         <TextBlock Classes="label" Text="POS" FontSize="10" HorizontalAlignment="Center" />
         <TextBlock Grid.Column="2" Classes="label" Text="DRV" FontSize="10" />
         <TextBlock Grid.Column="3" Classes="label" Text="{Binding GapHeader}" FontSize="10" HorizontalAlignment="Right" />
@@ -33,7 +33,7 @@
             <Border Background="{Binding RowBackground}" BorderBrush="{Binding RowBorder}" BorderThickness="2" CornerRadius="6"
                     Height="32" Margin="0,0,0,3" ClipToBounds="True">
               <Panel>
-                <Grid ColumnDefinitions="30,4,46,*,52,72,44" ColumnSpacing="8" Margin="4,0">
+                <Grid ColumnDefinitions="30,4,46,*,52,72,52" ColumnSpacing="8" Margin="4,0">
                   <TextBlock Text="{Binding Position}" Foreground="{Binding PositionBrush}" FontFamily="{StaticResource DisplayFont}"
                              FontSize="16" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" />
                   <Border Grid.Column="1" Width="4" Height="20" CornerRadius="2" Background="{Binding TeamBrush}" VerticalAlignment="Center" />
@@ -63,14 +63,16 @@
                                FontWeight="Bold" MinWidth="36" TextAlignment="Right" VerticalAlignment="Center" />
                   </StackPanel>
 
-                  <Panel Grid.Column="6" HorizontalAlignment="Right" VerticalAlignment="Center">
-                    <Border Background="{StaticResource DangerBrush}" CornerRadius="4" Padding="4,0" IsVisible="{Binding HasPenalty}">
-                      <TextBlock Text="{Binding Penalty}" Foreground="{StaticResource OnColorBrush}" FontFamily="{StaticResource DataFont}"
+                  <!-- One chip, the most urgent item; corner-cutting warnings ride on a penalty chip as an amber badge. -->
+                  <Panel Grid.Column="6" HorizontalAlignment="Right" VerticalAlignment="Center" IsVisible="{Binding HasPenalty}">
+                    <Border Background="{Binding PenaltyBackground}" BorderBrush="{Binding PenaltyBorder}" BorderThickness="2" CornerRadius="4" Padding="4,0">
+                      <TextBlock Text="{Binding Penalty}" Foreground="{Binding PenaltyForeground}" FontFamily="{StaticResource DataFont}"
                                  FontSize="12" FontWeight="ExtraBold" />
                     </Border>
-                    <Border BorderBrush="{StaticResource SlowerBrush}" BorderThickness="2" CornerRadius="4" Padding="4,0" IsVisible="{Binding HasWarnings}">
-                      <TextBlock Text="{Binding Warnings}" Foreground="{StaticResource SlowerBrush}" FontFamily="{StaticResource DataFont}"
-                                 FontSize="12" FontWeight="ExtraBold" />
+                    <Border Background="{StaticResource SlowerBrush}" CornerRadius="7" MinWidth="14" Height="14" Padding="3,0"
+                            HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,-5,-5,0" IsVisible="{Binding HasWarningBadge}">
+                      <TextBlock Text="{Binding WarningBadge}" Foreground="{StaticResource OnColorBrush}" FontFamily="{StaticResource DataFont}"
+                                 FontSize="10" FontWeight="ExtraBold" HorizontalAlignment="Center" VerticalAlignment="Center" />
                     </Border>
                   </Panel>
                 </Grid>
@@ -84,6 +86,17 @@
 
       <Border Height="2" Background="{StaticResource DividerBrush}" Margin="0,3,0,6" />
       <Grid ColumnDefinitions="*,Auto" Margin="6,0">
+        <!-- Races: the fastest lap replaces the left legend once someone has set one. -->
+        <StackPanel Orientation="Horizontal" Spacing="6" IsVisible="{Binding HasFastestLap}">
+          <Path Data="M2.5,9 A5.5,5.5 0 1 1 13.5,9 A5.5,5.5 0 1 1 2.5,9 Z M8,9 L8,6.5 M6,1.5 L10,1.5 M12.5,4 L13.5,3"
+                Stroke="{StaticResource SessionBestBrush}" StrokeThickness="2" StrokeLineCap="Round" Width="16" Height="16"
+                VerticalAlignment="Center" />
+          <TextBlock Classes="label" Text="FL" FontSize="10" VerticalAlignment="Center" />
+          <TextBlock Text="{Binding FastestLapCode}" FontFamily="{StaticResource DisplayFont}" FontSize="13" FontWeight="Bold"
+                     LetterSpacing="1" VerticalAlignment="Center" />
+          <TextBlock Text="{Binding FastestLapTime}" Foreground="{StaticResource SessionBestBrush}" FontFamily="{StaticResource DataFont}"
+                     FontSize="13" FontWeight="ExtraBold" VerticalAlignment="Center" />
+        </StackPanel>
         <StackPanel Orientation="Horizontal" Spacing="6" IsVisible="{Binding HasLegendLeft}">
           <Border Width="9" Height="9" CornerRadius="1" Background="{Binding LegendLeftBrush}" VerticalAlignment="Center" />
           <TextBlock Classes="label" Text="{Binding LegendLeft}" FontSize="10" VerticalAlignment="Center" />

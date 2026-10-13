@@ -135,8 +135,11 @@ public sealed partial class TowerRowViewModel : ObservableObject
     [ObservableProperty] public partial double ErsFill { get; set; }
     [ObservableProperty] public partial bool HasPenalty { get; set; }
     [ObservableProperty] public partial string Penalty { get; set; } = "";
-    [ObservableProperty] public partial bool HasWarnings { get; set; }
-    [ObservableProperty] public partial string Warnings { get; set; } = "";
+    [ObservableProperty] public partial IBrush PenaltyBackground { get; set; } = Palette.Transparent;
+    [ObservableProperty] public partial IBrush PenaltyBorder { get; set; } = Palette.Transparent;
+    [ObservableProperty] public partial IBrush PenaltyForeground { get; set; } = Palette.TextHi;
+    [ObservableProperty] public partial bool HasWarningBadge { get; set; }
+    [ObservableProperty] public partial string WarningBadge { get; set; } = "";
     [ObservableProperty] public partial IBrush RowBackground { get; set; } = RowBrush;
     [ObservableProperty] public partial IBrush RowBorder { get; set; } = Palette.Transparent;
     [ObservableProperty] public partial bool IsCutoff { get; set; }
@@ -169,8 +172,16 @@ public sealed partial class TowerRowViewModel : ObservableObject
         ErsFill = (row.ErsPercent ?? 0) / 100 * ErsBarWidth;
         HasPenalty = row.Penalty is not null;
         Penalty = row.Penalty ?? "";
-        HasWarnings = row.Warnings is not null;
-        Warnings = row.Warnings ?? "";
+        // Warnings: amber outline. Time penalty: red fill. A drive-through or stop-go still to serve: white fill, red edge.
+        (PenaltyBackground, PenaltyBorder, PenaltyForeground) = row.PenaltyKind switch
+        {
+            PenaltyChip.Warnings => (Palette.Transparent, Palette.Slower, Palette.Slower),
+            PenaltyChip.Time => (Palette.Danger, Palette.Danger, Palette.OnColor),
+            PenaltyChip.DriveThrough or PenaltyChip.StopGo => (Palette.TextHi, Palette.Danger, Palette.OnColor),
+            _ => (Palette.Transparent, Palette.Transparent, Palette.TextHi),
+        };
+        HasWarningBadge = row.WarningBadge is not null;
+        WarningBadge = row.WarningBadge ?? "";
         RowBackground = row.IsPlayer ? Palette.Selected : RowBrush;
         RowBorder = row.IsPlayer ? Palette.LineStrong : Palette.Transparent;
         IsCutoff = row.CutoffBelow;
@@ -190,6 +201,9 @@ public sealed partial class TimingTowerOverlayViewModel : OverlayViewModelBase
     [ObservableProperty] public partial string LegendRight { get; set; } = "";
     [ObservableProperty] public partial IBrush LegendRightBrush { get; set; } = Palette.Slower;
     [ObservableProperty] public partial bool HasLegendLeft { get; set; }
+    [ObservableProperty] public partial bool HasFastestLap { get; set; }
+    [ObservableProperty] public partial string FastestLapCode { get; set; } = "";
+    [ObservableProperty] public partial string FastestLapTime { get; set; } = "";
 
     public ObservableCollection<TowerRowViewModel> Rows { get; } = [];
 
@@ -211,7 +225,11 @@ public sealed partial class TimingTowerOverlayViewModel : OverlayViewModelBase
             _ when GapMode == TowerGapMode.Interval => ("INT", "YOU IN DRS RANGE", Palette.Faster, "THREAT BEHIND"),
             _ => ("GAP", "AHEAD <1 S", Palette.Faster, "BEHIND <1 S"),
         };
-        HasLegendLeft = LegendLeft.Length > 0;
+        // Races: the fastest lap takes the left of the footer once someone has set one.
+        HasFastestLap = board.FastestLap is not null;
+        FastestLapCode = board.FastestLap?.Code ?? "";
+        FastestLapTime = board.FastestLap?.Time ?? "";
+        HasLegendLeft = LegendLeft.Length > 0 && !HasFastestLap;
         LegendRightBrush = Palette.Slower;
 
         while (Rows.Count > board.Rows.Count)
@@ -233,7 +251,7 @@ public sealed partial class TimingTowerOverlayViewModel : OverlayViewModelBase
     public override void LoadPreview()
     {
         CarTiming Car(int position, string code, uint team, long gapMs, string compound, int age, double? ers, int penalty = 0, int warnings = 0,
-            bool player = false, PitStatus pit = PitStatus.None) => new()
+            bool player = false, PitStatus pit = PitStatus.None, int driveThroughs = 0, int stopGos = 0) => new()
         {
             CarIndex = position,
             Position = position,
@@ -250,17 +268,19 @@ public sealed partial class TimingTowerOverlayViewModel : OverlayViewModelBase
             ErsPercent = ers,
             PenaltySeconds = penalty,
             TrackLimitWarnings = warnings,
+            UnservedDriveThroughs = driveThroughs,
+            UnservedStopGos = stopGos,
         };
 
         Update(new FieldSnapshot(
         [
             Car(4, "PIA", 0xFF8000, -3412, "Medium", 14, 71),
-            Car(5, "LEC", 0xE8002D, -1905, "Hard", 8, 38, penalty: 5),
-            Car(6, "RUS", 0x27F4D2, -644, "Medium", 14, 12, warnings: 2),
-            Car(7, "YOU", 0xE8002D, 0, "Medium", 14, 54, player: true),
+            Car(5, "LEC", 0xE8002D, -1905, "Hard", 8, 38, penalty: 5, warnings: 2),
+            Car(6, "RUS", 0x27F4D2, -644, "Medium", 14, 12, driveThroughs: 1),
+            Car(7, "YOU", 0xE8002D, 0, "Medium", 14, 54, warnings: 1, player: true),
             Car(8, "ALO", 0x229971, 812, "Soft", 3, 88),
-            Car(9, "GAS", 0x0093CC, 2307, "Hard", 0, null, pit: PitStatus.Pitting),
-        ], 7, 15, 30, 0, 5000));
+            Car(9, "GAS", 0x0093CC, 2307, "Hard", 0, null, penalty: 10, pit: PitStatus.Pitting, stopGos: 1),
+        ], 7, 15, 30, 0, 5000) { FastestLap = new ReferenceLap(8, "ALO", 91_447, 0, 0) });
     }
 
     public override void Reset()
@@ -268,6 +288,7 @@ public sealed partial class TimingTowerOverlayViewModel : OverlayViewModelBase
         Show(TowerBoard.Empty);
         GapHeader = "GAP";
         HasLegendLeft = false;
+        HasFastestLap = false;
         LegendRight = "";
     }
 }

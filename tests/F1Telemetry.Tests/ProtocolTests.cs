@@ -95,7 +95,7 @@ public class ProtocolTests
         var writer = new PacketWriter(layout);
         var packet = writer.Create(PacketId.LapData, 1, 0, 0, (byte)(layout.MaxCars - 1));
         var expected = new LapData(83_456, 12_345, 61_234, 28_001, 850, 64_000, 1234.5f, 9999, 0, 5, 7, PitStatus.Pitting, 1, 2, true, 3, 2, 1,
-            8, DriverStatus.InLap, ResultStatus.Active, true, 1500, 2300, 321.5f);
+            1, 2, 8, DriverStatus.InLap, ResultStatus.Active, true, 1500, 2300, 321.5f);
         writer.WriteLapData(packet, layout.MaxCars - 1, expected);
 
         var parsed = Assert.IsType<LapDataPacket>(PacketParser.Parse(packet).Packet).Player;
