@@ -113,6 +113,30 @@ public sealed class AppSettings
 
     public int RaceMediumSets { get; set; } = 3;
     public int RaceHardSets { get; set; } = 2;
+
+    /// <summary>
+    /// Recordings whose typical laps the energy tab's map, summary and plans (and the ERS PLAN overlay) add to the
+    /// session on screen, by track and game format (key: <see cref="EnergyPoolKey"/>).
+    /// </summary>
+    public Dictionary<string, List<long>> EnergyPools { get; set; } = [];
+
+    public static string EnergyPoolKey(GameFormat format, int trackId) => $"{format}:{trackId}";
+
+    /// <summary>The recordings picked for a track (empty when none are).</summary>
+    public IReadOnlyList<long> EnergyPool(GameFormat format, int trackId) => EnergyPools.GetValueOrDefault(EnergyPoolKey(format, trackId)) ?? [];
+
+    public void SetEnergyPool(GameFormat format, int trackId, IEnumerable<long> recordings)
+    {
+        var ids = recordings.Distinct().Order().ToList();
+        if (ids.Count == 0)
+        {
+            EnergyPools.Remove(EnergyPoolKey(format, trackId));
+        }
+        else
+        {
+            EnergyPools[EnergyPoolKey(format, trackId)] = ids;
+        }
+    }
     public Dictionary<OverlayKind, OverlaySettings> Overlays { get; set; } = Enum.GetValues<OverlayKind>().ToDictionary(k => k, _ => new OverlaySettings());
 
     public OverlaySettings Overlay(OverlayKind kind)

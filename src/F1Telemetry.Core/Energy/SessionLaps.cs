@@ -34,13 +34,20 @@ public static class SessionLaps
     /// level and the deploy mode most of them ran there. Needs only the battery samples, not engine power. Null when
     /// none of the laps has samples.
     /// </summary>
-    public static TypicalLap? Typical(IReadOnlyList<TelemetrySample> samples, IReadOnlyCollection<int> lapNumbers, double step = LapProfile.Step)
+    public static TypicalLap? Typical(IReadOnlyList<TelemetrySample> samples, IReadOnlyCollection<int> lapNumbers, double step = LapProfile.Step) =>
+        Typical([.. samples.Where(s => lapNumbers.Contains(s.LapNumber)).GroupBy(s => s.LapNumber).Select(g => (IReadOnlyList<TelemetrySample>)[.. g])], step);
+
+    /// <summary>
+    /// <see cref="Typical(IReadOnlyList{TelemetrySample}, IReadOnlyCollection{int}, double)"/> over laps that may come from
+    /// several sessions: each entry is one lap's samples.
+    /// </summary>
+    public static TypicalLap? Typical(IReadOnlyList<IReadOnlyList<TelemetrySample>> laps, double step = LapProfile.Step) => TypicalOf(
+    [
+        .. laps.Select(l => l.Where(s => s.LapDistance >= 0).OrderBy(s => s.LapDistance).ToList()).Where(l => l.Count > 1),
+    ], step);
+
+    private static TypicalLap? TypicalOf(List<List<TelemetrySample>> laps, double step)
     {
-        var laps = samples.Where(s => s.LapDistance >= 0 && lapNumbers.Contains(s.LapNumber))
-            .GroupBy(s => s.LapNumber)
-            .Select(g => g.OrderBy(s => s.LapDistance).ToList())
-            .Where(l => l.Count > 1)
-            .ToList();
         if (laps.Count == 0)
         {
             return null;

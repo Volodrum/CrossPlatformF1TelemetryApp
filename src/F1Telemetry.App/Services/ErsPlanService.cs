@@ -9,7 +9,8 @@ namespace F1Telemetry.App.Services;
 /// <summary>
 /// The plan behind the live ERS PLAN overlay. It plans on a session's energy map, as the energy tab's ERS PLAN shows
 /// it: races on the session's typical lap, qualifying on its fastest lap, with the car model learned from every lap at
-/// the track. The session is the newest earlier one at the track with <see cref="MinLaps"/> typical laps, or else the
+/// the track. When sessions at the track are picked on the energy tab, it plans on their laps together, as the tab does.
+/// Otherwise the session is the newest earlier one at the track with <see cref="MinLaps"/> typical laps, or else the
 /// one being recorded once it has driven that many: the battery over a lap or two is a poor guide (out-laps, traffic,
 /// a car model learned from too little). Until then the overlay waits, and the plan is re-learned after every lap while
 /// it rests on the session being driven. Every lap at the line it plans from the battery the car actually has.
@@ -40,6 +41,7 @@ public sealed class ErsPlanService
 
     private readonly TelemetryRuntime _runtime;
     private readonly LiveDataHub _hub;
+    private readonly SettingsService _settings;
     private readonly ILogger _log;
     private (GameFormat Format, int TrackId)? _track;
     private int _sessionType = -1;
@@ -52,10 +54,11 @@ public sealed class ErsPlanService
     // The plan rests on the session being driven (or on an earlier one with too few laps): re-learn after every lap.
     private bool _learning;
 
-    public ErsPlanService(TelemetryRuntime runtime, LiveDataHub hub, ILogger<ErsPlanService> log)
+    public ErsPlanService(TelemetryRuntime runtime, LiveDataHub hub, SettingsService settings, ILogger<ErsPlanService> log)
     {
         _runtime = runtime;
         _hub = hub;
+        _settings = settings;
         _log = log;
         hub.SessionChanged += OnSession;
         hub.LapCompleted += _ => OnLapCompleted();
@@ -107,6 +110,15 @@ public sealed class ErsPlanService
         else
         {
             _ = ReplanAsync();
+        }
+    }
+
+    /// <summary>The energy tab's sessions for a track changed: plan on them, if that is the track being driven.</summary>
+    public void PoolChanged(GameFormat format, int trackId)
+    {
+        if (_track is { } track && track == (format, trackId) && !_loading)
+        {
+            _ = LoadAsync(track, fresh: false);
         }
     }
 
@@ -218,6 +230,24 @@ public sealed class ErsPlanService
             .Where(r => r.Format == track.Format && r.TrackId == track.TrackId)
             .OrderByDescending(r => r.StartTime)
             .ToList();
+
+        // Sessions picked on the energy tab come first: the overlay plans on the same laps the tab shows.
+        var picked = _settings.Current.EnergyPool(track.Format, track.TrackId).ToHashSet();
+        var pool = recordings.Where(r => picked.Contains(r.Id) && r.Id != live).ToList();
+        if (pool.Count > 0)
+        {
+            var sessions = new List<PlanSession>();
+            foreach (var recording in pool)
+            {
+                var laps = await _runtime.Analysis.GetClassifiedLapsAsync(recording);
+                sessions.Add(new PlanSession(recording, SessionLaps.Representative(laps), SessionLaps.Fastest(laps)));
+            }
+
+            if ((await PlanInputs.LoadAsync(_runtime, sessions, model)).Inputs is { RaceLaps: >= MinLaps } pooled)
+            {
+                return ((pooled, $"{(pool.Count == 1 ? "1 session" : $"{pool.Count} sessions")} picked on the energy tab ({pooled.RaceLaps} typical laps)", false), "");
+            }
+        }
 
         (PlanInputs Inputs, RecordingInfo Recording)? fewer = null;
         foreach (var recording in recordings.Where(r => r.Id != live).Take(SessionsToTry))

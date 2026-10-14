@@ -110,6 +110,36 @@ public static class EnergyText
     }
 }
 
+/// <summary>
+/// A recording at the track in the sessions bar: ticked, its typical laps join the map, summary and plans. The session on
+/// screen is always in (<see cref="IsCurrent"/>).
+/// </summary>
+public sealed partial class EnergySessionChip(RecordingInfo recording, int typicalLaps, bool isCurrent, bool selected, Action<EnergySessionChip> toggled)
+    : ObservableObject
+{
+    public RecordingInfo Recording => recording;
+    public bool IsCurrent => isCurrent;
+    public bool CanToggle => !isCurrent;
+    public string Label => (isCurrent ? "THIS · " : "") + $"{SessionTypes.Name(recording.SessionType)} #{recording.Id}".ToUpperInvariant();
+    public string Detail => $"{(typicalLaps == 1 ? "1 typical lap" : $"{typicalLaps} typical laps")} · {recording.StartTime.LocalDateTime:d}";
+    public string Tip => isCurrent ? "The session on screen: always in." : "Tick to add this session's typical laps to the map, the summary and the plans.";
+
+    [ObservableProperty] public partial bool IsSelected { get; set; } = selected;
+
+    [RelayCommand]
+    private void Toggle()
+    {
+        if (!isCurrent)
+        {
+            IsSelected = !IsSelected;
+            toggled(this);
+        }
+    }
+}
+
+/// <summary>A session whose typical laps the tab is built on: its per-lap energy, battery samples and typical laps.</summary>
+internal sealed record PooledSession(RecordingInfo Recording, IReadOnlyList<LapEnergy> Energies, IReadOnlyList<TelemetrySample> Samples, HashSet<int> Typical);
+
 /// <summary>The energy tab's pages: the session as driven, the ERS plan built on it, and the car model behind the plan.</summary>
 public enum EnergyPage
 {
@@ -127,22 +157,26 @@ public sealed partial class EnergyViewModel : ObservableObject
 {
     private readonly TelemetryRuntime runtime;
     private readonly SettingsService settings;
+    private readonly ErsPlanService ersPlan;
     private int _loadVersion;
 
-    // The loaded session: per-lap energy, the laps it is analysed on, and their average along the lap.
+    // The loaded session: per-lap energy and the laps it is analysed on (the table).
     private IReadOnlyList<LapEnergy> _energies = [];
     private IReadOnlyList<LapRecord> _records = [];
-    private IReadOnlyList<TelemetrySample> _energySamples = [];
     private HashSet<int> _sessionLaps = [];
+
+    // The sessions the map, trace, summary and plans are built on (the loaded one first), and their typical lap.
+    private IReadOnlyList<PooledSession> _pool = [];
     private TypicalLap? _typical;
 
     // The racing line the map draws on: the session's fastest lap (or a typical one).
     private IReadOnlyList<TelemetrySample>? _line;
 
-    public EnergyViewModel(TelemetryRuntime runtime, EnergyPlanViewModel plan, SettingsService settings)
+    public EnergyViewModel(TelemetryRuntime runtime, EnergyPlanViewModel plan, SettingsService settings, ErsPlanService ersPlan)
     {
         this.runtime = runtime;
         this.settings = settings;
+        this.ersPlan = ersPlan;
         Plan = plan;
         Unit = settings.Current.EnergyUnit;
         Plan.Unit = Unit;
@@ -183,6 +217,14 @@ public sealed partial class EnergyViewModel : ObservableObject
     [ObservableProperty] public partial string ModelNote { get; set; } = "";
     [ObservableProperty] public partial ChartModel? DeployChart { get; set; }
     [ObservableProperty] public partial ChartModel? AlongLapChart { get; set; }
+
+    /// <summary>Every recording at the track in this game format, for the sessions bar; the session on screen first.</summary>
+    public ObservableCollection<EnergySessionChip> Sessions { get; } = [];
+
+    /// <summary>The bar shows once there is another session at the track to add.</summary>
+    [ObservableProperty] public partial bool HasOtherSessions { get; set; }
+
+    [ObservableProperty] public partial string PoolNote { get; set; } = "";
 
     public ObservableCollection<EnergyLapRow> Laps { get; } = [];
     public ObservableCollection<ModeShare> Modes { get; } = [];
@@ -308,18 +350,56 @@ public sealed partial class EnergyViewModel : ObservableObject
         }
 
         // The laps the session is analysed on: its typical laps, or every lap when none is timed.
-        var withEnergy = energies.Select(e => e.LapNumber).ToHashSet();
-        var representative = SessionLaps.Representative(laps).Where(l => withEnergy.Contains(l.LapNumber)).ToList();
-        var sessionLaps = representative.Count > 0 ? representative.Select(l => l.LapNumber).ToHashSet() : withEnergy;
-        var fastest = SessionLaps.Fastest(laps.Where(l => withEnergy.Contains(l.LapNumber)));
+        var (representative, sessionLaps, fastest) = Typical(laps, energies);
         var line = await runtime.Store.GetLapSamplesAsync(recording.Id, fastest?.LapNumber ?? sessionLaps.Min());
+
+        // Other sessions at the track picked in the sessions bar: their typical laps join the map, summary and plans.
+        var atTrack = (await runtime.Store.GetRecordingsAsync())
+            .Where(r => r.TrackId == recording.TrackId && r.Format == recording.Format && r.Id != recording.Id)
+            .OrderByDescending(r => r.StartTime)
+            .ToList();
+        var picked = settings.Current.EnergyPool(recording.Format, recording.TrackId).ToHashSet();
+        var pool = new List<PooledSession> { new(recording, energies, samples, sessionLaps) };
+        var planSessions = new List<PlanSession> { new(recording, representative, fastest) };
+        var chips = new List<EnergySessionChip> { new(recording, representative.Count, isCurrent: true, selected: true, OnPoolToggled) };
+        foreach (var other in atTrack)
+        {
+            var otherLaps = await runtime.Analysis.GetClassifiedLapsAsync(other);
+            if (picked.Contains(other.Id))
+            {
+                var otherSamples = await runtime.Store.GetEnergySamplesAsync(other.Id);
+                var otherEnergies = await Task.Run(() => EnergyAnalyzer.AnalyzeLaps(otherSamples, model?.Deploy));
+                var (otherRepresentative, otherTypical, otherFastest) = Typical(otherLaps, otherEnergies);
+                if (otherEnergies.Count > 0 && otherSamples.Any(s => s.ErsStoreEnergy > 0 || s.ErsDeployed > 0))
+                {
+                    pool.Add(new PooledSession(other, otherEnergies, otherSamples, otherTypical));
+                    planSessions.Add(new PlanSession(other, otherRepresentative, otherFastest));
+                }
+            }
+
+            chips.Add(new EnergySessionChip(other, SessionLaps.Representative(otherLaps).Count, isCurrent: false, picked.Contains(other.Id), OnPoolToggled));
+        }
+
         if (version != _loadVersion)
         {
             return;
         }
 
-        (_energies, _records, _energySamples, _sessionLaps, _line) = (energies, laps, samples, sessionLaps, line);
-        _typical = SessionLaps.Typical(samples, sessionLaps);
+        Sessions.Clear();
+        foreach (var chip in chips)
+        {
+            Sessions.Add(chip);
+        }
+
+        HasOtherSessions = chips.Count > 1;
+        var typicalLaps = pool.Sum(p => p.Typical.Count);
+        PoolNote = pool.Count == 1
+            ? "Tick other sessions at this track to add their typical laps to the map, the summary and the plans."
+            : $"{typicalLaps} typical laps from {pool.Count} sessions in the map, the summary and the plans. The table lists this session's laps.";
+
+        (_energies, _records, _sessionLaps, _line, _pool) = (energies, laps, sessionLaps, line, pool);
+        _typical = SessionLaps.Typical([.. pool.SelectMany(p => p.Samples.Where(s => p.Typical.Contains(s.LapNumber)).GroupBy(s => s.LapNumber)
+            .Select(g => (IReadOnlyList<TelemetrySample>)[.. g]))]);
         HasData = true;
         FillRows();
         FillSummary();
@@ -327,11 +407,36 @@ public sealed partial class EnergyViewModel : ObservableObject
         ShowGraphics();
 
         Plan.Clear(loading: true);
-        var (inputs, unavailable) = await PlanInputs.LoadAsync(runtime, recording, model, representative, fastest, line);
+        var (inputs, unavailable) = await PlanInputs.LoadAsync(runtime, planSessions, model, line);
         if (version == _loadVersion)
         {
             await Plan.SetSessionAsync(inputs, unavailable);
         }
+    }
+
+    /// <summary>A session's typical laps among those with energy data (every such lap when none is timed), and its fastest.</summary>
+    private static (IReadOnlyList<LapRecord> Representative, HashSet<int> Laps, LapRecord? Fastest) Typical(IReadOnlyList<LapRecord> laps, IReadOnlyList<LapEnergy> energies)
+    {
+        var withEnergy = energies.Select(e => e.LapNumber).ToHashSet();
+        var representative = SessionLaps.Representative(laps).Where(l => withEnergy.Contains(l.LapNumber)).ToList();
+        var typical = representative.Count > 0 ? representative.Select(l => l.LapNumber).ToHashSet() : withEnergy;
+        return (representative, typical, SessionLaps.Fastest(laps.Where(l => withEnergy.Contains(l.LapNumber))));
+    }
+
+    /// <summary>A session was ticked or unticked: save the pick, rebuild the tab, and let the overlay plan on the same sessions.</summary>
+    private void OnPoolToggled(EnergySessionChip chip)
+    {
+        if (Recording is not { } recording)
+        {
+            return;
+        }
+
+        // The pick belongs to the track (the overlay plans on it too), so the session on screen is in it, unless it is alone.
+        var others = Sessions.Where(s => s.IsSelected && !s.IsCurrent).Select(s => s.Recording.Id).ToList();
+        settings.Current.SetEnergyPool(recording.Format, recording.TrackId, others.Count > 0 ? [recording.Id, .. others] : []);
+        settings.Save();
+        ersPlan.PoolChanged(recording.Format, recording.TrackId);
+        _ = RefreshAsync();
     }
 
     /// <summary>The car model learned from every lap at this track: deploy map, energy along the lap, straight-line fits.</summary>
@@ -387,7 +492,7 @@ public sealed partial class EnergyViewModel : ObservableObject
         Modes.Clear();
         Issues.Clear();
         OnPropertyChanged(nameof(HasIssues));
-        (_energies, _records, _energySamples, _sessionLaps, _typical, _line) = ([], [], [], [], null, null);
+        (_energies, _records, _sessionLaps, _pool, _typical, _line) = ([], [], [], [], null, null);
         Samples = null;
         Trace = null;
         HasData = false;
@@ -403,20 +508,26 @@ public sealed partial class EnergyViewModel : ObservableObject
         }
     }
 
-    /// <summary>The session's laps added up: battery at the line, energy per lap, deploy modes and waste.</summary>
+    /// <summary>The typical laps of every session the tab is built on.</summary>
+    private IEnumerable<LapEnergy> PooledLaps() => _pool.SelectMany(p => p.Energies.Where(e => p.Typical.Contains(e.LapNumber)));
+
+    /// <summary>The sessions' typical laps added up: battery at the line, energy per lap, deploy modes and waste.</summary>
     private void FillSummary()
     {
-        var laps = _energies.Where(e => _sessionLaps.Contains(e.LapNumber)).ToList();
+        var laps = PooledLaps().ToList();
         if (laps.Count == 0)
         {
             return;
         }
 
         var unit = Unit;
-        SessionTitle = laps.Count == 1 ? "SESSION · 1 LAP" : $"SESSION · {laps.Count} LAPS";
-        SessionNote = laps.Count == _energies.Count
-            ? "Every lap of the session, averaged."
-            : $"{laps.Count} of {_energies.Count} laps, averaged: pit and safety car laps, and laps more than 3% off the median, are left out.";
+        var all = _pool.Sum(p => p.Energies.Count);
+        var sessions = _pool.Count == 1 ? "SESSION" : $"{_pool.Count} SESSIONS";
+        SessionTitle = laps.Count == 1 ? $"{sessions} · 1 LAP" : $"{sessions} · {laps.Count} LAPS";
+        SessionNote = (laps.Count == all
+            ? $"Every lap of the {(_pool.Count == 1 ? "session" : "sessions")}, averaged."
+            : $"{laps.Count} of {all} laps, averaged: pit and safety car laps, and laps more than 3% off {(_pool.Count == 1 ? "the" : "each session's")} median, are left out.")
+            + (_pool.Count == 1 ? "" : " Totals are over all of them.");
 
         var start = laps.Average(e => e.StartStore);
         var end = laps.Average(e => e.EndStore);
@@ -465,7 +576,7 @@ public sealed partial class EnergyViewModel : ObservableObject
             : Recolour(line, typical.IndexAt, i => typical.Mode[i], i => typical.Level[i]);
         MapTitle = onPlan
             ? $"{(plan!.Kind == PlanKind.Race ? "RACE" : "QUALIFYING")} PLAN · {Plan.Predicted}"
-            : $"YOUR SESSION · {(typical.LapCount == 1 ? "1 LAP" : $"{typical.LapCount} LAPS AVERAGED")}";
+            : $"YOUR {(_pool.Count == 1 ? "SESSION" : $"{_pool.Count} SESSIONS")} · {(typical.LapCount == 1 ? "1 LAP" : $"{typical.LapCount} LAPS AVERAGED")}";
         Trace = BuildTrace(plan);
     }
 
@@ -494,22 +605,22 @@ public sealed partial class EnergyViewModel : ObservableObject
         var typical = _typical!;
         var series = new List<ChartSeries>();
         var first = true;
-        foreach (var lap in _energySamples.Where(s => s.LapDistance >= 0 && _sessionLaps.Contains(s.LapNumber)).GroupBy(s => s.LapNumber))
+        foreach (var lap in _pool.SelectMany(p => p.Samples.Where(s => s.LapDistance >= 0 && p.Typical.Contains(s.LapNumber)).GroupBy(s => s.LapNumber)))
         {
             series.Add(new ChartSeries(first ? "Each lap" : "", "#4A5363", [.. lap.Select(s => s.LapDistance)], [.. lap.Select(s => s.ErsStoreEnergy * scale)],
                 LineWidth: 1, InLegend: first));
             first = false;
         }
 
-        series.Add(new ChartSeries("Session average", "#F4F6F9", [.. Enumerable.Range(0, typical.Level.Length).Select(i => i * typical.Step)],
+        series.Add(new ChartSeries(_pool.Count == 1 ? "Session average" : "Average of the sessions", "#F4F6F9", [.. Enumerable.Range(0, typical.Level.Length).Select(i => i * typical.Step)],
             [.. typical.Level.Select(j => j * scale)]));
 
-        var limits = _energies.Where(e => _sessionLaps.Contains(e.LapNumber) && e.LimitReachedAt is not null).Select(e => e.LimitReachedAt!.Value).ToList();
+        var limits = PooledLaps().Where(e => e.LimitReachedAt is not null).Select(e => e.LimitReachedAt!.Value).ToList();
         IReadOnlyList<ChartMarker> markers = limits.Count > 0 ? [new ChartMarker(limits.Average(), "#4DB5FF", "Harvest limit reached (average)")] : [];
         var driven = Row(typical.Runs());
         if (plan is null)
         {
-            return new ChartModel($"Battery ({unit}) over the lap · every lap of the session and their average · deploy modes under the trace", series,
+            return new ChartModel($"Battery ({unit}) over the lap · every typical lap and their average · deploy modes under the trace", series,
                 Markers: markers, Timeline: driven.Count > 0 ? [new ChartTimelineRow("YOU", "#C3CAD5", driven, [])] : null);
         }
 

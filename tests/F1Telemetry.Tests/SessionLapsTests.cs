@@ -56,5 +56,16 @@ public class SessionLapsTests
         Assert.Equal([new ModeRun(DeployModes.None, 0, 50), new ModeRun(DeployModes.Overtake, 50, 125)], typical.Runs());
         Assert.Equal(3, typical.IndexAt(80));
         Assert.Null(SessionLaps.Typical(samples, [9]));
+
+        // The same three laps from two sessions (lap numbers repeat across sessions) give the same typical lap.
+        IReadOnlyList<TelemetrySample> LapOf(int lap) => [.. samples.Where(s => s.LapNumber == lap).Reverse()];
+        var otherSession = samples.Where(s => s.LapNumber == 3).Select(s => new TelemetrySample
+        {
+            LapNumber = 1, LapDistance = s.LapDistance, ErsStoreEnergy = s.ErsStoreEnergy, ErsDeployMode = s.ErsDeployMode,
+        }).ToList();
+        var pooled = SessionLaps.Typical([LapOf(1), LapOf(2), otherSession])!;
+        Assert.Equal(typical.Level, pooled.Level);
+        Assert.Equal(typical.Mode, pooled.Mode);
+        Assert.Equal(3, pooled.LapCount);
     }
 }
