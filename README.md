@@ -79,7 +79,7 @@ The [Releases](https://github.com/Volodrum/CrossPlatformF1TelemetryApp/releases)
 
 | OS | Installer | Notes |
 |---|---|---|
-| Windows (x64) | `F1TelemetryApp-win-x64-Installer.exe` (wizard) or `F1TelemetryApp-win-x64-Setup.exe` (one click) | The **Installer** asks where to install (in English or Ukrainian, after Windows' language) and whether to add a desktop shortcut; **Setup** installs straight away to `%LOCALAPPDATA%\F1TelemetryApp`. Both install per user, with no admin rights, a Start-menu shortcut and the same updates. SmartScreen may warn because they aren't signed (*More info → Run anyway*). |
+| Windows (x64) | `F1TelemetryApp-win-x64-Installer.exe` | Asks where to install (in English or Ukrainian, after Windows' language) and whether to add a desktop shortcut, then installs per user, with no admin rights and a Start-menu shortcut. SmartScreen may warn because it isn't signed (*More info → Run anyway*). |
 | Linux (x64) | the `.AppImage` | `chmod +x` and run. Needs an X11 session (overlays and global hotkeys don't work under Wayland, see [Overlays](#overlays)) and `libX11`, `libICE`, `libSM`, `fontconfig` and `libicu`. |
 | macOS (Apple silicon) | the `osx-arm64` `Setup.pkg` | Not notarised: right-click → *Open* the first time. Global hotkeys need the Accessibility permission. |
 
