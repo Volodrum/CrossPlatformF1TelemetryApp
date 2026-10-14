@@ -595,8 +595,9 @@ public sealed partial class EnergyViewModel : ObservableObject
     ];
 
     /// <summary>
-    /// Battery along the lap: every lap of the session faintly, their average, and the plan dashed when there is one; the
-    /// session's deploy modes (and the plan's) under the trace.
+    /// Battery along the lap: the average of the typical laps, and the plan dashed when there is one; the session's deploy
+    /// modes (and the plan's) under the trace. Each lap's own trace is left out: dozens of full-resolution lines made the
+    /// chart slow to draw.
     /// </summary>
     private ChartModel BuildTrace(LapPlan? plan)
     {
@@ -604,14 +605,6 @@ public sealed partial class EnergyViewModel : ObservableObject
         var unit = EnergyText.Unit(Unit);
         var typical = _typical!;
         var series = new List<ChartSeries>();
-        var first = true;
-        foreach (var lap in _pool.SelectMany(p => p.Samples.Where(s => s.LapDistance >= 0 && p.Typical.Contains(s.LapNumber)).GroupBy(s => s.LapNumber)))
-        {
-            series.Add(new ChartSeries(first ? "Each lap" : "", "#4A5363", [.. lap.Select(s => s.LapDistance)], [.. lap.Select(s => s.ErsStoreEnergy * scale)],
-                LineWidth: 1, InLegend: first));
-            first = false;
-        }
-
         series.Add(new ChartSeries(_pool.Count == 1 ? "Session average" : "Average of the sessions", "#F4F6F9", [.. Enumerable.Range(0, typical.Level.Length).Select(i => i * typical.Step)],
             [.. typical.Level.Select(j => j * scale)]));
 
@@ -620,7 +613,7 @@ public sealed partial class EnergyViewModel : ObservableObject
         var driven = Row(typical.Runs());
         if (plan is null)
         {
-            return new ChartModel($"Battery ({unit}) over the lap · every typical lap and their average · deploy modes under the trace", series,
+            return new ChartModel($"Battery ({unit}) over the lap · average of the typical laps · deploy modes under the trace", series,
                 Markers: markers, Timeline: driven.Count > 0 ? [new ChartTimelineRow("YOU", "#C3CAD5", driven, [])] : null);
         }
 
