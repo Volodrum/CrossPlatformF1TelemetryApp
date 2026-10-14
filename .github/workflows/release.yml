@@ -5,7 +5,8 @@ name: Release
 # packages as workflow artifacts.
 #
 # Each OS gets a Velopack installer that updates itself from these releases (Windows Setup.exe, Linux AppImage, macOS
-# .pkg), and Windows and Linux also a plain zip to unzip and run (it doesn't update itself).
+# .pkg), and Windows and Linux also a plain zip to unzip and run (it doesn't update itself). Windows also gets
+# Installer.exe, a wizard that asks for the install folder and runs the Velopack setup into it.
 on:
   push:
     tags: ["v*"]
@@ -20,6 +21,8 @@ env:
   # Not "F1Telemetry": Velopack installs to %LOCALAPPDATA%\<packId> on Windows and removes that folder on uninstall,
   # and the app keeps its database in %LOCALAPPDATA%\F1Telemetry.
   PACK_ID: F1TelemetryApp
+  # Inno Setup compiler for the Windows install wizard (installer/F1Telemetry.iss), from its NuGet package.
+  INNO_VERSION: 6.7.3
 
 jobs:
   package:
@@ -107,6 +110,19 @@ jobs:
           mkdir -p dist
           cp releases/* dist/
           ls -la dist
+
+      # Windows also gets an install wizard that asks for the folder and then runs the Velopack setup into it.
+      - name: Install wizard (Inno Setup)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          curl.exe -sSL -o inno.zip "https://api.nuget.org/v3-flatcontainer/tools.innosetup/$env:INNO_VERSION/tools.innosetup.$env:INNO_VERSION.nupkg"
+          Expand-Archive inno.zip -DestinationPath inno
+          & inno\tools\ISCC.exe /Q "/DAppVersion=$env:VERSION" "/DVelopackSetup=$PWD\releases\$env:PACK_ID-win-x64-Setup.exe" "/O$PWD\dist" installer\F1Telemetry.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Get-ChildItem dist\*Installer.exe
 
       - uses: actions/upload-artifact@v4
         with:
