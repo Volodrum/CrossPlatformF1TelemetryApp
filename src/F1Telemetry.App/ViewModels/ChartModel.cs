@@ -109,6 +109,65 @@ public static class LapAxis
         return times;
     }
 
+    /// <summary>
+    /// X values for a <paramref name="reference"/> lap drawn over <paramref name="lap"/>. Against distance that is its own
+    /// distance. Against lap time each reference sample sits at the time <paramref name="lap"/> reached the same distance,
+    /// so the two traces line up corner by corner instead of drifting apart by the gap between the laps (the time-delta
+    /// chart shows that gap).
+    /// </summary>
+    public static double[] ReferenceX(IReadOnlyList<TelemetrySample> lap, IReadOnlyList<TelemetrySample> reference, XAxisMode mode)
+    {
+        if (mode == XAxisMode.Distance)
+        {
+            return X(reference, mode);
+        }
+
+        // Lap time as a function of distance; drop points that don't advance (standstill, resets).
+        var lapTimes = LapTimes(lap);
+        var distance = new List<double>(lap.Count);
+        var time = new List<double>(lap.Count);
+        for (var i = 0; i < lap.Count; i++)
+        {
+            var d = lap[i].LapDistance;
+            if (d >= 0 && (distance.Count == 0 || d > distance[^1]))
+            {
+                distance.Add(d);
+                time.Add(lapTimes[i]);
+            }
+        }
+
+        if (distance.Count < 2)
+        {
+            return LapTimes(reference);
+        }
+
+        var x = new double[reference.Count];
+        for (var i = 0; i < reference.Count; i++)
+        {
+            var d = reference[i].LapDistance;
+            var j = distance.BinarySearch(d);
+            if (j >= 0)
+            {
+                x[i] = time[j];
+            }
+            else
+            {
+                // Between two points, or past either end of the lap (extrapolated from the end segment).
+                var hi = Math.Clamp(~j, 1, distance.Count - 1);
+                var lo = hi - 1;
+                x[i] = time[lo] + (d - distance[lo]) / (distance[hi] - distance[lo]) * (time[hi] - time[lo]);
+            }
+
+            // Keep the trace moving forward where the reference's distance jumps back.
+            if (i > 0 && x[i] < x[i - 1])
+            {
+                x[i] = x[i - 1];
+            }
+        }
+
+        return x;
+    }
+
     /// <summary>m:ss (h:mm:ss past an hour), with tenths only when the value has them.</summary>
     public static string FormatTime(double seconds)
     {
@@ -130,7 +189,7 @@ public sealed record ChartSpec(string Title, SeriesSpec[] Series, bool InvertY =
         var series = new List<ChartSeries>();
         if (CompareWithReference && reference is { Count: > 0 })
         {
-            var rx = LapAxis.X(reference, mode);
+            var rx = LapAxis.ReferenceX(lap, reference, mode);
             series.Add(new ChartSeries($"{Series[0].Name} ({referenceLabel})", Series[0].Color, rx, reference.Select(Series[0].Value).ToArray(), Series[0].Step, IsReference: true));
         }
 
