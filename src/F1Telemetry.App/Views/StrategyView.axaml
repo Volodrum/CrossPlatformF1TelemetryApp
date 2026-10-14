@@ -181,9 +181,22 @@
               </StackPanel>
               <TextBlock Classes="muted" FontSize="13" Text="{Binding Basis}" TextWrapping="Wrap" IsVisible="{Binding HasLibrary}" />
             </StackPanel>
-            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="12" VerticalAlignment="Top">
-              <TextBlock Classes="label strong" Text="RACE LAPS" VerticalAlignment="Center" />
-              <NumericUpDown Value="{Binding RaceLaps}" Minimum="6" Maximum="100" Increment="1" FormatString="0" Width="140" />
+            <StackPanel Grid.Column="1" Spacing="10" VerticalAlignment="Top">
+              <StackPanel Orientation="Horizontal" Spacing="12" HorizontalAlignment="Right">
+                <TextBlock Classes="label strong" Text="RACE LAPS" VerticalAlignment="Center" />
+                <NumericUpDown Value="{Binding RaceLaps}" Minimum="6" Maximum="100" Increment="1" FormatString="0" Width="140" />
+              </StackPanel>
+              <!-- New sets the race can use: a plan never runs a compound more times than this -->
+              <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right"
+                          ToolTip.Tip="New sets of each compound you have for the race. A plan runs each set once. Default: the F1 weekend allocation (8 soft, 3 medium, 2 hard); lower it to what is left after practice and qualifying.">
+                <TextBlock Classes="label strong" Text="SETS" VerticalAlignment="Center" Margin="0,0,4,0" />
+                <controls:CompoundBadge Compound="Soft" Width="26" Height="26" VerticalAlignment="Center" />
+                <NumericUpDown Value="{Binding SoftSets}" Minimum="0" Maximum="13" Increment="1" FormatString="0" Width="110" />
+                <controls:CompoundBadge Compound="Medium" Width="26" Height="26" VerticalAlignment="Center" Margin="6,0,0,0" />
+                <NumericUpDown Value="{Binding MediumSets}" Minimum="0" Maximum="13" Increment="1" FormatString="0" Width="110" />
+                <controls:CompoundBadge Compound="Hard" Width="26" Height="26" VerticalAlignment="Center" Margin="6,0,0,0" />
+                <NumericUpDown Value="{Binding HardSets}" Minimum="0" Maximum="13" Increment="1" FormatString="0" Width="110" />
+              </StackPanel>
             </StackPanel>
           </Grid>
 

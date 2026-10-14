@@ -91,7 +91,7 @@ public sealed record StintViewModel(StintAnalysis Stint, IReadOnlyList<LapBar> B
 }
 
 /// <summary>Laps list, race-strategy post-mortem and position history for one recording (live or stored).</summary>
-public sealed partial class SessionViewModel(TelemetryRuntime runtime) : ObservableObject
+public sealed partial class SessionViewModel(TelemetryRuntime runtime, SettingsService settings) : ObservableObject
 {
     private CancellationTokenSource? _loadCts;
 
@@ -108,7 +108,7 @@ public sealed partial class SessionViewModel(TelemetryRuntime runtime) : Observa
     public ObservableCollection<PitStopRowViewModel> PitStops { get; } = [];
 
     /// <summary>The strategy optimiser: compound library of the track and race plans.</summary>
-    public RacePlansViewModel Plans { get; } = new(runtime);
+    public RacePlansViewModel Plans { get; } = new(runtime, settings);
 
     [ObservableProperty] public partial bool HasPitStops { get; set; }
 

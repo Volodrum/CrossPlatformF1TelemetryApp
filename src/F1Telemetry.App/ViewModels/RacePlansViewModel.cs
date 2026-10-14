@@ -68,7 +68,7 @@ public sealed record PlanRowViewModel(int Rank, RacePlan Plan, IReadOnlyList<Pla
 /// The strategy optimiser on the strategy tab: the compound library of the session's track (every recording there in
 /// the same game format) and the 1-, 2- and 3-stop plans it gives for a race distance.
 /// </summary>
-public sealed partial class RacePlansViewModel(TelemetryRuntime runtime) : ObservableObject
+public sealed partial class RacePlansViewModel(TelemetryRuntime runtime, SettingsService settings) : ObservableObject
 {
     /// <summary>A live session's library is rebuilt at most this often (each build reads every recording at the track).</summary>
     private static readonly TimeSpan LiveRebuild = TimeSpan.FromMinutes(1);
@@ -94,6 +94,27 @@ public sealed partial class RacePlansViewModel(TelemetryRuntime runtime) : Obser
     public ObservableCollection<PlanRowViewModel> Plans { get; } = [];
 
     partial void OnRaceLapsChanged(int value) => Replan();
+
+    /// <summary>New sets of each dry compound the plans can use (a plan runs each set once); saved in the settings.</summary>
+    [ObservableProperty] public partial int SoftSets { get; set; } = settings.Current.RaceSoftSets;
+
+    [ObservableProperty] public partial int MediumSets { get; set; } = settings.Current.RaceMediumSets;
+    [ObservableProperty] public partial int HardSets { get; set; } = settings.Current.RaceHardSets;
+
+    partial void OnSoftSetsChanged(int value) => SaveSets();
+
+    partial void OnMediumSetsChanged(int value) => SaveSets();
+
+    partial void OnHardSetsChanged(int value) => SaveSets();
+
+    private void SaveSets()
+    {
+        settings.Current.RaceSoftSets = SoftSets;
+        settings.Current.RaceMediumSets = MediumSets;
+        settings.Current.RaceHardSets = HardSets;
+        settings.Save();
+        Replan();
+    }
 
     public void Clear()
     {
@@ -168,7 +189,10 @@ public sealed partial class RacePlansViewModel(TelemetryRuntime runtime) : Obser
             return;
         }
 
-        var result = StrategyPlanner.Plan(library, RaceLaps);
+        var result = StrategyPlanner.Plan(library, RaceLaps, new PlannerOptions
+        {
+            MaxSets = new Dictionary<string, int> { ["Soft"] = SoftSets, ["Medium"] = MediumSets, ["Hard"] = HardSets },
+        });
         Problem = library.Compounds.Count == 0 ? "No clean laps recorded at this track yet." : result.Problem;
         Plans.Clear();
         for (var i = 0; i < result.Plans.Count; i++)

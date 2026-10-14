@@ -130,6 +130,27 @@ public sealed class StrategyPlannerTests
     }
 
     [Fact]
+    public void Plans_never_use_more_sets_of_a_compound_than_the_race_has()
+    {
+        // Hard is so much better that, unlimited, the best plans would run it three or four times.
+        var library = Library(22, Model("Medium", 80.6, 0.20), Model("Hard", 80.0, 0.02, life: 15));
+        Assert.Contains(StrategyPlanner.Plan(library, 50, new PlannerOptions { MaxSets = new Dictionary<string, int>() }).Plans,
+            p => p.Stints.Count(s => s.Compound == "Hard") > 2);
+
+        var plans = StrategyPlanner.Plan(library, 50); // the default allocation: 2 hard, 3 medium
+        Assert.NotEmpty(plans.Plans);
+        Assert.All(plans.Plans, p =>
+        {
+            Assert.InRange(p.Stints.Count(s => s.Compound == "Hard"), 0, 2);
+            Assert.InRange(p.Stints.Count(s => s.Compound == "Medium"), 0, 3);
+        });
+
+        var noHards = StrategyPlanner.Plan(library, 50, new PlannerOptions { MaxSets = new Dictionary<string, int> { ["Hard"] = 0, ["Medium"] = 3 } });
+        Assert.Empty(noHards.Plans);
+        Assert.Contains("set available", noHards.Problem);
+    }
+
+    [Fact]
     public void Tyre_life_rules_out_plans_that_overrun_a_set()
     {
         // Each set lasts 15 laps: 40 laps need at least two stops.

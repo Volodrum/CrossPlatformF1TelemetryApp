@@ -235,7 +235,7 @@ The fits need a few clean laps per stint: with only two or three, wear rates are
 - **tyre life** is the laps until the most worn tyre reaches the wear limit (Settings), from its recorded wear per lap;
 - the **pit-stop loss** is the median of the recorded races' stops at the track (22 s until there is one), and the fuel burn the median of the stints'.
 
-`StrategyPlanner` then builds every 1-, 2- and 3-stop plan for the race distance (the longest race recorded there, editable) that runs two different dry compounds and keeps each set within its life and at least 3 laps long. For each mix of compounds, dynamic programming over the laps picks the stint lengths with the lowest race time. The list ranks them by predicted race time, with the gap to the best, and the fastest plan of each stop count always shows. For each stop it gives:
+`StrategyPlanner` then builds every 1-, 2- and 3-stop plan for the race distance (the longest race recorded there, editable) that runs two different dry compounds and keeps each set within its life and at least 3 laps long. A plan never runs a compound more often than the race has new sets of it: **SETS** next to the race distance, the F1 weekend allocation (8 soft, 3 medium, 2 hard) until you lower it to what is left after practice and qualifying (saved in the settings). For each mix of compounds, dynamic programming over the laps picks the stint lengths with the lowest race time. The list ranks them by predicted race time, with the gap to the best, and the fastest plan of each stop count always shows. For each stop it gives:
 
 - the **pit window**: the in-laps that cost at most 1 s more than the planned one, the other stops staying put;
 - the **undercut**: what pitting one lap before a car on the same plan gains, its lap on the old set against your second lap on the new one. Negative means staying out (the overcut) gains. The out-lap's cold tyres are inside the pit-stop loss, so this is the tyre delta alone.
@@ -332,6 +332,6 @@ Switch on **PREVIEW OVERLAYS** at the top of the **OVERLAYS** page (in the rail)
 
 - Setup autopilot: dial a library setup into the game's setup screen with simulated key presses, checked against the live setup packet.
 - Driver names on the radar.
-- Race plans: safety-car windows, a tyre "cliff" beyond the straight-line wear, and starting on used qualifying tyres.
+- Race plans: read the sets left from the game's tyre-sets packet (12) instead of typing them, safety-car windows, a tyre "cliff" beyond the straight-line wear, and starting on used qualifying tyres.
 - Signing the Windows installer and notarising the macOS package; delta updates (`vpk download` of the previous release before packing).
 - Checking click-through overlays on real macOS and X11 machines (only Windows has been run so far).

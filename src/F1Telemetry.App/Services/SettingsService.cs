@@ -107,6 +107,12 @@ public sealed class AppSettings
 
     /// <summary>Installed builds look for a new release on GitHub at startup and download it in the background.</summary>
     public bool CheckForUpdates { get; set; } = true;
+
+    /// <summary>New sets of each dry compound race plans can use: the F1 weekend allocation unless changed.</summary>
+    public int RaceSoftSets { get; set; } = 8;
+
+    public int RaceMediumSets { get; set; } = 3;
+    public int RaceHardSets { get; set; } = 2;
     public Dictionary<OverlayKind, OverlaySettings> Overlays { get; set; } = Enum.GetValues<OverlayKind>().ToDictionary(k => k, _ => new OverlaySettings());
 
     public OverlaySettings Overlay(OverlayKind kind)

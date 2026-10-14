@@ -54,6 +54,14 @@ public sealed record PlannerOptions
 
     /// <summary>Compounds with fewer clean laps than this are left out of the plans.</summary>
     public int MinCompoundLaps { get; init; } = 3;
+
+    /// <summary>
+    /// Sets of each compound the race can use (a plan runs each set once); a compound not listed has no limit.
+    /// Defaults to the F1 weekend allocation: 8 soft, 3 medium, 2 hard.
+    /// </summary>
+    public IReadOnlyDictionary<string, int> MaxSets { get; init; } = DefaultSets;
+
+    public static IReadOnlyDictionary<string, int> DefaultSets { get; } = new Dictionary<string, int> { ["Soft"] = 8, ["Medium"] = 3, ["Hard"] = 2 };
 }
 
 /// <summary>
@@ -68,7 +76,7 @@ public static class StrategyPlanner
     public static StrategyPlans Plan(CompoundLibrary library, int raceLaps, PlannerOptions? options = null)
     {
         options ??= new PlannerOptions();
-        var dry = library.Compounds.Where(c => c.IsDry && c.Laps >= options.MinCompoundLaps).ToList();
+        var dry = library.Compounds.Where(c => c.IsDry && c.Laps >= options.MinCompoundLaps && SetsOf(c.Compound, options) > 0).ToList();
         if (raceLaps < 2 * options.MinStintLaps)
         {
             return new StrategyPlans(raceLaps, [], dry, $"A race needs at least {2 * options.MinStintLaps} laps for a stop.");
@@ -78,7 +86,7 @@ public static class StrategyPlanner
         {
             var have = dry.Count == 0 ? "no dry compound" : $"only the {dry[0].Compound}";
             return new StrategyPlans(raceLaps, [], dry,
-                $"A dry race must use two compounds, and the recordings here have {have} with {options.MinCompoundLaps}+ clean laps. Run another compound at this track (a practice session will do).");
+                $"A dry race must use two compounds, and there is {have} with {options.MinCompoundLaps}+ clean laps recorded here and a set available. Run another compound at this track (a practice session will do), or check the sets.");
         }
 
         // The tank burns down from what the race needs to empty: the mean load over each lap.
@@ -88,7 +96,7 @@ public static class StrategyPlanner
         {
             foreach (var set in Multisets(dry.Count, stops + 1))
             {
-                if (set.Distinct().Count() < 2)
+                if (set.Distinct().Count() < 2 || set.GroupBy(i => i).Any(g => g.Count() > SetsOf(dry[g.Key].Compound, options)))
                 {
                     continue;
                 }
@@ -103,7 +111,8 @@ public static class StrategyPlanner
 
         if (candidates.Count == 0)
         {
-            return new StrategyPlans(raceLaps, [], dry, $"No plan with up to {options.MaxStops} stops keeps every set within its tyre life over {raceLaps} laps.");
+            return new StrategyPlans(raceLaps, [], dry,
+                $"No plan with up to {options.MaxStops} stops keeps every set within its tyre life over {raceLaps} laps with the sets available ({string.Join(", ", dry.Select(c => $"{SetsOf(c.Compound, options)} {c.Compound.ToLowerInvariant()}"))}).");
         }
 
         candidates.Sort((a, b) => a.RaceSeconds.CompareTo(b.RaceSeconds));
@@ -119,6 +128,8 @@ public static class StrategyPlanner
 
         return new StrategyPlans(raceLaps, shown.Select(p => p with { GapSeconds = p.RaceSeconds - best }).ToList(), dry, "");
     }
+
+    private static int SetsOf(string compound, PlannerOptions options) => options.MaxSets.TryGetValue(compound, out var sets) ? sets : int.MaxValue;
 
     /// <summary>Cost of one stint: its laps on the compound's model, fuel aside.</summary>
     public static double StintSeconds(CompoundModel compound, int laps) =>
