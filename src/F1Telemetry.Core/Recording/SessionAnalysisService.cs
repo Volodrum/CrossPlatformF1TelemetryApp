@@ -43,6 +43,24 @@ public sealed class SessionAnalysisService(ITelemetryStore store, StrategyOption
 
     public double DefaultFuelEffect => (options ?? new StrategyOptions()).FuelEffectSecondsPerKg;
 
+    /// <summary>
+    /// The compound library of <paramref name="anchor"/>'s track and game format, from every recording there, with paces
+    /// in <paramref name="anchor"/>'s conditions (see <see cref="CompoundLibraryBuilder"/>).
+    /// </summary>
+    public async Task<CompoundLibrary> BuildCompoundLibraryAsync(RecordingInfo anchor, CancellationToken ct = default)
+    {
+        var sessions = new List<RaceInput>();
+        foreach (var recording in await store.GetRecordingsAsync(ct))
+        {
+            if (recording.TrackId == anchor.TrackId && recording.Format == anchor.Format && await LoadRaceAsync(recording, ct) is { } race)
+            {
+                sessions.Add(race);
+            }
+        }
+
+        return CompoundLibraryBuilder.Build(sessions, anchor.Id, options);
+    }
+
     public async Task<RaceComparisonResult?> CompareAsync(RecordingInfo a, RecordingInfo b, CancellationToken ct = default)
     {
         var raceA = await LoadRaceAsync(a, ct);

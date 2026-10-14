@@ -180,6 +180,9 @@ public sealed partial class LapDetailViewModel(TelemetryRuntime runtime) : Obser
     ];
 
     public ObservableCollection<ChartTabViewModel> Tabs { get; } = [];
+
+    /// <summary>One zoom and cursor for every lap chart, across the chart tabs; reset for a new lap, comparison or x axis.</summary>
+    public ChartSync ChartSync { get; } = new();
     public ObservableCollection<SectorCard> Sectors { get; } = [];
 
     /// <summary>Laps of the opened recording (primary lap picker).</summary>
@@ -425,6 +428,7 @@ public sealed partial class LapDetailViewModel(TelemetryRuntime runtime) : Obser
         var mode = SelectedXAxis.Mode;
         var referenceLabel = _reference is null ? "" : ReferenceLabel(_reference);
         var selectedName = SelectedTab?.Name;
+        ChartSync.Reset();
         Tabs.Clear();
         foreach (var (name, charts) in ChartCatalog.Tabs)
         {

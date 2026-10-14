@@ -16,6 +16,12 @@ public sealed record StrategyOptions
     /// too little data to measure it (see <see cref="Analytics.PaceModel"/>). 0.03 s/kg is the usual F1 figure.
     /// </summary>
     public double FuelEffectSecondsPerKg { get; init; } = 0.03;
+
+    /// <summary>
+    /// Time a pit stop costs (in-lap plus out-lap against clean laps) for race plans at a track where no race with a
+    /// stop has been recorded yet (see <see cref="Analytics.CompoundLibrary"/>).
+    /// </summary>
+    public double DefaultPitLossSeconds { get; init; } = 22;
 }
 
 /// <summary>

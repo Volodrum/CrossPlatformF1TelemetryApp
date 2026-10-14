@@ -19,6 +19,8 @@
     <PackageVersion Include="DuckDB.NET.Data.Full" Version="1.5.5" />
     <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.12" />
     <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.12" />
+    <!-- Installer and auto-update (vpk in .github/workflows/release.yml uses the same version) -->
+    <PackageVersion Include="Velopack" Version="1.2.158" />
     <!-- Tests -->
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.10.1" />
     <PackageVersion Include="xunit.v3" Version="4.0.1" />

@@ -167,6 +167,18 @@ Pump(vm.Session.RefreshAsync(), 300);
 vm.SelectedTab = MainTab.Strategy;
 Capture(window, "11-strategy-two-stops");
 
+// Race plans: the strategy tab's last panel, built from all three Monza recordings.
+Pump(minMs: 1500);
+if (window.GetVisualDescendants().OfType<StrategyView>().FirstOrDefault() is { } strategy
+    && strategy.GetVisualDescendants().OfType<ScrollViewer>().FirstOrDefault() is { Content: Visual content } plansScroll
+    && strategy.GetVisualDescendants().OfType<Border>().FirstOrDefault(b => b.DataContext is RacePlansViewModel) is { } plansPanel
+    && plansPanel.TranslatePoint(default, content) is { } top)
+{
+    plansScroll.Offset = plansScroll.Offset.WithY(top.Y - 8);
+    Capture(window, "18-race-plans");
+    plansScroll.Offset = default;
+}
+
 // Energy: the one-stop race's battery map, lap summary and trace.
 vm.SelectedRecording = vm.Recordings.First(r => r.Description == "One stop");
 vm.SelectedTab = MainTab.Energy;

@@ -168,6 +168,120 @@
           </StackPanel>
         </StackPanel>
       </Border>
+
+      <!-- Strategy optimiser: the track's compound library from every recording, and the race plans it gives -->
+      <Border Classes="panel" Padding="18" DataContext="{Binding Plans}" x:DataType="vm:RacePlansViewModel">
+        <StackPanel Spacing="16">
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
+            <StackPanel Spacing="4">
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <TextBlock Classes="label strong" Text="{Binding Context}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                <controls:HelpTip Width="18" Height="18"
+                                  Text="Every recording at this track in this game format feeds the library: each clean lap with the fuel weight taken out, fitted as compound pace + tyre age × degradation + the session's own offset, so practice and race laps compare. Tyre life is the laps until the most worn tyre reaches the wear limit (Settings). Plans use two different dry compounds and keep every set within its life; the stint lengths are the fastest split. A stop's window is the in-laps that cost at most 1 s more, the other stops staying put. Undercut: what pitting a lap before a car on the same plan gains on its lap on old tyres (overcut: what staying out gains). The out-lap's cold tyres are part of the pit-stop loss." />
+              </StackPanel>
+              <TextBlock Classes="muted" FontSize="13" Text="{Binding Basis}" TextWrapping="Wrap" IsVisible="{Binding HasLibrary}" />
+            </StackPanel>
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="12" VerticalAlignment="Top">
+              <TextBlock Classes="label strong" Text="RACE LAPS" VerticalAlignment="Center" />
+              <NumericUpDown Value="{Binding RaceLaps}" Minimum="6" Maximum="100" Increment="1" FormatString="0" Width="140" />
+            </StackPanel>
+          </Grid>
+
+          <!-- Compound library -->
+          <StackPanel Spacing="6" IsVisible="{Binding HasLibrary}">
+            <Grid ColumnDefinitions="44,*,120,130,110,90" ColumnSpacing="12">
+              <TextBlock Grid.Column="1" Classes="label" Text="COMPOUND" />
+              <TextBlock Grid.Column="2" Classes="label" Text="PACE · S" HorizontalAlignment="Right" />
+              <TextBlock Grid.Column="3" Classes="label" Text="DEG · S/LAP" HorizontalAlignment="Right" />
+              <TextBlock Grid.Column="4" Classes="label" Text="WEAR · %/LAP" HorizontalAlignment="Right" />
+              <TextBlock Grid.Column="5" Classes="label" Text="LIFE · LAPS" HorizontalAlignment="Right" />
+            </Grid>
+            <ItemsControl ItemsSource="{Binding Compounds}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:CompoundRowViewModel">
+                  <Border BorderBrush="{StaticResource DividerBrush}" BorderThickness="0,1,0,0" Padding="0,8">
+                    <Grid ColumnDefinitions="44,*,120,130,110,90" ColumnSpacing="12">
+                      <controls:CompoundBadge Compound="{Binding Compound}" Width="32" Height="32" VerticalAlignment="Center" />
+                      <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                        <TextBlock Classes="h2" FontSize="15" Text="{Binding Name}" />
+                        <TextBlock Classes="muted" FontSize="12" Text="{Binding Data}" />
+                        <TextBlock Classes="muted" FontSize="12" Text="{Binding Note}" Foreground="{StaticResource SlowerBrush}" TextWrapping="Wrap" IsVisible="{Binding HasNote}" />
+                      </StackPanel>
+                      <TextBlock Grid.Column="2" Classes="data-m" FontSize="20" Text="{Binding Pace}" Foreground="{Binding PaceBrush}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                      <TextBlock Grid.Column="3" Classes="data-m" FontSize="20" Text="{Binding Degradation}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                      <TextBlock Grid.Column="4" Classes="data-m" FontSize="20" Text="{Binding Wear}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                      <TextBlock Grid.Column="5" Classes="data-m" FontSize="20" Text="{Binding Life}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                    </Grid>
+                  </Border>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+
+          <TextBlock Classes="body" Text="{Binding Problem}" Foreground="{StaticResource SlowerBrush}" TextWrapping="Wrap"
+                     IsVisible="{Binding Problem, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+
+          <!-- Ranked plans -->
+          <StackPanel Spacing="6" IsVisible="{Binding HasPlans}">
+            <TextBlock Classes="label strong" Text="RANKED PLANS · STINT LENGTHS IN LAPS" />
+            <ItemsControl ItemsSource="{Binding Plans}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:PlanRowViewModel">
+                  <Border BorderBrush="{StaticResource DividerBrush}" BorderThickness="0,1,0,0" Padding="0,10">
+                    <Grid ColumnDefinitions="44,80,440,130,90,*" RowDefinitions="Auto,Auto" ColumnSpacing="12" RowSpacing="6">
+                      <TextBlock Classes="data-m" FontSize="20" Text="{Binding RankText}" Foreground="{Binding RankBrush}" VerticalAlignment="Center" />
+                      <TextBlock Grid.Column="1" Classes="label strong" Text="{Binding StopsText}" VerticalAlignment="Center" />
+                      <ItemsControl Grid.Column="2" ItemsSource="{Binding Segments}" VerticalAlignment="Center">
+                        <ItemsControl.ItemsPanel>
+                          <ItemsPanelTemplate>
+                            <StackPanel Orientation="Horizontal" Spacing="4" />
+                          </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                          <DataTemplate x:DataType="vm:PlanSegmentViewModel">
+                            <Border Width="{Binding Width}" Height="32" CornerRadius="4" BorderThickness="2" BorderBrush="{Binding Brush}"
+                                    Background="{StaticResource RaisedBrush}" ToolTip.Tip="{Binding Compound}">
+                              <StackPanel Orientation="Horizontal" Spacing="6" Margin="4,0" VerticalAlignment="Center" ClipToBounds="True">
+                                <controls:CompoundBadge Compound="{Binding Compound}" Width="20" Height="20" />
+                                <TextBlock Classes="mono" FontSize="13" Text="{Binding Laps}" VerticalAlignment="Center" />
+                              </StackPanel>
+                            </Border>
+                          </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                      </ItemsControl>
+                      <TextBlock Grid.Column="3" Classes="data-m" FontSize="20" Text="{Binding Time}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                      <TextBlock Grid.Column="4" Classes="mono" FontSize="15" Text="{Binding Gap}" Foreground="{Binding GapBrush}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                      <ItemsControl Grid.Row="1" Grid.Column="2" Grid.ColumnSpan="4" ItemsSource="{Binding Stops}">
+                        <ItemsControl.ItemsPanel>
+                          <ItemsPanelTemplate>
+                            <WrapPanel ItemSpacing="20" />
+                          </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                          <DataTemplate x:DataType="vm:PlanStopViewModel">
+                            <TextBlock FontSize="13">
+                              <Run Text="{Binding Pit}" FontWeight="Bold" Foreground="{StaticResource TextHiBrush}" />
+                              <Run Text=" · " Foreground="{StaticResource TextLoBrush}" />
+                              <Run Text="{Binding Window}" Foreground="{StaticResource TextMidBrush}" />
+                              <Run Text=" · " Foreground="{StaticResource TextLoBrush}" />
+                              <Run Text="{Binding Undercut}" Foreground="{Binding UndercutBrush}" />
+                            </TextBlock>
+                          </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                      </ItemsControl>
+                    </Grid>
+                  </Border>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+
+          <Border Classes="panel" Padding="0" Height="420" Background="{StaticResource RaisedBrush}"
+                  IsVisible="{Binding PlanChart, Converter={x:Static ObjectConverters.IsNotNull}}">
+            <controls:TelemetryPlot Model="{Binding PlanChart}" />
+          </Border>
+        </StackPanel>
+      </Border>
     </StackPanel>
   </ScrollViewer>
 </UserControl>

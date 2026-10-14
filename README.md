@@ -48,7 +48,7 @@ It is a rewrite of the Electron + React + DuckDB app on **.NET 10 + Avalonia 12*
 | Project | Responsibility | Depends on |
 |---|---|---|
 | `F1Telemetry.Protocol` | Zero-dependency UDP parser. `FormatLayout` holds every difference between the 2025 and 2026 formats | – |
-| `F1Telemetry.Core` | Domain models, `SessionEngine`, strategy calculators, `LapClassifier`, `StintAnalyzer`, `PaceModel`, `PitStopAnalyzer`, `RaceComparison`, `RecordingCoordinator`, track maps (`assets/track_maps/*_coords.json` from the original dashboard, with `.srtt` fallback) | Protocol |
+| `F1Telemetry.Core` | Domain models, `SessionEngine`, strategy calculators, `LapClassifier`, `StintAnalyzer`, `PaceModel`, `PitStopAnalyzer`, `RaceComparison`, `CompoundLibraryBuilder`, `StrategyPlanner`, `RecordingCoordinator`, track maps (`assets/track_maps/*_coords.json` from the original dashboard, with `.srtt` fallback) | Protocol |
 | `F1Telemetry.Simulation` | Spec-exact `PacketWriter` and a physics-lite `SessionSimulator` (speed profile from track curvature, fuel, wear, pit stop, AI cars) | Core |
 | `F1Telemetry.Ingest` | Packet sources (UDP, replay, simulator), `.f1rec` capture format, `TelemetryPipeline` | Core, Simulation |
 | `F1Telemetry.Storage` | DuckDB schema and migrations, batched writer, analytics queries | Core |
@@ -75,20 +75,27 @@ Packets whose length doesn't match their format are rejected and counted, never 
 
 ## Download
 
-Ready-to-run zips for **Windows** and **Linux** (x64) are on the [Releases](https://github.com/Volodrum/CrossPlatformF1TelemetryApp/releases) page. They are self-contained: no .NET install needed. Unzip and keep the `fonts/`, `track_maps/` and `tracks/` folders next to the program.
+The [Releases](https://github.com/Volodrum/CrossPlatformF1TelemetryApp/releases) page has an installer for each OS, built with [Velopack](https://velopack.io). They are self-contained (no .NET install needed) and **update themselves**: at startup an installed copy looks for a newer release, downloads it in the background and shows **UPDATE x.y.z · RESTART** in the toolbar. Restarting applies it (so does the next start). Settings → *Updates* shows the version, checks on demand and turns the startup check off.
 
-- **Windows:** run `F1Telemetry.exe`. Windows SmartScreen may warn on first start because the exe is not signed (*More info → Run anyway*).
-- **Linux:** run `./F1Telemetry`. It needs an X11 session (overlays and global hotkeys don't work under Wayland, see [Overlays](#overlays)) and the usual desktop libraries: `libX11`, `libICE`, `libSM`, `fontconfig` and `libicu`.
+| OS | Installer | Notes |
+|---|---|---|
+| Windows (x64) | `F1TelemetryApp-win-x64-Setup.exe` | Installs per user, no admin rights, with a Start-menu shortcut. SmartScreen may warn because it isn't signed (*More info → Run anyway*). |
+| Linux (x64) | the `.AppImage` | `chmod +x` and run. Needs an X11 session (overlays and global hotkeys don't work under Wayland, see [Overlays](#overlays)) and `libX11`, `libICE`, `libSM`, `fontconfig` and `libicu`. |
+| macOS (Apple silicon) | the `osx-arm64` `Setup.pkg` | Not notarised: right-click → *Open* the first time. Global hotkeys need the Accessibility permission. |
 
-Releases are built by `.github/workflows/release.yml` when a version tag is pushed:
+Windows and Linux also have a plain zip (`F1Telemetry-<version>-<rid>.zip`) to unzip and run; keep the `fonts/`, `track_maps/` and `tracks/` folders next to the program. A copy run from a folder doesn't update itself. Your recordings and settings live in the data folder (below), apart from the program, so installing, updating or uninstalling never touches them.
+
+`.github/workflows/ci.yml` builds and tests every push and pull request on Windows, Linux and macOS. Releases are built by `.github/workflows/release.yml` on all three, each on its own runner, when a version tag is pushed:
 
 ```bash
-git tag v0.2.0
+git tag v0.5.0
 ```
 
 ```bash
-git push origin v0.2.0
+git push origin v0.5.0
 ```
+
+The version comes from the tag. Velopack packs each OS in its own channel, named after the runtime id (`win-x64`, `linux-x64`, `osx-arm64`), so the three sets of files can share one release; an installed copy follows its own channel.
 
 ## Turning on telemetry in the game
 
@@ -186,7 +193,7 @@ The UI implements the "F1 Telemetry Design Template": a dark, high-contrast race
 - **Tokens:** `src/F1Telemetry.App/Theme/Tokens.axaml` holds colours, fonts and radii. `ViewModels/Palette.cs` mirrors the status colours for code. On the panel background, live values reach 17.3:1 contrast, secondary text 11.4:1, labels 6.3:1 and every status colour at least 6:1.
 - **Type:** JetBrains Mono for every number, Chakra Petch for labels and headings, IBM Plex Sans for body text. All three are embedded (`Assets/Fonts`, SIL OFL). Numbers are 18 px or larger, and each overlay has one headline number of 56 px or larger.
 - **Status is never colour alone:** filled purple = session best, filled green = faster, amber outline = slower, filled red = warning. Deltas carry ▲/▼ and compounds carry a letter (`CompoundBadge`). The shared `Chip` model and template (`App.axaml`) render the same way on overlays, the laps table and lap detail.
-- **Navigation:** a rail on the left picks what you are doing: **LIVE** (the car now), **SESSION** (one recording), **COMPARE** (**RACES**: race vs race; **LAPS**: any lap against any lap on the same track), **SETUPS** (the library) and **OVERLAYS** (the HUD over the game). Only SESSION follows the recordings sidebar, and only SESSION shows it. It has three tabs: **LAPS** (click a lap to open its telemetry in place; ← ALL LAPS goes back), **STRATEGY** (stints, pit stops, position history and the fuel calculator) and **ENERGY** (pages SESSION, ERS PLAN and CAR MODEL). Settings (controls, connection, data) is a page of its own behind the gear button in the toolbar. Starting a recording never changes the page.
+- **Navigation:** a rail on the left picks what you are doing: **LIVE** (the car now), **SESSION** (one recording), **COMPARE** (**RACES**: race vs race; **LAPS**: any lap against any lap on the same track), **SETUPS** (the library) and **OVERLAYS** (the HUD over the game). Only SESSION follows the recordings sidebar, and only SESSION shows it. It has three tabs: **LAPS** (click a lap to open its telemetry in place; ← ALL LAPS goes back), **STRATEGY** (stints, pit stops, position history, the fuel calculator and race plans) and **ENERGY** (pages SESSION, ERS PLAN and CAR MODEL). Settings (controls, connection, data) is a page of its own behind the gear button in the toolbar. Starting a recording never changes the page.
 - **Pages:** every page opens with the same header: a context line, the title, and the page's own switches on the right. Explanations sit behind an ⓘ next to the context line (tooltip) instead of taking page space. Every comparison picks its two sides in the same A / B bar (`CompareBar`), with each side's tag in its trace colour.
 - **Controls:** `Theme/Controls.axaml` defines the primary and secondary buttons, the navigation rail, the segmented mode toggle, section and segment tabs, card lists and text roles (`label`, `h1`, `data-xl`…`data-s`). Strokes are 2 px or thicker and targets 44 px or larger.
 - **ERS deploy modes:** one blue ramp, lighter for more power (None `#3A404C`, Medium `#1F6FB2`, Hotlap `#4DB5FF`, Overtake `#B5E2FF`), always with the mode letter N/M/H/O. It is kept apart from the status colours, so a mode never reads as good or bad.
@@ -219,6 +226,23 @@ Within one stint the two effects can't be told apart, because fuel falls in step
 - **where the time went:** the total gap split into pit stops, tyre wear, fuel load, base pace (compound and driving) and a remainder for the start, traffic and mistakes. Each lap is split into the fitted model plus what it doesn't explain, so the five parts add up to the total gap exactly. Both races use the same fuel effect.
 
 The fits need a few clean laps per stint: with only two or three, wear rates are noisy.
+
+**Race plans (strategy optimiser).** At the bottom of the STRATEGY tab, every recording at the session's track in the same game format, practice included, builds a **compound library** (`CompoundLibraryBuilder`):
+
+- each clean lap is fuel-corrected with one fuel effect for the whole library (the median of the sessions that measured it, else 0.03 s/kg) and fitted as *lap = compound pace + session offset + degradation × tyre age*;
+- the **degradation** is the slope within each stint, pooled over the compound's stints, so a session that was quicker overall doesn't tilt it (never below 0; a compound with no stint long enough borrows the others' mean and says so);
+- the **session offsets** take out what differs between sessions (track temperature, rubber, the day), so a soft run in practice and a medium run in the race still compare, in the conditions of the session on screen. That needs the sessions to be linked by a compound they share; a compound that isn't is taken as recorded and flagged;
+- **tyre life** is the laps until the most worn tyre reaches the wear limit (Settings), from its recorded wear per lap;
+- the **pit-stop loss** is the median of the recorded races' stops at the track (22 s until there is one), and the fuel burn the median of the stints'.
+
+`StrategyPlanner` then builds every 1-, 2- and 3-stop plan for the race distance (the longest race recorded there, editable) that runs two different dry compounds and keeps each set within its life and at least 3 laps long. For each mix of compounds, dynamic programming over the laps picks the stint lengths with the lowest race time. The list ranks them by predicted race time, with the gap to the best, and the fastest plan of each stop count always shows. For each stop it gives:
+
+- the **pit window**: the in-laps that cost at most 1 s more than the planned one, the other stops staying put;
+- the **undercut**: what pitting one lap before a car on the same plan gains, its lap on the old set against your second lap on the new one. Negative means staying out (the overcut) gains. The out-lap's cold tyres are inside the pit-stop loss, so this is the tyre delta alone.
+
+A chart under the list plots the three best plans' predicted lap times with their stints and stops on a timeline. With a straight-line wear model, a stint costs the same whatever lap it starts on, so the order of the stints doesn't change the time: plans are shown softest first. Wet compounds stay in the library but out of the dry plans.
+
+![Race plans](docs/screenshots/18-race-plans.png)
 
 ## Energy analysis
 
@@ -294,6 +318,7 @@ Switch on **PREVIEW OVERLAYS** at the top of the **OVERLAYS** page (in the rail)
 - In practice, qualifying and time trial a lap holds only the lap itself. There the game keeps the lap number after a run that ends in the pits: the abandoned lap, the in-lap, the garage and the next out-lap carried the number of the flying lap that followed, so that lap's trajectory and charts showed two or three laps on top of each other. The car crosses the line without the number moving on (in the pit lane, and again at the end of the out-lap), and only the stretch after the last crossing is the lap; the rest, and the first out-lap before the line, is kept on lap 0, which is no lap (`LapRestarts`). Races count every crossing and are unchanged. Recordings made before this are corrected once when the app starts.
 - Packets with session UID 0 (sent while the game leaves a session for the menus) are ignored. They used to look like a session change and back, which auto-split the recording into an extra, empty one.
 - Lap charts plot against elapsed lap time (m:ss) by default, or against lap distance (X AXIS picker in Lap detail). The position chart uses session time. A plain mouse wheel scrolls the page; dragging and Ctrl + wheel zoom only move along the x axis (the value axis is locked), and the view stays within the recorded lap.
+- Lap detail's charts move together (`ChartSync`): zoom or pan one and every chart, on every tab, shows the same stretch of the lap; the pointer shows as a cursor line on all of them, with the x value on the axis and each trace's value there. They share one plot area, so the cursor lines up down the page. A new lap, comparison or x axis shows the whole lap again.
 - Lap detail shows the S1/S2/S3 split as a strip above full-width chart tabs; the track map has its own **TRAJECTORY** tab.
 - Lap detail compares the opened lap with **any lap**: another lap of the same session or a lap from any other recording on the same track (defaults to the session best). The comparison adds a dashed reference trace, a running time-delta chart and sector deltas.
 - All SQL is parameterized.
@@ -306,8 +331,7 @@ Switch on **PREVIEW OVERLAYS** at the top of the **OVERLAYS** page (in the rail)
 ## Next steps
 
 - Setup autopilot: dial a library setup into the game's setup screen with simulated key presses, checked against the live setup packet.
-- Strategy optimiser: a per-track compound library from every recording, then 1-, 2- and 3-stop plans ranked with pit windows and undercut values.
 - Driver names on the radar.
-- Installer and auto-update (e.g. Velopack), plus CI builds for all three OSes.
-- Synchronised cursor/zoom across lap charts.
+- Race plans: safety-car windows, a tyre "cliff" beyond the straight-line wear, and starting on used qualifying tyres.
+- Signing the Windows installer and notarising the macOS package; delta updates (`vpk download` of the previous release before packing).
 - Checking click-through overlays on real macOS and X11 machines (only Windows has been run so far).

@@ -22,6 +22,7 @@
     <PackageReference Include="SharpHook" />
     <PackageReference Include="ppy.SDL3-CS" />
     <PackageReference Include="Microsoft.Extensions.Hosting" />
+    <PackageReference Include="Velopack" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\F1Telemetry.Core\F1Telemetry.Core.csproj" />
