@@ -179,8 +179,9 @@ if (window.GetVisualDescendants().OfType<StrategyView>().FirstOrDefault() is { }
     plansScroll.Offset = default;
 }
 
-// Energy: the one-stop race's battery map, lap summary and trace.
+// Energy: the one-stop race's battery map, lap summary and trace, with the two-stop race's typical laps added.
 vm.SelectedRecording = vm.Recordings.First(r => r.Description == "One stop");
+settings.Current.SetEnergyPool(GameFormat.F1_26, 11, vm.Recordings.Where(r => r.Description is "One stop" or "Two stops").Select(r => r.Info.Id));
 vm.SelectedTab = MainTab.Energy;
 Pump(vm.ActivateEnergyAsync(), 1500);
 Capture(window, "13-energy");
