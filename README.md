@@ -79,9 +79,11 @@ The [Releases](https://github.com/Volodrum/CrossPlatformF1TelemetryApp/releases)
 
 | OS | Installer | Notes |
 |---|---|---|
-| Windows (x64) | `F1TelemetryApp-win-x64-Setup.exe` | Installs per user, no admin rights, with a Start-menu shortcut. SmartScreen may warn because it isn't signed (*More info → Run anyway*). |
+| Windows (x64) | `F1TelemetryApp-win-x64-Installer.exe` (wizard) or `F1TelemetryApp-win-x64-Setup.exe` (one click) | The **Installer** asks where to install (in English or Ukrainian, after Windows' language) and whether to add a desktop shortcut; **Setup** installs straight away to `%LOCALAPPDATA%\F1TelemetryApp`. Both install per user, with no admin rights, a Start-menu shortcut and the same updates. SmartScreen may warn because they aren't signed (*More info → Run anyway*). |
 | Linux (x64) | the `.AppImage` | `chmod +x` and run. Needs an X11 session (overlays and global hotkeys don't work under Wayland, see [Overlays](#overlays)) and `libX11`, `libICE`, `libSM`, `fontconfig` and `libicu`. |
 | macOS (Apple silicon) | the `osx-arm64` `Setup.pkg` | Not notarised: right-click → *Open* the first time. Global hotkeys need the Accessibility permission. |
+
+The install wizard (`installer/F1Telemetry.iss`, Inno Setup) only picks the folder and then runs the Velopack setup into it silently, so the app, its shortcuts, its updates and its entry in Settings → Apps are Velopack's. Uninstalling removes the whole install folder, so the wizard only accepts a new or empty folder, and one you can write to without admin rights (not Program Files); a folder picked with *Browse* gets `F1TelemetryApp` added. If the app is already installed, the wizard reinstalls it in the same folder; to move it, uninstall it first.
 
 Windows and Linux also have a plain zip (`F1Telemetry-<version>-<rid>.zip`) to unzip and run; keep the `fonts/`, `track_maps/` and `tracks/` folders next to the program. A copy run from a folder doesn't update itself. Your recordings and settings live in the data folder (below), apart from the program, so installing, updating or uninstalling never touches them.
 
