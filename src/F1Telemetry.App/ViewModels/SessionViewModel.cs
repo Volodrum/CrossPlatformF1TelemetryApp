@@ -107,6 +107,9 @@ public sealed partial class SessionViewModel(TelemetryRuntime runtime) : Observa
     public ObservableCollection<StintViewModel> Stints { get; } = [];
     public ObservableCollection<PitStopRowViewModel> PitStops { get; } = [];
 
+    /// <summary>The strategy optimiser: compound library of the track and race plans.</summary>
+    public RacePlansViewModel Plans { get; } = new(runtime);
+
     [ObservableProperty] public partial bool HasPitStops { get; set; }
 
     public IReadOnlyList<LapRecord> ClassifiedLaps { get; private set; } = [];
@@ -140,6 +143,7 @@ public sealed partial class SessionViewModel(TelemetryRuntime runtime) : Observa
             PitStops.Clear();
             HasPitStops = false;
             PositionChart = null;
+            Plans.Clear();
             return;
         }
 
@@ -174,6 +178,7 @@ public sealed partial class SessionViewModel(TelemetryRuntime runtime) : Observa
             PositionChart = new ChartModel("Race position", [new ChartSeries("Position", "#C77DFF",
                 positions.Select(p => p.SessionTime).ToArray(), positions.Select(p => (double)p.Position).ToArray())],
                 XLabel: "Session time", InvertY: true, IntegerY: true, YPrefix: "P", XIsTime: true);
+            await Plans.LoadAsync(fresh, laps.Count > 0 ? laps[^1].LapNumber : 0);
         }
         catch (OperationCanceledException)
         {

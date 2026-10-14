@@ -67,13 +67,23 @@
             <TextBlock Classes="mono" Text="{Binding Live.IngestStatus}" FontSize="13" Foreground="{StaticResource TextLoBrush}" TextTrimming="CharacterEllipsis" />
           </StackPanel>
 
-          <Border Grid.Column="4" Height="32" CornerRadius="16" Padding="12,0" Background="{StaticResource FasterTintBrush}"
-                  IsVisible="{Binding Live.IsReceiving}" VerticalAlignment="Center">
-            <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-              <Ellipse Width="10" Height="10" Fill="{StaticResource FasterBrush}" />
-              <TextBlock Text="LIVE" FontFamily="{StaticResource DisplayFont}" FontSize="13" FontWeight="Bold" LetterSpacing="1.3" Foreground="{StaticResource FasterBrush}" />
-            </StackPanel>
-          </Border>
+          <StackPanel Grid.Column="4" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+            <!-- A downloaded update: one click restarts into it (the same as Settings → Updates) -->
+            <Button Theme="{StaticResource SecondaryButton}" Command="{Binding Settings.Updates.RestartToUpdateCommand}"
+                    IsVisible="{Binding Settings.Updates.IsUpdateReady}" Padding="12,0"
+                    ToolTip.Tip="A new version is downloaded: restart to update">
+              <TextBlock FontFamily="{StaticResource DisplayFont}" FontSize="13" FontWeight="Bold" LetterSpacing="1.3" Foreground="{StaticResource InfoBrush}">
+                <Run Text="UPDATE " /><Run Text="{Binding Settings.Updates.ReadyVersion}" /><Run Text=" · RESTART" />
+              </TextBlock>
+            </Button>
+            <Border Height="32" CornerRadius="16" Padding="12,0" Background="{StaticResource FasterTintBrush}"
+                    IsVisible="{Binding Live.IsReceiving}" VerticalAlignment="Center">
+              <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                <Ellipse Width="10" Height="10" Fill="{StaticResource FasterBrush}" />
+                <TextBlock Text="LIVE" FontFamily="{StaticResource DisplayFont}" FontSize="13" FontWeight="Bold" LetterSpacing="1.3" Foreground="{StaticResource FasterBrush}" />
+              </StackPanel>
+            </Border>
+          </StackPanel>
 
           <ToggleSwitch Grid.Column="5" IsChecked="{Binding OverlaysEnabled}" OnContent="OVERLAYS" OffContent="OVERLAYS" VerticalAlignment="Center" />
 

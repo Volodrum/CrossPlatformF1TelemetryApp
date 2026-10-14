@@ -1,5 +1,6 @@
 using Avalonia;
 using F1Telemetry.App.Infrastructure;
+using Velopack;
 
 namespace F1Telemetry.App;
 
@@ -8,6 +9,9 @@ internal static class Program
     [STAThread]
     public static int Main(string[] args)
     {
+        // First thing: an installer, update or uninstall run of the exe does its work here and exits.
+        VelopackApp.Build().Run();
+
         var paths = new AppPaths();
         AppDomain.CurrentDomain.UnhandledException += (_, e) => WriteCrash(paths, e.ExceptionObject);
         TaskScheduler.UnobservedTaskException += (_, e) =>

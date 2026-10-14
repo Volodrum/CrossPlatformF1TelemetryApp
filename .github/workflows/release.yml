@@ -1,7 +1,11 @@
 name: Release
 
-# Push a version tag (git tag v0.2.0 && git push origin v0.2.0) to build the Windows and Linux zips and publish them
-# as a GitHub release. Run it by hand (Actions → Release → Run workflow) to only build the zips as workflow artifacts.
+# Push a version tag (git tag v0.5.0 && git push origin v0.5.0) to build Windows, Linux and macOS packages on their own
+# runners and publish them as a GitHub release. Run it by hand (Actions → Release → Run workflow) to only build the
+# packages as workflow artifacts.
+#
+# Each OS gets a Velopack installer that updates itself from these releases (Windows Setup.exe, Linux AppImage, macOS
+# .pkg), and Windows and Linux also a plain zip to unzip and run (it doesn't update itself).
 on:
   push:
     tags: ["v*"]
@@ -10,9 +14,39 @@ on:
 permissions:
   contents: write
 
+env:
+  # Must match the Velopack package version in Directory.Packages.props.
+  VPK_VERSION: 1.2.158
+  # Not "F1Telemetry": Velopack installs to %LOCALAPPDATA%\<packId> on Windows and removes that folder on uninstall,
+  # and the app keeps its database in %LOCALAPPDATA%\F1Telemetry.
+  PACK_ID: F1TelemetryApp
+
 jobs:
-  release:
-    runs-on: ubuntu-latest
+  package:
+    name: Package (${{ matrix.rid }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            rid: win-x64
+            exe: F1Telemetry.exe
+            icon: src/F1Telemetry.App/Assets/Brand/app.ico
+            zip: true
+          - os: ubuntu-latest
+            rid: linux-x64
+            exe: F1Telemetry
+            icon: src/F1Telemetry.App/Assets/Brand/icon-512.png
+            zip: true
+          - os: macos-latest
+            rid: osx-arm64
+            exe: F1Telemetry
+            icon: ""
+            zip: false
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
 
@@ -26,7 +60,7 @@ jobs:
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
           else
-            echo "version=0.0.0-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+            echo "version=0.0.0-ci.${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Test
@@ -36,26 +70,63 @@ jobs:
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
-          for rid in win-x64 linux-x64; do
-            name="F1Telemetry-$VERSION-$rid"
-            dotnet publish src/F1Telemetry.App -c Release -r "$rid" --self-contained \
-              -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=none \
-              -p:Version="$VERSION" -o "dist/$name"
-            rm -f dist/$name/*.pdb
-            cp README.md src/F1Telemetry.App/Assets/Fonts/OFL.txt "dist/$name/"
-            if [[ "$rid" == linux-* ]]; then chmod +x "dist/$name/F1Telemetry"; fi
+          dotnet publish src/F1Telemetry.App -c Release -r "${{ matrix.rid }}" --self-contained \
+            -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=none \
+            -p:Version="$VERSION" -o "publish/${{ matrix.rid }}"
+          rm -f publish/${{ matrix.rid }}/*.pdb
+          cp README.md src/F1Telemetry.App/Assets/Fonts/OFL.txt "publish/${{ matrix.rid }}/"
+          if [[ "${{ matrix.rid }}" != win-* ]]; then chmod +x "publish/${{ matrix.rid }}/F1Telemetry"; fi
+
+      - name: Portable zip
+        if: matrix.zip
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          name="F1Telemetry-$VERSION-${{ matrix.rid }}"
+          mkdir -p dist
+          cp -r "publish/${{ matrix.rid }}" "dist/$name"
+          if [[ "${{ runner.os }}" == "Windows" ]]; then
+            (cd dist && 7z a -tzip -bd "$name.zip" "$name" > /dev/null)
+          else
             (cd dist && zip -qr "$name.zip" "$name")
-          done
-          ls -la dist/*.zip
+          fi
+          rm -rf "dist/$name"
+
+      # The channel is the runtime id (win-x64…): with each OS's default channel every OS would get the same package
+      # file names, which can't share one release. An installed app follows the channel it was packed with.
+      - name: Installer (Velopack)
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          dotnet tool install -g vpk --version "$VPK_VERSION"
+          icon=()
+          if [[ -n "${{ matrix.icon }}" ]]; then icon=(--icon "${{ matrix.icon }}"); fi
+          vpk pack --packId "$PACK_ID" --packVersion "$VERSION" --packTitle "F1 Telemetry" --packAuthors Volodrum \
+            --packDir "publish/${{ matrix.rid }}" --mainExe "${{ matrix.exe }}" --runtime "${{ matrix.rid }}" \
+            --channel "${{ matrix.rid }}" "${icon[@]}" --outputDir releases
+          mkdir -p dist
+          cp releases/* dist/
+          ls -la dist
 
       - uses: actions/upload-artifact@v4
         with:
-          name: F1Telemetry-${{ steps.version.outputs.version }}
-          path: dist/*.zip
+          name: F1Telemetry-${{ steps.version.outputs.version }}-${{ matrix.rid }}
+          path: dist/*
 
-      - name: GitHub release
-        if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
+  release:
+    name: GitHub release
+    needs: package
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
         with:
-          files: dist/*.zip
+          path: dist
+          merge-multiple: true
+
+      - run: ls -la dist
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
           generate_release_notes: true

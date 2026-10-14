@@ -19,7 +19,7 @@
         <StackPanel Orientation="Horizontal" Spacing="8">
           <TextBlock Classes="label" Text="{Binding Context}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
           <controls:HelpTip Width="18" Height="18"
-                            Text="Lap A is the solid trace, lap B the dashed one: B can be any lap of any recording on the same track. Charts: scroll moves down the page, Ctrl + scroll zooms along the lap, drag pans; the value axis stays fixed. Trajectory: the wheel zooms, drag pans, double-click resets." />
+                            Text="Lap A is the solid trace, lap B the dashed one: B can be any lap of any recording on the same track. Charts: scroll moves down the page, Ctrl + scroll zooms along the lap, drag pans; the value axis stays fixed. The charts move together, on every tab: zoom or pan one and the others follow, and the pointer's place shows as a cursor line on all of them with each trace's value there. A new lap, comparison or x axis shows the whole lap again. Trajectory: the wheel zooms, drag pans, double-click resets." />
         </StackPanel>
         <StackPanel Orientation="Horizontal" Spacing="14">
           <TextBlock Classes="h1" Text="{Binding Title}" />
@@ -93,7 +93,8 @@
       <Panel>
         <!-- Chart tabs: full width. -->
         <DockPanel IsVisible="{Binding ShowCharts}">
-          <ScrollViewer>
+          <!-- Every chart shares one x range and cursor: zoom or hover one and the others follow. -->
+          <ScrollViewer controls:TelemetryPlot.Sync="{Binding ChartSync}">
             <ItemsControl ItemsSource="{Binding SelectedTab.Charts, FallbackValue={x:Null}}">
               <ItemsControl.ItemTemplate>
                 <DataTemplate x:DataType="vm:ChartModel">

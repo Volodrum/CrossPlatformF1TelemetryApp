@@ -45,6 +45,7 @@ public partial class App : Application
                     hotkeys.Start();
                     gamepads.Start();
                     await viewModel.InitializeAsync();
+                    _ = _services.GetRequiredService<UpdatesViewModel>().CheckOnStartupAsync();
                     await options.ApplyAsync(runtime, viewModel, desktop);
                 }
                 catch (Exception ex)
@@ -102,6 +103,7 @@ public partial class App : Application
         services.AddSingleton<EnergyPlanViewModel>();
         services.AddSingleton<EnergyViewModel>();
         services.AddSingleton<SetupsViewModel>();
+        services.AddSingleton<UpdatesViewModel>();
         services.AddSingleton<SettingsViewModel>();
         services.AddSingleton<MainWindowViewModel>();
         return services.BuildServiceProvider();

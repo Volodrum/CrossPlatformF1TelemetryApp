@@ -195,7 +195,7 @@ public sealed partial class SettingsViewModel : ObservableObject
     private readonly OverlayManager _overlays;
     private string? _capturingFor;
 
-    public SettingsViewModel(SettingsService settings, HotkeyService hotkeys, GamepadService gamepads, OverlayManager overlays, AppPaths paths)
+    public SettingsViewModel(SettingsService settings, HotkeyService hotkeys, GamepadService gamepads, OverlayManager overlays, AppPaths paths, UpdatesViewModel updates)
     {
         _settings = settings;
         _hotkeys = hotkeys;
@@ -204,6 +204,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         gamepads.ControllersChanged += RefreshPadBindings;
         _paths = paths;
         _overlays = overlays;
+        Updates = updates;
         var s = settings.Current;
         UdpPort = s.UdpPort;
         ListenOnStartup = s.ListenOnStartup;
@@ -243,6 +244,9 @@ public sealed partial class SettingsViewModel : ObservableObject
         set => _overlays.KeepClearArea = value;
     }
     public string DataDirectory => _paths.DataDirectory;
+    /// <summary>Version and auto-update.</summary>
+    public UpdatesViewModel Updates { get; }
+
     public string DatabasePath => _paths.DatabasePath;
 
     [ObservableProperty] public partial int UdpPort { get; set; }

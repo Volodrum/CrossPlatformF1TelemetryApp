@@ -104,6 +104,9 @@ public sealed class AppSettings
     public double InputTraceSeconds { get; set; } = 6;
 
     public bool CaptureRawPackets { get; set; }
+
+    /// <summary>Installed builds look for a new release on GitHub at startup and download it in the background.</summary>
+    public bool CheckForUpdates { get; set; } = true;
     public Dictionary<OverlayKind, OverlaySettings> Overlays { get; set; } = Enum.GetValues<OverlayKind>().ToDictionary(k => k, _ => new OverlaySettings());
 
     public OverlaySettings Overlay(OverlayKind kind)

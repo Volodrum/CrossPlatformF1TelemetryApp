@@ -134,6 +134,24 @@
             <Button Theme="{StaticResource SecondaryButton}" Content="OPEN DATA FOLDER" Command="{Binding OpenDataFolderCommand}" HorizontalAlignment="Left" />
           </StackPanel>
         </Border>
+
+        <!-- Version and auto-update (installed builds only) -->
+        <Border Classes="panel" Padding="18" DataContext="{Binding Updates}" x:DataType="vm:UpdatesViewModel">
+          <StackPanel Spacing="12">
+            <TextBlock Classes="label strong" Text="UPDATES" FontSize="14" />
+            <Grid ColumnDefinitions="Auto,Auto" RowDefinitions="Auto,Auto" RowSpacing="10" ColumnSpacing="24">
+              <TextBlock Classes="h2" Text="Version" VerticalAlignment="Center" />
+              <TextBlock Grid.Column="1" Classes="data-s" Text="{Binding CurrentVersion}" VerticalAlignment="Center" />
+              <TextBlock Grid.Row="1" Classes="h2" Text="Check for updates on startup" VerticalAlignment="Center" />
+              <ToggleSwitch Grid.Row="1" Grid.Column="1" IsChecked="{Binding CheckOnStartup}" IsEnabled="{Binding IsInstalled}" />
+            </Grid>
+            <TextBlock Classes="body" FontSize="13" Text="{Binding Status}" TextWrapping="Wrap" />
+            <StackPanel Orientation="Horizontal" Spacing="12">
+              <Button Theme="{StaticResource SecondaryButton}" Content="CHECK NOW" Command="{Binding CheckCommand}" IsEnabled="{Binding CanCheck}" />
+              <Button Theme="{StaticResource PrimaryButton}" Content="RESTART TO UPDATE" Command="{Binding RestartToUpdateCommand}" IsVisible="{Binding IsUpdateReady}" />
+            </StackPanel>
+          </StackPanel>
+        </Border>
       </StackPanel>
     </ScrollViewer>
   </DockPanel>
