@@ -38,6 +38,8 @@ public sealed partial class DuckDbTelemetryStore(string databasePath, ILogger<Du
 
     public string DatabasePath => databasePath;
 
+    public event Action<Exception>? WriteFailed;
+
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
         await Task.Run(() =>
@@ -65,13 +67,18 @@ public sealed partial class DuckDbTelemetryStore(string databasePath, ILogger<Du
         {
             return Open();
         }
-        catch (Exception ex) when (File.Exists(databasePath + ".wal"))
+        catch (Exception ex) when (File.Exists(databasePath + ".wal") && !IsLockError(ex))
         {
-            // A crash can leave a WAL that DuckDB refuses to replay; losing the last few seconds beats not starting.
-            _log.LogWarning(ex, "Database open failed; discarding WAL and retrying");
-            File.Delete(databasePath + ".wal");
+            // A crash can leave a WAL that DuckDB refuses to replay. Starting without it beats not starting, but the WAL
+            // holds everything since the last checkpoint, so it is set aside, never deleted: it may still be recoverable.
+            var aside = $"{databasePath}.wal.{DateTime.Now:yyyyMMdd-HHmmss}.unreplayed";
+            _log.LogError(ex, "Database open failed; moving its WAL to {Path} and retrying", aside);
+            File.Move(databasePath + ".wal", aside);
             return Open();
         }
+
+        // Another process (a second app, f1tel, a DuckDB shell) holding the file: its WAL is fine and in use.
+        static bool IsLockError(Exception ex) => ex.Message.Contains("lock", StringComparison.OrdinalIgnoreCase);
 
         DuckDBConnection Open()
         {
@@ -93,14 +100,16 @@ public sealed partial class DuckDbTelemetryStore(string databasePath, ILogger<Du
     public void EndRecording(long recordingId) => Enqueue(new EndOp(recordingId, DateTime.UtcNow));
 
     public void UpdateRecording(long recordingId, string? sessionUid = null, int? trackId = null, string? trackName = null, int? sessionType = null,
-        DateTimeOffset? startTime = null, DateTimeOffset? endTime = null) =>
-        Enqueue(new UpdateOp(recordingId, sessionUid, trackId, trackName, sessionType, startTime?.UtcDateTime, endTime?.UtcDateTime));
+        DateTimeOffset? startTime = null, DateTimeOffset? endTime = null, GameFormat? format = null) =>
+        Enqueue(new UpdateOp(recordingId, sessionUid, trackId, trackName, sessionType, startTime?.UtcDateTime, endTime?.UtcDateTime, format));
 
     public void AppendSample(TelemetrySample sample) => Enqueue(new SampleOp(sample));
 
     public void UpsertLap(long recordingId, LapRecord lap) => Enqueue(new LapOp(recordingId, lap));
 
     public void RestartLap(long recordingId, int lapNumber, double sessionTime) => Enqueue(new RestartLapOp(recordingId, lapNumber, sessionTime));
+
+    public void DiscardFrom(long recordingId, double sessionTime, int lapNumber) => Enqueue(new DiscardOp(recordingId, sessionTime, lapNumber));
 
     public void AppendSetup(long recordingId, SetupChange setup) => Enqueue(new SetupOp(recordingId, setup));
 
@@ -202,9 +211,22 @@ public sealed partial class DuckDbTelemetryStore(string databasePath, ILogger<Du
         catch (Exception ex)
         {
             _log.LogError(ex, "Failed to append {Count} telemetry rows", pending.Count);
+            OnWriteFailed(ex);
         }
 
         pending.Clear();
+    }
+
+    private void OnWriteFailed(Exception error)
+    {
+        try
+        {
+            WriteFailed?.Invoke(error);
+        }
+        catch (Exception ex)
+        {
+            _log.LogError(ex, "WriteFailed handler failed");
+        }
     }
 
     private void Execute(WriteOp op)
@@ -238,6 +260,16 @@ public sealed partial class DuckDbTelemetryStore(string databasePath, ILogger<Du
                 case RestartLapOp r:
                     NonQuery("UPDATE telemetry SET lap_number = 0 WHERE recording_id = $id AND lap_number = $lap AND session_time < $time",
                         ("id", r.RecordingId), ("lap", r.LapNumber), ("time", r.SessionTime));
+                    break;
+
+                case DiscardOp x:
+                    using (var tx = _writer!.BeginTransaction())
+                    {
+                        NonQuery("DELETE FROM telemetry WHERE recording_id = $id AND session_time >= $time", ("id", x.RecordingId), ("time", x.SessionTime));
+                        NonQuery("DELETE FROM laps WHERE recording_id = $id AND lap_number > $lap", ("id", x.RecordingId), ("lap", x.LapNumber));
+                        tx.Commit();
+                    }
+
                     break;
 
                 case SetupOp s:
@@ -278,6 +310,7 @@ public sealed partial class DuckDbTelemetryStore(string databasePath, ILogger<Du
         catch (Exception ex)
         {
             _log.LogError(ex, "Store write {Op} failed", op.GetType().Name);
+            OnWriteFailed(ex);
             switch (op)
             {
                 case DeleteOp d:
@@ -334,6 +367,12 @@ public sealed partial class DuckDbTelemetryStore(string databasePath, ILogger<Du
         {
             sets.Add("end_time = $end");
             args.Add(("end", u.EndUtc));
+        }
+
+        if (u.Format is not null)
+        {
+            sets.Add("game_format = $format");
+            args.Add(("format", (int)u.Format));
         }
 
         if (sets.Count > 0)
@@ -558,10 +597,11 @@ public sealed partial class DuckDbTelemetryStore(string databasePath, ILogger<Du
     private abstract record WriteOp;
     private sealed record BeginOp(long Id, NewRecording Recording, DateTime StartUtc) : WriteOp;
     private sealed record EndOp(long Id, DateTime EndUtc) : WriteOp;
-    private sealed record UpdateOp(long Id, string? SessionUid, int? TrackId, string? TrackName, int? SessionType, DateTime? StartUtc, DateTime? EndUtc) : WriteOp;
+    private sealed record UpdateOp(long Id, string? SessionUid, int? TrackId, string? TrackName, int? SessionType, DateTime? StartUtc, DateTime? EndUtc, GameFormat? Format) : WriteOp;
     private sealed record SampleOp(TelemetrySample Sample) : WriteOp;
     private sealed record LapOp(long RecordingId, LapRecord Lap) : WriteOp;
     private sealed record RestartLapOp(long RecordingId, int LapNumber, double SessionTime) : WriteOp;
+    private sealed record DiscardOp(long RecordingId, double SessionTime, int LapNumber) : WriteOp;
     private sealed record SetupOp(long RecordingId, SetupChange Setup) : WriteOp;
     private sealed record FlushOp(TaskCompletionSource Done) : WriteOp;
     private sealed record DeleteOp(long Id, TaskCompletionSource Done) : WriteOp;

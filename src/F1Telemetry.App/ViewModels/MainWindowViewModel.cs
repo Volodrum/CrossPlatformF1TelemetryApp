@@ -117,6 +117,8 @@ public sealed partial class MainWindowViewModel : ObservableObject
             OnPropertyChanged(nameof(IsF126Mode));
         });
         runtime.Pipeline.SourceChanged += _ => Dispatcher.UIThread.Post(RestoreSourceSelection);
+        runtime.Store.WriteFailed += ex => Dispatcher.UIThread.Post(() =>
+            StatusMessage = $"Telemetry could not be saved: {ex.Message} (details in the log)");
 
         // While recording, laps/strategy refresh shortly after each lap (session history lags the line by ~1 s) and every 5 s.
         _liveRefresh = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
