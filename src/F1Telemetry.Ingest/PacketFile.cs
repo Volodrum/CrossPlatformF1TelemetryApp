@@ -19,6 +19,7 @@ public sealed class PacketFileWriter : IAsyncDisposable, IDisposable
     private readonly FileStream _stream;
     private readonly Lock _gate = new();
     private readonly byte[] _recordHeader = new byte[12];
+    private bool _disposed;
 
     private PacketFileWriter(FileStream stream) => _stream = stream;
 
@@ -42,6 +43,12 @@ public sealed class PacketFileWriter : IAsyncDisposable, IDisposable
     {
         lock (_gate)
         {
+            // The ingest thread can still hold this writer when the UI thread stops the capture: drop the packet.
+            if (_disposed)
+            {
+                return;
+            }
+
             BinaryPrimitives.WriteInt64LittleEndian(_recordHeader, packet.Timestamp.Ticks);
             BinaryPrimitives.WriteInt32LittleEndian(_recordHeader.AsSpan(8), packet.Data.Length);
             _stream.Write(_recordHeader);
@@ -54,6 +61,7 @@ public sealed class PacketFileWriter : IAsyncDisposable, IDisposable
     {
         lock (_gate)
         {
+            _disposed = true;
             _stream.Dispose();
         }
     }

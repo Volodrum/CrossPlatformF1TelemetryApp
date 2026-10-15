@@ -13,13 +13,18 @@ public interface ITelemetryStore : IAsyncDisposable
 {
     Task InitializeAsync(CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// A write failed and what it carried is lost (the store carries on with the next one). Raised on the writer thread.
+    /// </summary>
+    event Action<Exception>? WriteFailed;
+
     /// <summary>Allocates an id synchronously and enqueues the insert.</summary>
     long BeginRecording(NewRecording recording);
 
     void EndRecording(long recordingId);
 
     void UpdateRecording(long recordingId, string? sessionUid = null, int? trackId = null, string? trackName = null, int? sessionType = null,
-        DateTimeOffset? startTime = null, DateTimeOffset? endTime = null);
+        DateTimeOffset? startTime = null, DateTimeOffset? endTime = null, GameFormat? format = null);
 
     void AppendSample(TelemetrySample sample);
 
@@ -30,6 +35,12 @@ public interface ITelemetryStore : IAsyncDisposable
     /// lap 0, driving that belongs to no lap (see <see cref="LapRestarts"/>).
     /// </summary>
     void RestartLap(long recordingId, int lapNumber, double sessionTime);
+
+    /// <summary>
+    /// A flashback took the session back to <paramref name="sessionTime"/> on <paramref name="lapNumber"/>: the samples
+    /// stored from then on, and the summaries of later laps, belong to driving the game has undone.
+    /// </summary>
+    void DiscardFrom(long recordingId, double sessionTime, int lapNumber);
 
     /// <summary>Records that the player drove <paramref name="setup"/> from its lap and session time on.</summary>
     void AppendSetup(long recordingId, SetupChange setup);

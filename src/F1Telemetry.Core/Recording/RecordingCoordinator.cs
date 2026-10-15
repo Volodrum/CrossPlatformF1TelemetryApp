@@ -19,7 +19,8 @@ public sealed record RecordingState(RecordingChange Change, long? RecordingId);
 /// Persistence policy on top of <see cref="SessionEngine"/> events:
 /// <list type="bullet">
 /// <item>samples are stored only while recording, never on a formation lap, and only when session time
-/// moves forward (flashbacks rewind time; the rewound segment is skipped until time catches up);</item>
+/// moves forward; a flashback (time going back) discards what was stored after the point it rewound to, so the
+/// driving that replaces it is what gets kept;</item>
 /// <item>outside races, driving that belongs to no lap is kept off the laps (see <see cref="LapRestarts"/>): the first
 /// out-lap before the line is not stored, and when a lap number crosses the line again its samples so far move to lap 0;</item>
 /// <item>a new game session during an active recording auto-splits it (or re-tags an empty recording);</item>
@@ -30,6 +31,9 @@ public sealed record RecordingState(RecordingChange Change, long? RecordingId);
 /// </summary>
 public sealed class RecordingCoordinator : IDisposable
 {
+    /// <summary>Session time going back by at least this much (s) is a flashback; less is a late or repeated packet.</summary>
+    public const double FlashbackSeconds = 0.25;
+
     private readonly SessionEngine _engine;
     private readonly ITelemetryStore _store;
     private readonly ILogger _log;
@@ -161,9 +165,11 @@ public sealed class RecordingCoordinator : IDisposable
 
             if (previous is null || _recordingSessionUid == 0 || _lastSampleTime < 0)
             {
-                // Nothing captured yet (or its session was unknown): keep the recording, just re-tag it.
-                _store.UpdateRecording(id, sessionUid: current.SessionUid.ToString());
+                // Nothing captured yet (or its session was unknown): keep the recording, just re-tag it. Its game format and
+                // track were guessed or belong to the old session, so they come from this one (the track with its session packet).
+                _store.UpdateRecording(id, sessionUid: current.SessionUid.ToString(), format: current.Format);
                 _recordingSessionUid = current.SessionUid;
+                _trackTagged = false;
                 _writtenLaps.Clear();
                 return;
             }
@@ -204,11 +210,29 @@ public sealed class RecordingCoordinator : IDisposable
         lock (_gate)
         {
             if (_recordingId is not { } id
-                || sample.SessionTime <= _lastSampleTime
                 || sample.LapNumber <= 0
                 || _engine.SafetyCarStatus == SafetyCarStatus.FormationLap)
             {
                 return;
+            }
+
+            if (sample.SessionTime <= _lastSampleTime)
+            {
+                if (_lastSampleTime - sample.SessionTime < FlashbackSeconds)
+                {
+                    return; // a repeated or late packet
+                }
+
+                // Flashback: the game rewound to here, so what was stored from here on was driven in a timeline it has
+                // undone. Drop it and record the driving that replaces it.
+                _store.DiscardFrom(id, sample.SessionTime, sample.LapNumber);
+                foreach (var undone in _writtenLaps.Keys.Where(lap => lap > sample.LapNumber).ToList())
+                {
+                    _writtenLaps.Remove(undone);
+                }
+
+                _lastSample = null;
+                _log.LogInformation("Flashback in recording {Id}: {From:F1} s -> {To:F1} s", id, _lastSampleTime, sample.SessionTime);
             }
 
             if (LapRestarts.Applies(_engine.Session?.SessionType ?? 0))
