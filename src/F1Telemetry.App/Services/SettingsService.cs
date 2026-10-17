@@ -114,6 +114,9 @@ public sealed class AppSettings
     public int RaceMediumSets { get; set; } = 3;
     public int RaceHardSets { get; set; } = 2;
 
+    /// <summary>Race plans use the tyre sets the game sent (packet 12) when a recording has them, instead of the counts.</summary>
+    public bool RaceSetsFromGame { get; set; } = true;
+
     /// <summary>
     /// Recordings whose typical laps the energy tab's map, summary and plans (and the ERS PLAN overlay) add to the
     /// session on screen, by track and game format (key: <see cref="EnergyPoolKey"/>).

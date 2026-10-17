@@ -113,7 +113,16 @@ public sealed class SessionEngine
     /// </summary>
     public event Action<SetupChange>? SetupChanged;
 
+    /// <summary>
+    /// The player's tyre sets became known or changed (a set wore further, was fitted or stopped being available; the
+    /// lap deltas alone don't count, see <see cref="TyreSetsChange.SameSets"/>).
+    /// </summary>
+    public event Action<TyreSetsChange>? TyreSetsChanged;
+
     public SessionInfo? Session { get; private set; }
+
+    /// <summary>The player's latest tyre sets this session, or null until the game has sent them.</summary>
+    public TyreSetsChange? CurrentTyreSets { get; private set; }
 
     /// <summary>The player's latest setup this session, or null until the game has sent one.</summary>
     public SetupChange? CurrentSetup { get; private set; }
@@ -162,6 +171,9 @@ public sealed class SessionEngine
                 break;
             case CarSetupsPacket setups:
                 OnSetups(setups);
+                break;
+            case TyreSetsPacket tyreSets:
+                OnTyreSets(tyreSets);
                 break;
             case CarTelemetry2Packet telemetry2:
                 _telemetry2 = telemetry2.Player;
@@ -224,6 +236,7 @@ public sealed class SessionEngine
         _lastBoxSplit = null;
         _buttons = 0;
         CurrentSetup = null;
+        CurrentTyreSets = null;
 
         Session = new SessionInfo(header.SessionUid, header.Format, -1, "Unknown", 0, SessionTypes.Name(0), "", 0, header.PlayerCarIndex);
         _log.LogInformation("New session {Uid} ({Format})", header.SessionUid, header.Format);
@@ -510,6 +523,23 @@ public sealed class SessionEngine
         {
             ButtonsPressed?.Invoke(pressed);
         }
+    }
+
+    private void OnTyreSets(TyreSetsPacket packet)
+    {
+        if (!packet.IsPlayer || packet.Sets.All(set => set.IsEmpty))
+        {
+            return;
+        }
+
+        var sets = new TyreSetsChange(_currentLap, packet.Header.SessionTime, packet.Sets, packet.FittedIndex);
+        if (CurrentTyreSets?.SameSets(sets) == true)
+        {
+            return;
+        }
+
+        CurrentTyreSets = sets;
+        TyreSetsChanged?.Invoke(sets);
     }
 
     private void OnSetups(CarSetupsPacket packet)

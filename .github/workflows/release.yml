@@ -7,6 +7,19 @@ name: Release
 # Each OS gets an installer that updates itself from these releases (Windows Installer.exe, a wizard that asks for the
 # install folder and runs the Velopack setup into it; Linux AppImage; macOS .pkg), and Windows and Linux also a plain
 # zip to unzip and run (it doesn't update itself).
+#
+# A tagged build also downloads the previous release's package for its OS first, so vpk pack makes a delta package
+# beside the full one and installed copies update by downloading only what changed.
+#
+# Code signing is used when the repository has the secrets for it (README → Signing and notarisation); without them
+# the packages are built unsigned, as before:
+#   Windows (the program, Velopack's setup and updater, and the install wizard), either
+#     Azure Artifact Signing: secrets AZURE_TENANT_ID, AZURE_CLIENT_ID, AZURE_CLIENT_SECRET (an app registration with
+#     the signer role) and variables AZURE_SIGNING_ENDPOINT, AZURE_SIGNING_ACCOUNT, AZURE_SIGNING_PROFILE, or
+#     a .pfx certificate: secrets WINDOWS_CERTIFICATE (the .pfx, base64) and WINDOWS_CERTIFICATE_PASSWORD;
+#   macOS (the app and the .pkg, then notarised by Apple): secrets MACOS_CERTIFICATE (a .p12 with the Developer ID
+#     Application and Developer ID Installer identities, base64), MACOS_CERTIFICATE_PASSWORD, APPLE_ID, APPLE_TEAM_ID
+#     and APPLE_APP_PASSWORD (an app-specific password for that Apple ID).
 on:
   push:
     tags: ["v*"]
@@ -23,6 +36,8 @@ env:
   PACK_ID: F1TelemetryApp
   # Inno Setup compiler for the Windows install wizard (installer/F1Telemetry.iss), from its NuGet package.
   INNO_VERSION: 6.7.3
+  # signtool plug-in for Azure Artifact Signing (formerly Trusted Signing), from its NuGet package.
+  ARTIFACT_SIGNING_VERSION: 1.0.128
 
 jobs:
   package:
@@ -80,6 +95,89 @@ jobs:
           cp README.md src/F1Telemetry.App/Assets/Fonts/OFL.txt "publish/${{ matrix.rid }}/"
           if [[ "${{ matrix.rid }}" != win-* ]]; then chmod +x "publish/${{ matrix.rid }}/F1Telemetry"; fi
 
+      # Windows signing: signtool parameters for Azure Artifact Signing or a .pfx, used for the program here, by vpk for
+      # Velopack's setup and updater, and for the install wizard.
+      - name: Signing setup (Windows)
+        if: runner.os == 'Windows'
+        env:
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          SIGNING_ENDPOINT: ${{ vars.AZURE_SIGNING_ENDPOINT }}
+          SIGNING_ACCOUNT: ${{ vars.AZURE_SIGNING_ACCOUNT }}
+          SIGNING_PROFILE: ${{ vars.AZURE_SIGNING_PROFILE }}
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        run: |
+          signing="$RUNNER_TEMP/signing"
+          mkdir -p "$signing"
+          if [[ -n "$AZURE_CLIENT_SECRET" && -n "$SIGNING_ACCOUNT" ]]; then
+            curl -sSL -o "$signing/client.zip" "https://api.nuget.org/v3-flatcontainer/microsoft.artifactsigning.client/$ARTIFACT_SIGNING_VERSION/microsoft.artifactsigning.client.$ARTIFACT_SIGNING_VERSION.nupkg"
+            7z x -y -bd -o"$signing/client" "$signing/client.zip" > /dev/null
+            printf '{"Endpoint":"%s","CodeSigningAccountName":"%s","CertificateProfileName":"%s"}' \
+              "$SIGNING_ENDPOINT" "$SIGNING_ACCOUNT" "$SIGNING_PROFILE" > "$signing/metadata.json"
+            params="/fd SHA256 /tr http://timestamp.acs.microsoft.com /td SHA256 /dlib $(cygpath -w "$signing/client/bin/x64/Azure.CodeSigning.Dlib.dll") /dmdf $(cygpath -w "$signing/metadata.json")"
+          elif [[ -n "$WINDOWS_CERTIFICATE" ]]; then
+            echo "$WINDOWS_CERTIFICATE" | base64 -d > "$signing/certificate.pfx"
+            params="/fd SHA256 /f $(cygpath -w "$signing/certificate.pfx") /p $WINDOWS_CERTIFICATE_PASSWORD /tr http://timestamp.digicert.com /td SHA256"
+          else
+            echo "No Windows signing secrets: the packages are unsigned."
+            exit 0
+          fi
+          signtool=$(ls "/c/Program Files (x86)/Windows Kits/10/bin/"*/x64/signtool.exe | sort -V | tail -1)
+          {
+            echo "SIGN_PARAMS=$params"
+            echo "SIGNTOOL=$signtool"
+          } >> "$GITHUB_ENV"
+
+      - name: Sign the program (Windows)
+        if: runner.os == 'Windows' && env.SIGN_PARAMS != ''
+        env:
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+        run: |
+          # shellcheck disable=SC2086 # the parameters are meant to split into words
+          "$SIGNTOOL" sign $SIGN_PARAMS "publish/${{ matrix.rid }}/${{ matrix.exe }}"
+
+      # macOS signing: the identities go into a keychain of their own (made the default, so codesign, productsign and
+      # notarytool find them) with the notarisation credentials as a profile vpk passes to notarytool.
+      - name: Signing setup (macOS)
+        if: runner.os == 'macOS'
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: |
+          if [[ -z "$MACOS_CERTIFICATE" ]]; then
+            echo "No macOS signing secrets: the package is unsigned and not notarised."
+            exit 0
+          fi
+          keychain="$RUNNER_TEMP/signing.keychain-db"
+          keychain_password=$(openssl rand -hex 16)
+          echo "$MACOS_CERTIFICATE" | base64 -d > "$RUNNER_TEMP/certificate.p12"
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          security import "$RUNNER_TEMP/certificate.p12" -k "$keychain" -P "$MACOS_CERTIFICATE_PASSWORD" -T /usr/bin/codesign -T /usr/bin/productsign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$keychain_password" "$keychain" > /dev/null
+          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+          security default-keychain -s "$keychain"
+          rm "$RUNNER_TEMP/certificate.p12"
+          xcrun notarytool store-credentials f1telemetry-notary --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" \
+            --password "$APPLE_APP_PASSWORD" --keychain "$keychain"
+          identity() { security find-identity -v "$keychain" | sed -n "s/.*\"\($1: .*\)\"/\1/p" | head -1; }
+          app=$(identity "Developer ID Application")
+          installer=$(identity "Developer ID Installer")
+          if [[ -z "$app" || -z "$installer" ]]; then
+            echo "::error::MACOS_CERTIFICATE needs both a Developer ID Application and a Developer ID Installer identity."
+            exit 1
+          fi
+          {
+            echo "MAC_APP_IDENTITY=$app"
+            echo "MAC_INSTALL_IDENTITY=$installer"
+          } >> "$GITHUB_ENV"
+
       - name: Portable zip
         if: matrix.zip
         env:
@@ -100,23 +198,54 @@ jobs:
       - name: Installer (Velopack)
         env:
           VERSION: ${{ steps.version.outputs.version }}
+          GITHUB_TOKEN: ${{ github.token }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
         run: |
           dotnet tool install -g vpk --version "$VPK_VERSION"
-          icon=()
-          if [[ -n "${{ matrix.icon }}" ]]; then icon=(--icon "${{ matrix.icon }}"); fi
+          # vpk makes the delta packages with zstd.
+          if ! command -v zstd > /dev/null; then
+            case "${{ runner.os }}" in
+              Linux) sudo apt-get install -y zstd ;;
+              macOS) brew install zstd ;;
+            esac
+          fi
+
+          # Delta updates: with the previous release's full package in releases/, vpk pack also makes a delta from it.
+          # Only for a version tag: a hand-run build's 0.0.0-ci version is older than any release.
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            vpk download github --repoUrl "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" --channel "${{ matrix.rid }}" \
+              --token "$GITHUB_TOKEN" --outputDir releases || echo "No earlier release to make a delta from: full package only."
+          fi
+
+          options=()
+          if [[ -n "${{ matrix.icon }}" ]]; then options+=(--icon "${{ matrix.icon }}"); fi
+          if [[ -n "${SIGN_PARAMS:-}" ]]; then options+=(--signParams "$SIGN_PARAMS"); fi
+          if [[ -n "${MAC_APP_IDENTITY:-}" ]]; then
+            options+=(--signAppIdentity "$MAC_APP_IDENTITY" --signInstallIdentity "$MAC_INSTALL_IDENTITY"
+              --signEntitlements installer/F1Telemetry.entitlements --notaryProfile f1telemetry-notary)
+          fi
           vpk pack --packId "$PACK_ID" --packVersion "$VERSION" --packTitle "F1 Telemetry" --packAuthors Volodrum \
             --packDir "publish/${{ matrix.rid }}" --mainExe "${{ matrix.exe }}" --runtime "${{ matrix.rid }}" \
-            --channel "${{ matrix.rid }}" "${icon[@]}" --outputDir releases
-          # Only what people download and what updates read (the full package and releases.<channel>.json). Left out:
-          # the Windows Setup.exe (the install wizard below wraps it), the Portable.zip bundles (the plain zips above
-          # cover Windows and Linux), and the build manifest and legacy RELEASES files, which Velopack updates don't use.
+            --channel "${{ matrix.rid }}" "${options[@]}" --outputDir releases
+          # Only what people download and what updates read (this version's full and delta packages and
+          # releases.<channel>.json). Left out: the previous release's full package (already in its own release), the
+          # Windows Setup.exe (the install wizard below wraps it), the Portable.zip bundles (the plain zips above cover
+          # Windows and Linux), and the build manifest and legacy RELEASES files, which Velopack updates don't use.
+          shopt -s nullglob
           case "${{ runner.os }}" in
             Linux) installer=(releases/*.AppImage) ;;
             macOS) installer=(releases/*-Setup.pkg) ;;
             *) installer=() ;;
           esac
+          full=(releases/*-"$VERSION"-*-full.nupkg)
+          if [[ ${#full[@]} -eq 0 ]]; then
+            echo "::error::vpk pack made no full package for $VERSION."
+            exit 1
+          fi
           mkdir -p dist
-          cp releases/*-full.nupkg releases/releases.*.json "${installer[@]}" dist/
+          cp releases/*-"$VERSION"-*-full.nupkg releases/*-"$VERSION"-*-delta.nupkg releases/releases.*.json "${installer[@]}" dist/
           ls -la dist
 
       # Windows also gets an install wizard that asks for the folder and then runs the Velopack setup into it.
@@ -131,6 +260,16 @@ jobs:
           & inno\tools\ISCC.exe /Q "/DAppVersion=$env:VERSION" "/DVelopackSetup=$PWD\releases\$env:PACK_ID-win-x64-Setup.exe" "/O$PWD\dist" installer\F1Telemetry.iss
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Get-ChildItem dist\*Installer.exe
+
+      - name: Sign the install wizard (Windows)
+        if: runner.os == 'Windows' && env.SIGN_PARAMS != ''
+        env:
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+        run: |
+          # shellcheck disable=SC2086 # the parameters are meant to split into words
+          "$SIGNTOOL" sign $SIGN_PARAMS dist/*Installer.exe
 
       - uses: actions/upload-artifact@v4
         with:

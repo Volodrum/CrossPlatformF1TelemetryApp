@@ -22,6 +22,18 @@ public sealed record StrategyOptions
     /// stop has been recorded yet (see <see cref="Analytics.CompoundLibrary"/>).
     /// </summary>
     public double DefaultPitLossSeconds { get; init; } = 22;
+
+    /// <summary>
+    /// Wear of the most worn tyre from which a set loses time faster than the straight-line degradation: the tyre
+    /// "cliff" (see <see cref="Analytics.CompoundModel"/>). Race plans may run a set past it, at its cost.
+    /// </summary>
+    public double TyreCliffWearPercent { get; init; } = 60;
+
+    /// <summary>
+    /// What each lap of tyre age past the cliff adds on top of the straight-line degradation, s/lap, until laps run
+    /// past it are recorded: the fifth lap past the cliff is then 1 s slower than the straight line.
+    /// </summary>
+    public double DefaultTyreCliffSecondsPerLap { get; init; } = 0.2;
 }
 
 /// <summary>

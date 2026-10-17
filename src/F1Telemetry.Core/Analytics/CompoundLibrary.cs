@@ -8,7 +8,7 @@ namespace F1Telemetry.Core.Analytics;
 /// </summary>
 /// <param name="Laps">Clean laps behind the pace figures.</param>
 /// <param name="BaseLapSeconds">Fuel-corrected lap on a fresh set with an empty tank, in the anchor session's conditions.</param>
-/// <param name="DegradationPerLap">Lap time each lap of tyre age adds, fuel taken out (never below 0).</param>
+/// <param name="DegradationPerLap">Lap time each lap of tyre age adds, fuel taken out (never below 0), before the cliff.</param>
 /// <param name="DegradationMeasured">False when no stint of the compound had two clean laps at different ages: the mean of the other compounds is used.</param>
 /// <param name="WearPerLap">Wear of the most worn tyre per lap, %, weighted by laps.</param>
 /// <param name="LifeLaps">Laps from a fresh set until that tyre reaches the wear limit; null when no wear was recorded.</param>
@@ -16,6 +16,12 @@ namespace F1Telemetry.Core.Analytics;
 /// True when the compound's pace is tied to the anchor session: it was run there, or in a session that shares a compound
 /// with one that was. An unlinked compound's pace is taken as recorded, without correcting for that session's conditions.
 /// </param>
+/// <param name="CliffAge">
+/// Tyre age (laps on a fresh set) where the most worn tyre reaches the cliff wear and the set starts losing time faster;
+/// null when no wear was recorded.
+/// </param>
+/// <param name="CliffSecondsPerLap">What each lap past the cliff adds on top of <paramref name="DegradationPerLap"/>, s/lap.</param>
+/// <param name="CliffMeasured">False when no clean lap was run past the cliff: the default is used.</param>
 public sealed record CompoundModel(
     string Compound,
     int Laps,
@@ -26,10 +32,20 @@ public sealed record CompoundModel(
     bool DegradationMeasured,
     double WearPerLap,
     double? LifeLaps,
-    bool Linked)
+    bool Linked,
+    double? CliffAge = null,
+    double CliffSecondsPerLap = 0,
+    bool CliffMeasured = false)
 {
-    /// <summary>Fuel-corrected lap time on a set this many laps old (0 = its first lap).</summary>
-    public double LapSeconds(int tyreAge) => BaseLapSeconds + DegradationPerLap * tyreAge;
+    /// <summary>
+    /// Fuel-corrected lap time on a set this many laps old (0 = its first lap on a fresh set): straight-line degradation,
+    /// and past the cliff the cliff's slope on top.
+    /// </summary>
+    public double LapSeconds(double tyreAge) =>
+        BaseLapSeconds + DegradationPerLap * tyreAge + (CliffAge is { } cliff && tyreAge > cliff ? CliffSecondsPerLap * (tyreAge - cliff) : 0);
+
+    /// <summary>Tyre age a set with this wear (%, most worn tyre) is equivalent to: its laps' worth of this compound's wear.</summary>
+    public double AgeForWear(double wearPercent) => WearPerLap > 0 ? Math.Max(0, wearPercent) / WearPerLap : 0;
 
     public bool IsDry => Compound is "Soft" or "Medium" or "Hard";
 }
@@ -57,6 +73,8 @@ public sealed record CompoundLibrary(
 /// stint, pooled over the compound's stints, so a session that was faster overall doesn't tilt it. The session offsets
 /// take out what differs between sessions (track temperature, rubber, the driver's day), so compounds run in different
 /// sessions still compare, as long as the sessions are linked by a compound they share.</para>
+/// <para>Laps run with the most worn tyre past the cliff wear (<see cref="StrategyOptions.TyreCliffWearPercent"/>) stay
+/// out of that fit; what they lose beyond the straight line, per lap past the cliff, is the compound's cliff slope.</para>
 /// </summary>
 public static class CompoundLibraryBuilder
 {
@@ -75,16 +93,30 @@ public static class CompoundLibraryBuilder
             {
                 if (lap.Compound != "Unknown")
                 {
-                    laps.Add(new LibraryLap(s, lap.StintNumber, lap.Compound, lap.TyreAge, lap.LapSeconds - fuelEffect.SecondsPerKg * lap.FuelKg));
+                    laps.Add(new LibraryLap(s, lap.StintNumber, lap.Compound, lap.TyreAge, lap.LapSeconds - fuelEffect.SecondsPerKg * lap.FuelKg, lap.WearPercent));
                 }
             }
         }
 
         var compounds = laps.Select(l => l.Compound).Distinct().ToList();
+        var wearPerLap = compounds.ToDictionary(c => c, compound =>
+        {
+            var stints = sessions.SelectMany(r => r.Analysis.Stints).Where(st => st.Compound == compound && st.RegularLapCount > 0).ToList();
+            var wearLaps = stints.Sum(st => st.RegularLapCount);
+            return wearLaps > 0 ? stints.Sum(st => MaxWheel(st) * st.RegularLapCount) / wearLaps : 0;
+        });
+
+        // Past the cliff a lap is slower than the straight line: those laps measure the cliff and stay out of the fit
+        // (unless they are all the compound has).
+        var cliffLaps = laps.Where(l => wearPerLap[l.Compound] > 0 && l.Wear >= options.TyreCliffWearPercent).ToHashSet();
+        var onlyCliff = compounds.Where(c => laps.Where(l => l.Compound == c).All(cliffLaps.Contains)).ToHashSet();
+        cliffLaps.RemoveWhere(l => onlyCliff.Contains(l.Compound));
+        var straight = laps.Where(l => !cliffLaps.Contains(l)).ToList();
+
         var degradation = new Dictionary<string, double>();
         foreach (var compound in compounds)
         {
-            if (PooledSlope(laps.Where(l => l.Compound == compound)) is { } slope)
+            if (PooledSlope(straight.Where(l => l.Compound == compound)) is { } slope)
             {
                 degradation[compound] = Math.Max(0, slope);
             }
@@ -101,20 +133,21 @@ public static class CompoundLibraryBuilder
         }
 
         var (linkedSessions, linkedCompounds) = Linked(laps, anchor);
+        var bySession = straight.ToLookup(l => l.Session);
+        var byCompound = straight.ToLookup(l => l.Compound);
         var offset = new double[sessions.Count];
         var baseLap = compounds.ToDictionary(c => c, _ => 0.0);
         for (var iteration = 0; iteration < 100; iteration++)
         {
             foreach (var compound in compounds)
             {
-                baseLap[compound] = laps.Where(l => l.Compound == compound)
-                    .Average(l => l.Seconds - Degradation(compound) * l.TyreAge - offset[l.Session]);
+                baseLap[compound] = byCompound[compound].Average(l => l.Seconds - Degradation(compound) * l.TyreAge - offset[l.Session]);
             }
 
             var change = 0.0;
-            foreach (var s in linkedSessions.Where(s => s != anchor))
+            foreach (var s in linkedSessions.Where(s => s != anchor && bySession[s].Any()))
             {
-                var next = laps.Where(l => l.Session == s).Average(l => l.Seconds - Degradation(l.Compound) * l.TyreAge - baseLap[l.Compound]);
+                var next = bySession[s].Average(l => l.Seconds - Degradation(l.Compound) * l.TyreAge - baseLap[l.Compound]);
                 change = Math.Max(change, Math.Abs(next - offset[s]));
                 offset[s] = next;
             }
@@ -128,9 +161,9 @@ public static class CompoundLibraryBuilder
         var models = compounds.Select(compound =>
         {
             var compoundLaps = laps.Where(l => l.Compound == compound).ToList();
-            var stints = sessions.SelectMany(r => r.Analysis.Stints).Where(st => st.Compound == compound && st.RegularLapCount > 0).ToList();
-            var wearLaps = stints.Sum(st => st.RegularLapCount);
-            var wear = wearLaps > 0 ? stints.Sum(st => MaxWheel(st) * st.RegularLapCount) / wearLaps : 0;
+            var wear = wearPerLap[compound];
+            var cliff = CliffSlope(cliffLaps.Where(l => l.Compound == compound), l =>
+                l.Seconds - baseLap[compound] - offset[l.Session] - Degradation(compound) * l.TyreAge, wear, options.TyreCliffWearPercent);
             return new CompoundModel(
                 compound,
                 compoundLaps.Count,
@@ -141,7 +174,10 @@ public static class CompoundLibraryBuilder
                 degradation.ContainsKey(compound),
                 wear,
                 wear > 0 ? options.TyreWearLimitPercent / wear : null,
-                linkedCompounds.Contains(compound));
+                linkedCompounds.Contains(compound),
+                wear > 0 ? options.TyreCliffWearPercent / wear : null,
+                cliff ?? options.DefaultTyreCliffSecondsPerLap,
+                cliff is not null);
         }).OrderBy(c => CompoundOrder(c.Compound)).ToList();
 
         var stops = sessions
@@ -204,6 +240,25 @@ public static class CompoundLibraryBuilder
         return sxx > 0 ? sxy / sxx : null;
     }
 
+    /// <summary>
+    /// Least-squares slope (through the cliff) of what laps past the cliff lose beyond the straight line, against the laps
+    /// they are past it (their wear over the cliff wear, in laps of wear); null with fewer than 3 such laps.
+    /// </summary>
+    private static double? CliffSlope(IEnumerable<LibraryLap> laps, Func<LibraryLap, double> residual, double wearPerLap, double cliffWear)
+    {
+        double sxy = 0, sxx = 0;
+        var count = 0;
+        foreach (var lap in laps)
+        {
+            var past = (lap.Wear - cliffWear) / wearPerLap;
+            sxy += past * residual(lap);
+            sxx += past * past;
+            count++;
+        }
+
+        return count >= 3 && sxx > 0 ? Math.Max(0, sxy / sxx) : null;
+    }
+
     /// <summary>Sessions and compounds reachable from the anchor session through shared compounds.</summary>
     private static (HashSet<int> Sessions, HashSet<string> Compounds) Linked(List<LibraryLap> laps, int anchor)
     {
@@ -239,5 +294,5 @@ public static class CompoundLibraryBuilder
     private static double MaxWheel(StintAnalysis stint) =>
         Math.Max(Math.Max(stint.AverageWearPerLap.Fl, stint.AverageWearPerLap.Fr), Math.Max(stint.AverageWearPerLap.Rl, stint.AverageWearPerLap.Rr));
 
-    private sealed record LibraryLap(int Session, int Stint, string Compound, int TyreAge, double Seconds);
+    private sealed record LibraryLap(int Session, int Stint, string Compound, int TyreAge, double Seconds, double Wear);
 }

@@ -209,6 +209,17 @@ public sealed class EndToEndTests : IAsyncLifetime
         Assert.Equal(setups[0].Setup.FrontWing + 1, setups[1].Setup.FrontWing);
         Assert.Equal(3, setups[1].LapNumber);
 
+        // Tyre sets: the allocation, new, with the medium on; at the stop the medium comes off worn and a new hard goes on.
+        var tyreSets = await store.GetTyreSetsAsync(recording.Id, TestContext.Current.CancellationToken);
+        Assert.True(tyreSets.Count > 2);
+        Assert.Equal(17, tyreSets[0].Fitted!.Value.VisualCompound);
+        Assert.Equal(20, tyreSets[0].Sets.Count);
+        var last = tyreSets[^1];
+        Assert.Equal(18, last.Fitted!.Value.VisualCompound);
+        Assert.Contains(last.Sets, set => set.VisualCompound == 17 && set.Wear > 3 && !set.Fitted);
+        Assert.Equal(1, last.Sets.Count(set => set.Fitted));
+        Assert.All(tyreSets.Zip(tyreSets.Skip(1)), p => Assert.False(p.First.SameSets(p.Second)));
+
         var result2 = (await analysis.AnalyzeAsync(recording, laps, TestContext.Current.CancellationToken))!;
         Assert.Equal(2, result2.Stints.Count);
         Assert.InRange(result2.Stints[0].AverageFuelPerLap, 1.5, 2.0);

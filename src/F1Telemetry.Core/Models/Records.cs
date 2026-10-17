@@ -66,6 +66,25 @@ public readonly record struct SessionConditions(byte Weather, sbyte TrackTempera
 /// <param name="Conditions">Weather and temperatures when it arrived; null if the session packet hadn't come yet.</param>
 public sealed record SetupChange(int LapNumber, double SessionTime, CarSetup Setup, SessionConditions? Conditions = null);
 
+/// <summary>
+/// The player's tyre sets (packet 12) from a point in the session on: the weekend allocation with each set's wear and
+/// whether it can still be used.
+/// </summary>
+/// <param name="LapNumber">Lap the car was on when the sets arrived; 0 before the first lap.</param>
+/// <param name="FittedIndex">Index into <paramref name="Sets"/> of the set on the car.</param>
+public sealed record TyreSetsChange(int LapNumber, double SessionTime, IReadOnlyList<TyreSet> Sets, int FittedIndex)
+{
+    public TyreSet? Fitted => FittedIndex >= 0 && FittedIndex < Sets.Count ? Sets[FittedIndex] : null;
+
+    /// <summary>
+    /// Whether two snapshots hold the same sets. The lap deltas are left out: they are against the fitted set and move
+    /// with it, not with the sets.
+    /// </summary>
+    public bool SameSets(TyreSetsChange other) =>
+        FittedIndex == other.FittedIndex && Sets.Count == other.Sets.Count
+        && Sets.Zip(other.Sets).All(p => p.First with { LapDeltaMs = 0 } == p.Second with { LapDeltaMs = 0 });
+}
+
 public sealed record NewRecording(
     string SessionUid,
     string Description,
