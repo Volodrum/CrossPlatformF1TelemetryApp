@@ -35,6 +35,7 @@ public class ProtocolTests
             Assert.Equal(layout.PacketSizes[PacketId.CarDamage], h + layout.MaxCars * layout.DamageSlot);
             Assert.Equal(layout.PacketSizes[PacketId.CarSetups], h + layout.MaxCars * layout.SetupSlot + 4);
             Assert.Equal(layout.PacketSizes[PacketId.FinalClassification], h + 1 + layout.MaxCars * layout.FinalClassificationSlot);
+            Assert.Equal(layout.PacketSizes[PacketId.TyreSets], h + 1 + TyreSetsPacket.SetCount * TyreSet.Size + 1);
         }
 
         Assert.Equal(FormatLayout.HeaderSize + 24 * 10, FormatLayout.F1_26.PacketSizes[PacketId.CarTelemetry2]);
@@ -267,6 +268,24 @@ public class ProtocolTests
         Assert.Equal(40, parsed.Cars[^1].FrontWing);
         Assert.True(parsed.Cars[0].IsEmpty); // a car whose setup the game does not share
         Assert.Equal(19, parsed.NextFrontWingValue);
+    }
+
+    [Theory]
+    [MemberData(nameof(Formats))]
+    public void Tyre_sets_round_trip(GameFormat format)
+    {
+        var writer = new PacketWriter(FormatLayout.For(format));
+        var packet = writer.Create(PacketId.TyreSets, 1, 0, 0, 3);
+        var sets = Enumerable.Range(0, TyreSetsPacket.SetCount)
+            .Select(i => new TyreSet((byte)(16 + i % 3), (byte)(16 + i % 3), (byte)(i * 3), i % 4 != 0, 10, (byte)(20 - i), 22, (short)(i * 100 - 900), i == 7))
+            .ToList();
+        writer.WriteTyreSets(packet, 3, sets, 7);
+
+        var parsed = Assert.IsType<TyreSetsPacket>(PacketParser.Parse(packet).Packet);
+        Assert.True(parsed.IsPlayer);
+        Assert.Equal(sets, parsed.Sets);
+        Assert.Equal(7, parsed.FittedIndex);
+        Assert.Equal(-900, parsed.Sets[0].LapDeltaMs);
     }
 
     [Fact]

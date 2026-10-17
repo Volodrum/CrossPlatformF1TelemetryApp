@@ -25,7 +25,7 @@ public sealed record RecordingState(RecordingChange Change, long? RecordingId);
 /// out-lap before the line is not stored, and when a lap number crosses the line again its samples so far move to lap 0;</item>
 /// <item>a new game session during an active recording auto-splits it (or re-tags an empty recording);</item>
 /// <item>lap summaries are upserted only when they actually change;</item>
-/// <item>the player's setup is stored when a recording starts and whenever it changes.</item>
+/// <item>the player's setup and tyre sets are stored when a recording starts and whenever they change.</item>
 /// </list>
 /// Engine events arrive on the ingest thread; all store calls here are non-blocking enqueues.
 /// </summary>
@@ -60,6 +60,7 @@ public sealed class RecordingCoordinator : IDisposable
         _engine.SampleCaptured += OnSample;
         _engine.LapsUpdated += OnLapsUpdated;
         _engine.SetupChanged += OnSetupChanged;
+        _engine.TyreSetsChanged += OnTyreSetsChanged;
     }
 
     public event Action<RecordingState>? StateChanged;
@@ -146,6 +147,11 @@ public sealed class RecordingCoordinator : IDisposable
         if (_engine.CurrentSetup is { } setup)
         {
             _store.AppendSetup(id, setup);
+        }
+
+        if (_engine.CurrentTyreSets is { } tyreSets)
+        {
+            _store.AppendTyreSets(id, tyreSets);
         }
 
         _log.LogInformation("Recording {Id} started ({Description})", id, description);
@@ -266,6 +272,17 @@ public sealed class RecordingCoordinator : IDisposable
         }
     }
 
+    private void OnTyreSetsChanged(TyreSetsChange sets)
+    {
+        lock (_gate)
+        {
+            if (_recordingId is { } id)
+            {
+                _store.AppendTyreSets(id, sets);
+            }
+        }
+    }
+
     private void OnLapsUpdated(IReadOnlyList<LapRecord> laps)
     {
         lock (_gate)
@@ -295,5 +312,6 @@ public sealed class RecordingCoordinator : IDisposable
         _engine.SampleCaptured -= OnSample;
         _engine.LapsUpdated -= OnLapsUpdated;
         _engine.SetupChanged -= OnSetupChanged;
+        _engine.TyreSetsChanged -= OnTyreSetsChanged;
     }
 }

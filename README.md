@@ -69,7 +69,7 @@ The layout differences between the two formats are handled in `FormatLayout`:
 - The session packet gains active-aero zones, DRS zones and assist flags (753 → 926 bytes).
 - New packet 16, **CarTelemetry2**: active aero mode and overtake mode. These are recorded as `active_aero_mode`, `active_aero_available`, `overtake_active` and `overtake_available`.
 
-Both formats also record ICE and MGU-K power (`engine_power_ice`, `engine_power_mguk`, in W) with the battery, and the player's **car setup** (packet 5) in `recording_setups`: the setup in use when a recording starts, then one row per change, such as a new front wing at a stop. Fuel load alone doesn't count as a change.
+Both formats also record ICE and MGU-K power (`engine_power_ice`, `engine_power_mguk`, in W) with the battery, and the player's **car setup** (packet 5) in `recording_setups`: the setup in use when a recording starts, then one row per change, such as a new front wing at a stop. Fuel load alone doesn't count as a change. The player's **tyre sets** (packet 12: the 13 dry and 7 wet sets of the weekend, each with its wear and whether it can still be used) go to `recording_tyre_sets` the same way, a snapshot when a recording starts and one per change; the lap deltas alone don't count.
 
 Packets whose length doesn't match their format are rejected and counted, never misread. The Live view shows the count.
 
@@ -79,9 +79,9 @@ The [Releases](https://github.com/Volodrum/CrossPlatformF1TelemetryApp/releases)
 
 | OS | Installer | Notes |
 |---|---|---|
-| Windows (x64) | `F1TelemetryApp-win-x64-Installer.exe` | Asks where to install (in English or Ukrainian, after Windows' language) and whether to add a desktop shortcut, then installs per user, with no admin rights and a Start-menu shortcut. SmartScreen may warn because it isn't signed (*More info → Run anyway*). |
+| Windows (x64) | `F1TelemetryApp-win-x64-Installer.exe` | Asks where to install (in English or Ukrainian, after Windows' language) and whether to add a desktop shortcut, then installs per user, with no admin rights and a Start-menu shortcut. Signed when the release was built with signing set up (see [Signing and notarisation](#signing-and-notarisation)); an unsigned one makes SmartScreen warn (*More info → Run anyway*). |
 | Linux (x64) | the `.AppImage` | `chmod +x` and run. Needs an X11 session (overlays and global hotkeys don't work under Wayland, see [Overlays](#overlays)) and `libX11`, `libICE`, `libSM`, `fontconfig` and `libicu`. |
-| macOS (Apple silicon) | the `osx-arm64` `Setup.pkg` | Not notarised: right-click → *Open* the first time. Global hotkeys need the Accessibility permission. |
+| macOS (Apple silicon) | the `osx-arm64` `Setup.pkg` | Signed and notarised when the release was built with the Apple secrets; otherwise right-click → *Open* the first time. Global hotkeys need the Accessibility permission. |
 
 The install wizard (`installer/F1Telemetry.iss`, Inno Setup) only picks the folder and then runs the Velopack setup into it silently, so the app, its shortcuts, its updates and its entry in Settings → Apps are Velopack's. Uninstalling removes the whole install folder, so the wizard only accepts a new or empty folder, and one you can write to without admin rights (not Program Files); a folder picked with *Browse* gets `F1TelemetryApp` added. If the app is already installed, the wizard reinstalls it in the same folder; to move it, uninstall it first.
 
@@ -98,6 +98,19 @@ git push origin v0.5.0
 ```
 
 The version comes from the tag. Velopack packs each OS in its own channel, named after the runtime id (`win-x64`, `linux-x64`, `osx-arm64`), so the three sets of files can share one release; an installed copy follows its own channel.
+
+**Delta updates.** Before packing, a tagged build downloads the previous release's package for its channel (`vpk download github`), so `vpk pack` also makes a `-delta.nupkg` of only what changed and lists it in `releases.<channel>.json`. A copy one version behind downloads just that; one further behind, or a first release, gets the full package.
+
+### Signing and notarisation
+
+The release workflow signs when the repository has the secrets for it (Settings → Secrets and variables → Actions), and builds unsigned packages otherwise.
+
+| OS | What is signed | Secrets (and variables) |
+|---|---|---|
+| Windows | the program (also in the zip), Velopack's setup and updater (`vpk pack --signParams`), and the install wizard | **Azure Artifact Signing** (formerly Trusted Signing): secrets `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET` of an app registration with the *Artifact Signing Certificate Profile Signer* role, and variables `AZURE_SIGNING_ENDPOINT` (e.g. `https://weu.codesigning.azure.net`), `AZURE_SIGNING_ACCOUNT`, `AZURE_SIGNING_PROFILE`. Or a **.pfx** certificate: secrets `WINDOWS_CERTIFICATE` (the file, base64) and `WINDOWS_CERTIFICATE_PASSWORD` (no spaces). Certificates issued since 2023 live on hardware, so for a new one Artifact Signing is the way to sign in CI. |
+| macOS | the app (hardened runtime, `installer/F1Telemetry.entitlements`) and the `.pkg`, then notarised and stapled by `vpk pack` | `MACOS_CERTIFICATE`: a `.p12` with both the *Developer ID Application* and *Developer ID Installer* identities, base64; `MACOS_CERTIFICATE_PASSWORD`; `APPLE_ID`, `APPLE_TEAM_ID` and `APPLE_APP_PASSWORD` (an app-specific password) for `notarytool`. |
+
+The entitlements allow the JIT and loading the native libraries the single-file app extracts (Skia, DuckDB, SDL, libuiohook), which aren't signed with the app's identity. Linux AppImages aren't signed.
 
 ## Turning on telemetry in the game
 
@@ -235,14 +248,23 @@ The fits need a few clean laps per stint: with only two or three, wear rates are
 - the **degradation** is the slope within each stint, pooled over the compound's stints, so a session that was quicker overall doesn't tilt it (never below 0; a compound with no stint long enough borrows the others' mean and says so);
 - the **session offsets** take out what differs between sessions (track temperature, rubber, the day), so a soft run in practice and a medium run in the race still compare, in the conditions of the session on screen. That needs the sessions to be linked by a compound they share; a compound that isn't is taken as recorded and flagged;
 - **tyre life** is the laps until the most worn tyre reaches the wear limit (Settings), from its recorded wear per lap;
-- the **pit-stop loss** is the median of the recorded races' stops at the track (22 s until there is one), and the fuel burn the median of the stints'.
+- the **pit-stop loss** is the median of the recorded races' stops at the track (22 s until there is one), and the fuel burn the median of the stints';
+- the **tyre cliff**: laps run with the most worn tyre past 60 % wear (`StrategyOptions.TyreCliffWearPercent`) lose time faster than the straight line. They stay out of the degradation fit, and what they lose beyond it, per lap past the cliff, is the compound's cliff slope (least squares, at least 3 such laps). A compound never run that far gets 0.2 s per lap past it, so the fifth lap past the cliff is 1 s slower than the straight line. **CLIFF** shows the tyre age where it starts and the slope, grey while assumed.
 
-`StrategyPlanner` then builds every 1-, 2- and 3-stop plan for the race distance (the longest race recorded there, editable) that runs two different dry compounds and keeps each set within its life and at least 3 laps long. A plan never runs a compound more often than the race has new sets of it: **SETS** next to the race distance, the F1 weekend allocation (8 soft, 3 medium, 2 hard) until you lower it to what is left after practice and qualifying (saved in the settings). For each mix of compounds, dynamic programming over the laps picks the stint lengths with the lowest race time. The list ranks them by predicted race time, with the gap to the best, and the fastest plan of each stop count always shows. For each stop it gives:
+`StrategyPlanner` then builds every 1-, 2- and 3-stop plan for the race distance (the longest race recorded there, editable) that runs two different dry compounds and keeps each set within its life and at least 3 laps long. A lap's time is the compound's pace plus the straight-line degradation plus the cliff past it, so a stint that would run far past the cliff is cut short or split. A plan never runs more sets of a compound than the race has:
+
+- **SETS FROM GAME** (on when the recording has them): the sets the game sent (packet 12) that can still be used, new and used. In a race they are the sets as it started (the last snapshot before any set wore further, so a set changed on the grid counts); in practice or qualifying, what was left at the end. A plan takes a compound's freshest sets first.
+- Otherwise the new sets typed in next to the race distance, the F1 weekend allocation (8 soft, 3 medium, 2 hard) until you lower it to what is left after practice and qualifying (saved in the settings).
+
+A **used set** runs like a new one as many laps old as its wear is worth (its wear over the compound's wear per lap), with that much less life; the plan bar marks it **U**. **START ON** picks the first stint's set: the plan's choice of a new set, the set fitted in the game (chosen for a race recorded from its start), any used set the game listed, or a used soft, medium or hard with the wear typed in, such as the set you qualified on.
+
+For each mix of sets, dynamic programming over the laps picks the stint lengths with the lowest race time. The list ranks them by predicted race time, with the gap to the best, and the fastest plan of each stop count always shows. For each stop it gives:
 
 - the **pit window**: the in-laps that cost at most 1 s more than the planned one, the other stops staying put;
-- the **undercut**: what pitting one lap before a car on the same plan gains, its lap on the old set against your second lap on the new one. Negative means staying out (the overcut) gains. The out-lap's cold tyres are inside the pit-stop loss, so this is the tyre delta alone.
+- the **undercut**: what pitting one lap before a car on the same plan gains, its lap on the old set against your second lap on the new one. Negative means staying out (the overcut) gains. The out-lap's cold tyres are inside the pit-stop loss, so this is the tyre delta alone;
+- the **safety-car windows** (**SC**, **VSC**): the laps up to the in-lap on which pitting under a safety car beats staying out and pitting as planned. A stop under a safety car costs 45 % of the loss, under a virtual safety car 60 % (`PlannerOptions`). An early stop runs the old set fewer laps and the stints after it longer, re-planned for the laps left within their sets' life; the window ends where that costs more than the stop saves. The laps behind the safety car count at racing pace on both sides.
 
-A chart under the list plots the three best plans' predicted lap times with their stints and stops on a timeline. With a straight-line wear model, a stint costs the same whatever lap it starts on, so the order of the stints doesn't change the time: plans are shown softest first. Wet compounds stay in the library but out of the dry plans.
+A chart under the list plots the three best plans' predicted lap times with their stints and stops on a timeline. A stint's cost depends on its set and its length, not on the lap it starts on, so the order of the stints doesn't change the time: plans are shown softest first, after the start set when there is one. Wet compounds stay in the library but out of the dry plans.
 
 ![Race plans](docs/screenshots/18-race-plans.png)
 
@@ -334,6 +356,6 @@ Switch on **PREVIEW OVERLAYS** at the top of the **OVERLAYS** page (in the rail)
 
 - Setup autopilot: dial a library setup into the game's setup screen with simulated key presses, checked against the live setup packet.
 - Driver names on the radar.
-- Race plans: read the sets left from the game's tyre-sets packet (12) instead of typing them, safety-car windows, a tyre "cliff" beyond the straight-line wear, and starting on used qualifying tyres.
-- Signing the Windows installer and notarising the macOS package; delta updates (`vpk download` of the previous release before packing).
+- Race plans: an extra stop for fresh tyres under a late safety car, and the laps behind it at safety-car pace.
+- A first signed and notarised release, once the repository has the certificates (the workflow steps have only run unsigned so far).
 - Checking click-through overlays on real macOS and X11 machines (only Windows has been run so far).

@@ -112,6 +112,8 @@ public sealed class SessionSimulator
         uint s1 = 0, s2 = 0;
         var completed = new List<LapHistory>();
         var stints = new List<TyreStint> { new(TyreStint.Current, 18, 17) }; // C3 medium
+        var tyreSets = Allocation();
+        var fittedSet = Array.FindIndex(tyreSets, set => set.VisualCompound == 17);
         uint frame = 0;
         var historyCar = 0;
         var ers = new ErsModel(_writer.Layout.Format);
@@ -204,6 +206,13 @@ public sealed class SessionSimulator
 
             if (tick % _o.TickRateHz == 0)
             {
+                // The fitted set wears with the car's tyres; the sets taken off keep the wear they had.
+                tyreSets[fittedSet] = tyreSets[fittedSet] with { Wear = (byte)Math.Min(100, Math.Round(wear.Max())) };
+                yield return Emit(t, TyreSetsPacket(uid, sessionTime, frame, tyreSets, fittedSet));
+            }
+
+            if (tick % _o.TickRateHz == 0)
+            {
                 var current = new LapHistory(0, s1, s2, 0, 0x0F);
                 yield return Emit(t, HistoryPacket(uid, sessionTime, frame, PlayerIndex, [.. completed, current], stints));
             }
@@ -246,6 +255,9 @@ public sealed class SessionSimulator
             {
                 stints[^1] = stints[^1] with { EndLap = (byte)lap };
                 stints.Add(stints.Count % 2 == 1 ? new TyreStint(TyreStint.Current, 19, 18) : new TyreStint(TyreStint.Current, 18, 17)); // C2 hard / C3 medium
+                tyreSets[fittedSet] = tyreSets[fittedSet] with { Fitted = false };
+                fittedSet = FreshestSet(tyreSets, stints[^1].VisualCompound, fittedSet);
+                tyreSets[fittedSet] = tyreSets[fittedSet] with { Fitted = true };
                 Array.Clear(wear);
                 setup = setup with { FrontWing = NextFrontWing(setup) };
                 pitStops++;
@@ -276,6 +288,33 @@ public sealed class SessionSimulator
                 yield break;
             }
         }
+    }
+
+    /// <summary>The F1 weekend allocation, all new: 8 soft, 3 medium, 2 hard, 4 intermediate and 3 wet sets.</summary>
+    private static TyreSet[] Allocation()
+    {
+        var sets = new List<TyreSet>();
+        void Add(int count, byte actual, byte visual, byte life) =>
+            sets.AddRange(Enumerable.Repeat(new TyreSet(actual, visual, 0, true, 0, life, life, 0, false), count));
+        Add(8, 17, 16, 14);
+        Add(3, 18, 17, 22);
+        Add(2, 19, 18, 30);
+        Add(4, 7, 7, 30);
+        Add(3, 8, 8, 40);
+        var medium = sets.FindIndex(set => set.VisualCompound == 17);
+        sets[medium] = sets[medium] with { Fitted = true };
+        return [.. sets];
+    }
+
+    /// <summary>The least worn set of a compound other than the one coming off.</summary>
+    private static int FreshestSet(TyreSet[] sets, byte visual, int removed) =>
+        Enumerable.Range(0, sets.Length).Where(i => i != removed && sets[i].VisualCompound == visual).MinBy(i => sets[i].Wear);
+
+    private byte[] TyreSetsPacket(ulong uid, float t, uint frame, TyreSet[] sets, int fitted)
+    {
+        var p = _writer.Create(PacketId.TyreSets, uid, t, frame, PlayerIndex);
+        _writer.WriteTyreSets(p, PlayerIndex, sets, (byte)fitted);
+        return p;
     }
 
     private static int StintStartLap(List<TyreStint> stints) =>

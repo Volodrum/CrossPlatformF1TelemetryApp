@@ -45,6 +45,9 @@ public interface ITelemetryStore : IAsyncDisposable
     /// <summary>Records that the player drove <paramref name="setup"/> from its lap and session time on.</summary>
     void AppendSetup(long recordingId, SetupChange setup);
 
+    /// <summary>Records the player's tyre sets from their lap and session time on.</summary>
+    void AppendTyreSets(long recordingId, TyreSetsChange sets);
+
     /// <summary>Completes once every write enqueued so far is durable.</summary>
     Task FlushAsync(CancellationToken cancellationToken = default);
 
@@ -74,6 +77,9 @@ public interface ITelemetryStore : IAsyncDisposable
 
     /// <summary>The setups driven in a recording, in the order they arrived.</summary>
     Task<IReadOnlyList<SetupChange>> GetSetupsAsync(long recordingId, CancellationToken cancellationToken = default);
+
+    /// <summary>The player's tyre sets in a recording, each snapshot in the order it arrived.</summary>
+    Task<IReadOnlyList<TyreSetsChange>> GetTyreSetsAsync(long recordingId, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// The setup library, after adding every setup driven in a recording that it doesn't have yet (one entry per track,
