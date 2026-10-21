@@ -192,9 +192,17 @@ public class OverlayTimingTests
         cars[2] = Car(3, "YOU", 3_000, player: true);
         var race = new FieldSnapshot(cars, 3, 15, 30, 0, 5000) { FastestLap = new ReferenceLap(8, "", 91_447, 0, 0) };
 
-        Assert.Equal(new TowerFastestLap("C8", "1:31.447"), TimingTower.Build(race, TowerGapMode.GapToMe).FastestLap); // holder outside the six rows
+        var board = TimingTower.Build(race, TowerGapMode.GapToMe);
+        Assert.Equal(new TowerFastestLap("C8", "1:31.447"), board.FastestLap); // holder outside the six rows
+        Assert.DoesNotContain(board.Rows, r => r.HasFastestLap);
+
+        var inView = TimingTower.Build(race with { FastestLap = new ReferenceLap(4, "", 91_447, 0, 0) }, TowerGapMode.GapToMe);
+        Assert.Equal([4], inView.Rows.Where(r => r.HasFastestLap).Select(r => r.Position)); // marked on the holder's row
+
         Assert.Null(TimingTower.Build(race with { FastestLap = null }, TowerGapMode.GapToMe).FastestLap);
-        Assert.Null(TimingTower.Build(race with { SessionType = 5 }, TowerGapMode.GapToMe).FastestLap);
+        var qualifying = TimingTower.Build(race with { SessionType = 5, FastestLap = new ReferenceLap(4, "", 91_447, 0, 0) }, TowerGapMode.GapToMe);
+        Assert.Null(qualifying.FastestLap);
+        Assert.DoesNotContain(qualifying.Rows, r => r.HasFastestLap);
     }
 
     [Fact]

@@ -40,6 +40,10 @@
                   <TextBlock Grid.Column="2" Text="{Binding Code}" FontFamily="{StaticResource DisplayFont}" FontSize="16" FontWeight="Bold"
                              LetterSpacing="1" VerticalAlignment="Center" />
 
+                  <!-- Races: the fastest-lap stopwatch on the holder's row, just after the driver code (clear of a two-digit gap). -->
+                  <Path Grid.Column="3" Data="M2.5,9 A5.5,5.5 0 1 1 13.5,9 A5.5,5.5 0 1 1 2.5,9 Z M8,9 L8,6.5 M6,1.5 L10,1.5 M12.5,4 L13.5,3"
+                        Stroke="{StaticResource SessionBestBrush}" StrokeThickness="2" StrokeLineCap="Round" Width="14" Height="14" Stretch="Uniform"
+                        Margin="-4,0,0,0" HorizontalAlignment="Left" VerticalAlignment="Center" IsVisible="{Binding HasFastestLap}" />
                   <Panel Grid.Column="3" HorizontalAlignment="Right" VerticalAlignment="Center">
                     <TextBlock Text="{Binding Gap}" Foreground="{Binding GapBrush}" FontFamily="{StaticResource DataFont}" FontSize="16"
                                FontWeight="Bold" IsVisible="{Binding IsGapText}" />

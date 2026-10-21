@@ -47,6 +47,7 @@ public enum PenaltyChip
 
 /// <param name="Penalty">PEN chip text, e.g. "SG", "2 DT", "+5s" or "2⚠"; null when clean.</param>
 /// <param name="WarningBadge">Corner-cutting warnings riding on a penalty chip as a corner badge; null otherwise.</param>
+/// <param name="HasFastestLap">Races only: this car holds the session's fastest lap.</param>
 public sealed record TowerRow(
     int CarIndex,
     int Position,
@@ -61,7 +62,8 @@ public sealed record TowerRow(
     string? Penalty,
     PenaltyChip PenaltyKind,
     string? WarningBadge,
-    bool CutoffBelow);
+    bool CutoffBelow,
+    bool HasFastestLap = false);
 
 /// <summary>Holder and time of the session's fastest lap, for the race footer.</summary>
 public sealed record TowerFastestLap(string Code, string Time);
@@ -104,6 +106,7 @@ public static class TimingTower
         var me = cars[playerIndex];
         var isRace = SessionTypes.IsRace(field.SessionType);
         var cutoff = Cutoff(field.SessionType, cars.Count);
+        var fastestCar = isRace ? field.FastestLap?.CarIndex : null;
         var size = Ahead + 1 + Behind;
         var start = Math.Clamp(playerIndex - Ahead, 0, Math.Max(0, cars.Count - size));
         var rows = new List<TowerRow>(size);
@@ -117,7 +120,7 @@ public static class TimingTower
             var (penalty, kind, badge) = Penalty(car);
             rows.Add(new TowerRow(
                 car.CarIndex, car.Position, car.Code, car.TeamColour, car.IsPlayer, gap, tone, car.Compound, car.TyreAgeLaps,
-                car.ErsPercent, penalty, kind, badge, cutoff == car.Position));
+                car.ErsPercent, penalty, kind, badge, cutoff == car.Position, car.CarIndex == fastestCar));
         }
 
         var (title, counter, total) = isRace

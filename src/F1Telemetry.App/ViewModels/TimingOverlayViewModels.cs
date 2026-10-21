@@ -143,6 +143,7 @@ public sealed partial class TowerRowViewModel : ObservableObject
     [ObservableProperty] public partial IBrush RowBackground { get; set; } = RowBrush;
     [ObservableProperty] public partial IBrush RowBorder { get; set; } = Palette.Transparent;
     [ObservableProperty] public partial bool IsCutoff { get; set; }
+    [ObservableProperty] public partial bool HasFastestLap { get; set; }
 
     /// <summary>Width of the battery bar's fill (the bar is 22 px inside its 2 px border).</summary>
     public const double ErsBarWidth = 22;
@@ -185,6 +186,7 @@ public sealed partial class TowerRowViewModel : ObservableObject
         RowBackground = row.IsPlayer ? Palette.Selected : RowBrush;
         RowBorder = row.IsPlayer ? Palette.LineStrong : Palette.Transparent;
         IsCutoff = row.CutoffBelow;
+        HasFastestLap = row.HasFastestLap;
     }
 }
 
