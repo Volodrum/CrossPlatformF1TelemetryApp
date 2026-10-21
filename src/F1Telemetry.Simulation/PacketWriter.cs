@@ -331,6 +331,27 @@ public sealed class PacketWriter(FormatLayout layout)
         }
     }
 
+    public void WriteTyreSets(byte[] packet, byte carIndex, IReadOnlyList<TyreSet> sets, byte fittedIndex)
+    {
+        var s = packet.AsSpan(H);
+        s[0] = carIndex;
+        for (var i = 0; i < Math.Min(sets.Count, TyreSetsPacket.SetCount); i++)
+        {
+            var o = 1 + i * TyreSet.Size;
+            s[o] = sets[i].ActualCompound;
+            s[o + 1] = sets[i].VisualCompound;
+            s[o + 2] = sets[i].Wear;
+            s[o + 3] = sets[i].Available ? (byte)1 : (byte)0;
+            s[o + 4] = sets[i].RecommendedSession;
+            s[o + 5] = sets[i].LifeSpan;
+            s[o + 6] = sets[i].UsableLife;
+            I16(s, o + 7, sets[i].LapDeltaMs);
+            s[o + 9] = sets[i].Fitted ? (byte)1 : (byte)0;
+        }
+
+        s[1 + TyreSetsPacket.SetCount * TyreSet.Size] = fittedIndex;
+    }
+
     public void WriteFinalClassification(byte[] packet, int car, FinalClassification c)
     {
         packet[H] = (byte)layout.MaxCars;

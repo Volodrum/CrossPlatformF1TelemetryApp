@@ -6,6 +6,7 @@ using F1Telemetry.Core.Energy;
 using F1Telemetry.Core.Models;
 using F1Telemetry.Core.Recording;
 using F1Telemetry.Protocol;
+using F1Telemetry.Protocol.Packets;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -112,6 +113,8 @@ public sealed partial class DuckDbTelemetryStore(string databasePath, ILogger<Du
     public void DiscardFrom(long recordingId, double sessionTime, int lapNumber) => Enqueue(new DiscardOp(recordingId, sessionTime, lapNumber));
 
     public void AppendSetup(long recordingId, SetupChange setup) => Enqueue(new SetupOp(recordingId, setup));
+
+    public void AppendTyreSets(long recordingId, TyreSetsChange sets) => Enqueue(new TyreSetsOp(recordingId, sets));
 
     public Task FlushAsync(CancellationToken cancellationToken = default)
     {
@@ -276,6 +279,10 @@ public sealed partial class DuckDbTelemetryStore(string databasePath, ILogger<Du
                     NonQuery(SetupColumns.InsertSql, SetupColumns.InsertArgs(s.RecordingId, s.Setup));
                     break;
 
+                case TyreSetsOp t:
+                    InsertTyreSets(t.RecordingId, t.Sets);
+                    break;
+
                 case SyncLibraryOp sync:
                     NonQuery(SyncLibrarySql);
                     sync.Done.TrySetResult();
@@ -299,6 +306,7 @@ public sealed partial class DuckDbTelemetryStore(string databasePath, ILogger<Du
                         NonQuery("DELETE FROM telemetry WHERE recording_id = $id", ("id", d.Id));
                         NonQuery("DELETE FROM laps WHERE recording_id = $id", ("id", d.Id));
                         NonQuery("DELETE FROM recording_setups WHERE recording_id = $id", ("id", d.Id));
+                        NonQuery("DELETE FROM recording_tyre_sets WHERE recording_id = $id", ("id", d.Id));
                         NonQuery("DELETE FROM recordings WHERE id = $id", ("id", d.Id));
                         tx.Commit();
                     }
@@ -327,6 +335,35 @@ public sealed partial class DuckDbTelemetryStore(string databasePath, ILogger<Du
                     break;
             }
         }
+    }
+
+    /// <summary>One row per set; the snapshot number orders a recording's snapshots.</summary>
+    private void InsertTyreSets(long recordingId, TyreSetsChange change)
+    {
+        using var tx = _writer!.BeginTransaction();
+        int snapshot;
+        using (var cmd = _writer.CreateCommand())
+        {
+            cmd.CommandText = "SELECT coalesce(max(snapshot), 0) + 1 FROM recording_tyre_sets WHERE recording_id = $id";
+            AddParameters(cmd, [("id", recordingId)]);
+            snapshot = Convert.ToInt32(cmd.ExecuteScalar());
+        }
+
+        for (var i = 0; i < change.Sets.Count; i++)
+        {
+            var set = change.Sets[i];
+            NonQuery("""
+                INSERT INTO recording_tyre_sets (recording_id, snapshot, lap_number, session_time, set_index, actual_compound, visual_compound,
+                    wear, available, recommended_session, life_span, usable_life, lap_delta_ms, fitted)
+                VALUES ($id, $snapshot, $lap, $time, $index, $actual, $visual, $wear, $available, $recommended, $life, $usable, $delta, $fitted)
+                """,
+                ("id", recordingId), ("snapshot", snapshot), ("lap", change.LapNumber), ("time", change.SessionTime), ("index", i),
+                ("actual", (int)set.ActualCompound), ("visual", (int)set.VisualCompound), ("wear", (int)set.Wear), ("available", set.Available),
+                ("recommended", (int)set.RecommendedSession), ("life", (int)set.LifeSpan), ("usable", (int)set.UsableLife),
+                ("delta", (int)set.LapDeltaMs), ("fitted", i == change.FittedIndex));
+        }
+
+        tx.Commit();
     }
 
     private void ExecuteUpdate(UpdateOp u)
@@ -500,6 +537,24 @@ public sealed partial class DuckDbTelemetryStore(string databasePath, ILogger<Du
     public Task<IReadOnlyList<SetupChange>> GetSetupsAsync(long recordingId, CancellationToken cancellationToken = default) =>
         QueryAsync(SetupColumns.SelectSql, SetupColumns.ReadRow, cancellationToken, ("id", recordingId));
 
+    public async Task<IReadOnlyList<TyreSetsChange>> GetTyreSetsAsync(long recordingId, CancellationToken cancellationToken = default)
+    {
+        var rows = await QueryAsync("""
+            SELECT snapshot, lap_number, session_time, set_index, actual_compound, visual_compound, wear, available, recommended_session,
+                   life_span, usable_life, lap_delta_ms, fitted
+            FROM recording_tyre_sets WHERE recording_id = $id ORDER BY snapshot, set_index
+            """,
+            r => (Snapshot: r.GetInt32(0), Lap: r.GetInt32(1), Time: r.GetDouble(2), Index: r.GetInt32(3),
+                Set: new TyreSet((byte)r.GetInt32(4), (byte)r.GetInt32(5), (byte)r.GetInt32(6), r.GetBoolean(7), (byte)r.GetInt32(8),
+                    (byte)r.GetInt32(9), (byte)r.GetInt32(10), (short)r.GetInt32(11), r.GetBoolean(12))),
+            cancellationToken, ("id", recordingId));
+        return rows.GroupBy(r => r.Snapshot).Select(g =>
+        {
+            var sets = g.Select(r => r.Set).ToList();
+            return new TyreSetsChange(g.First().Lap, g.First().Time, sets, sets.FindIndex(set => set.Fitted));
+        }).ToList();
+    }
+
     public Task<IReadOnlyList<PositionPoint>> GetPositionHistoryAsync(long recordingId, int maxPoints = 500, CancellationToken cancellationToken = default) =>
         QueryAsync("""
             WITH p AS (
@@ -604,6 +659,7 @@ public sealed partial class DuckDbTelemetryStore(string databasePath, ILogger<Du
     private sealed record RestartLapOp(long RecordingId, int LapNumber, double SessionTime) : WriteOp;
     private sealed record DiscardOp(long RecordingId, double SessionTime, int LapNumber) : WriteOp;
     private sealed record SetupOp(long RecordingId, SetupChange Setup) : WriteOp;
+    private sealed record TyreSetsOp(long RecordingId, TyreSetsChange Sets) : WriteOp;
     private sealed record FlushOp(TaskCompletionSource Done) : WriteOp;
     private sealed record DeleteOp(long Id, TaskCompletionSource Done) : WriteOp;
 }

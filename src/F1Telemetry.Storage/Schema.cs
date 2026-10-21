@@ -90,6 +90,28 @@ internal static class Schema
               AND recording_id IN (SELECT id FROM recordings WHERE session_type NOT BETWEEN 15 AND 17)
             """,
         ],
+
+        // v6: the player's tyre sets (packet 12), one snapshot per change
+        [
+            """
+            CREATE TABLE IF NOT EXISTS recording_tyre_sets (
+                recording_id BIGINT,
+                snapshot INTEGER,
+                lap_number INTEGER,
+                session_time DOUBLE,
+                set_index INTEGER,
+                actual_compound INTEGER,
+                visual_compound INTEGER,
+                wear INTEGER,
+                available BOOLEAN,
+                recommended_session INTEGER,
+                life_span INTEGER,
+                usable_life INTEGER,
+                lap_delta_ms INTEGER,
+                fitted BOOLEAN
+            )
+            """,
+        ],
     ];
 
     public static int LatestVersion => Migrations.Length;

@@ -6,7 +6,8 @@ namespace F1Telemetry.Core.Analytics;
 /// <summary>One clean lap as seen by the pace model.</summary>
 /// <param name="TyreAge">Laps since the stint began (its first lap, usually the out-lap, is 0).</param>
 /// <param name="FuelKg">Mean fuel mass in the tank over the lap.</param>
-public sealed record PaceLap(int LapNumber, int StintNumber, string Compound, int TyreAge, double LapSeconds, double FuelKg);
+/// <param name="WearPercent">Mean wear of the most worn tyre over the lap, %.</param>
+public sealed record PaceLap(int LapNumber, int StintNumber, string Compound, int TyreAge, double LapSeconds, double FuelKg, double WearPercent = 0);
 
 public enum FuelEffectSource
 {
@@ -66,8 +67,10 @@ public static class PaceModel
                 continue;
             }
 
+            var wear = Math.Max(Math.Max(aggregate.MinWearFl + aggregate.MaxWearFl, aggregate.MinWearFr + aggregate.MaxWearFr),
+                Math.Max(aggregate.MinWearRl + aggregate.MaxWearRl, aggregate.MinWearRr + aggregate.MaxWearRr)) / 2;
             laps.Add(new PaceLap(lap.LapNumber, stintNumber, lap.Compound, lap.LapNumber - firstLap, lap.LapTimeMs / 1000.0,
-                (aggregate.MinFuel + aggregate.MaxFuel) / 2));
+                (aggregate.MinFuel + aggregate.MaxFuel) / 2, wear));
         }
 
         if (laps.Count < 3)
