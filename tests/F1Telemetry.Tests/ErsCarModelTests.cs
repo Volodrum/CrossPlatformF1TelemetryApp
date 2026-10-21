@@ -169,4 +169,73 @@ public class ErsCarModelTests
         Assert.Equal(2.4, fade.Seconds, 1); // 25 samples, the last one ends the lap
         Assert.Empty(EnergyAnalyzer.Analyze(2, lap)!.Issues); // no map, no fade
     }
+
+    /// <summary>
+    /// The game runs its own map under the mode: in None at 250 km/h it deploys 250 kW on the first half of this
+    /// straight and nothing on the second, and clips (harvests 70 kW flat out) near its end. A speed-only curve can't
+    /// tell them apart; the position map does. Clipping is only learned while the harvest limit has room.
+    /// </summary>
+    [Fact]
+    public void Position_map_learns_what_none_does_at_each_point_of_the_lap()
+    {
+        const float limit = 6_000_000;
+        var samples = new List<ModelSample>();
+        for (var lap = 1; lap <= 3; lap++)
+        {
+            double t = lap * 100;
+            float deployed = 0, harvested = lap == 3 ? limit : 0; // lap 3 reached the limit before this straight
+            for (float d = 0; d < 1000; d += 3.5f)
+            {
+                t += 0.05;
+                var output = d < 500 ? 250_000f : 0;
+                var clip = d is >= 800 and < 900 && lap < 3 ? 70_000f : 0;
+                (deployed, harvested) = (deployed + output * 1.1f * 0.05f, harvested + clip * 0.05f);
+                samples.Add(new ModelSample(1, lap, t, d, 250, 1, 0, 0, 2_000_000, DeployModes.None, harvested, deployed, 410_000, output, 0, 10, 0,
+                    HarvestLimit: limit));
+            }
+        }
+
+        var map = ErsModelBuilder.BuildPositionMap(samples);
+        var curve = ErsModelBuilder.BuildDeployMap(samples).Curve(DeployModes.None);
+
+        Assert.True(map.Deploy(DeployModes.None, 5, 250, curve)!.Value.Output > 200_000);
+        Assert.True(map.Deploy(DeployModes.None, 30, 250, curve)!.Value.Output < 60_000);
+        Assert.Equal(275_000, map.Deploy(DeployModes.None, 5, 250, null)!.Value.Draw, 1_000.0); // the deploy counter: a tenth more
+        Assert.Equal(70_000, map.Clip(DeployModes.None, 34)!.Value, 1_000.0);
+        Assert.Equal(0, map.Clip(DeployModes.None, 10)!.Value);
+        Assert.Null(map.Clip(DeployModes.Overtake, 34)); // never run there
+        Assert.Null(map.Deploy(DeployModes.Overtake, 5, 250, null));
+    }
+
+    /// <summary>
+    /// The share of a change of power that becomes acceleration, from samples at the same place and speed: here half
+    /// of it at 150 km/h (traction) and all of it above 200 km/h, whatever each place's own grip and drag add.
+    /// </summary>
+    [Fact]
+    public void Traction_is_learned_from_samples_at_the_same_place_and_speed()
+    {
+        var mass = ErsModelBuilder.CarMass(GameFormat.F1_26) + 10;
+        var samples = new List<ModelSample>();
+        double t = 0;
+        foreach (var (kmh, share) in new[] { (150f, 0.5), (250f, 1.0) })
+        {
+            for (var d = 0; d < 3000; d += 10)
+            {
+                var place = Math.Sin(d / 300.0) * 3; // each place's own grip, drag and slope
+                foreach (var output in new[] { 100_000f, 300_000f, 200_000f })
+                {
+                    t += 0.05;
+                    var a = share * output / (mass * kmh / 3.6) + place;
+                    samples.Add(new ModelSample(1, 1, t, d, kmh, 1, 0, 0, 2_000_000, DeployModes.Overtake, 0, 0, 410_000, output, (float)(a / 9.81), 10, 0));
+                }
+            }
+        }
+
+        var traction = ErsModelBuilder.FitTraction(GameFormat.F1_26, samples);
+
+        Assert.Equal(0.5, traction.Factor(155, 0), 0.02);
+        Assert.Equal(1.0, traction.Factor(255, 0), 0.02);
+        Assert.Equal(1.0, traction.Factor(80, 0)); // no samples that slow: all of it
+        Assert.Equal(1.0, TractionMap.Unlimited.Factor(120, 2));
+    }
 }

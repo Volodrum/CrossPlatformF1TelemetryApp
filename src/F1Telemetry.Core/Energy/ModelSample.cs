@@ -10,6 +10,8 @@ namespace F1Telemetry.Core.Energy;
 /// <param name="GForceLongitudinal">In g, positive when accelerating.</param>
 /// <param name="Aero">Active aero mode (2026 format) or DRS open (2025 format).</param>
 /// <param name="Override">The 2026 overtake override was on: near a car ahead, the MGU-K gives far more at high speed.</param>
+/// <param name="GForceLateral">In g.</param>
+/// <param name="HarvestLimit">The lap's MGU-K harvest limit, J; 0 when the format doesn't report one (2025).</param>
 public readonly record struct ModelSample(
     long RecordingId,
     int LapNumber,
@@ -28,4 +30,6 @@ public readonly record struct ModelSample(
     float GForceLongitudinal,
     float Fuel,
     byte Aero,
-    bool Override = false);
+    bool Override = false,
+    float GForceLateral = 0,
+    float HarvestLimit = 0);

@@ -93,9 +93,12 @@ public sealed record StraightLineFit(int Aero, double Efficiency, double Drag, d
 public sealed record EnergyBin(double From, double HarvestedJ, double DeployedJ, int Laps);
 
 /// <summary>
-/// The car's ERS as learned from every lap recorded at a track: what each deploy mode delivers by speed, where on the
-/// lap energy is harvested and deployed, and how the car accelerates on the straights.
+/// The car's ERS as learned from every lap recorded at a track: what each deploy mode delivers by speed and at every
+/// point of the lap, where on the lap energy is harvested and deployed, how the car accelerates on the straights, and
+/// how much of a change of power the tyres let through.
 /// </summary>
+/// <param name="Positions">The game's deploy and harvest at every point of the lap, by mode; null or empty: the speed curves only.</param>
+/// <param name="Traction">Share of a change of power that becomes acceleration; null: all of it.</param>
 public sealed record ErsCarModel(
     GameFormat Format,
     int TrackId,
@@ -103,10 +106,16 @@ public sealed record ErsCarModel(
     int PowerLaps,
     DeployMap Deploy,
     IReadOnlyList<StraightLineFit> StraightLine,
-    IReadOnlyList<EnergyBin> AlongLap)
+    IReadOnlyList<EnergyBin> AlongLap,
+    PositionMap? Positions = null,
+    TractionMap? Traction = null)
 {
     /// <summary>Laps that recorded ICE and MGU-K output (from v0.3, or re-imported): the deploy map and fits need them.</summary>
     public bool HasPowerData => PowerLaps > 0;
+
+    public PositionMap Map => Positions ?? PositionMap.Empty;
+
+    public TractionMap Grip => Traction ?? TractionMap.Unlimited;
 }
 
 /// <summary>Learns an <see cref="ErsCarModel"/> from a track's <see cref="ModelSample"/>s.</summary>
@@ -139,30 +148,60 @@ public static class ErsModelBuilder
     /// <summary>Minimum car mass with driver, kg: 798 in the 2025 rules, 768 in 2026.</summary>
     public static double CarMass(GameFormat format) => format == GameFormat.F1_26 ? 768 : 798;
 
+    // The battery has charge to give a mode all it asks above this, J.
+    private const float Charged = 300_000;
+
+    // Harvest is learned only this far below a full battery and the lap's harvest limit, J: there it isn't cut short.
+    private const float HarvestHeadroom = 100_000;
+
+    // The traction bands: speeds (km/h) and lateral loads (g) a band starts at.
+    private static readonly int[] TractionSpeeds = [0, 100, 140, 170, TractionMap.ReferenceKmh, 1000];
+    private static readonly double[] TractionLoads = [0, 1.5, double.PositiveInfinity];
+
+    // A traction band needs this many samples, and a slope known to within this share of the reference's.
+    private const int MinTractionSamples = 300;
+    private const double MaxTractionError = 0.15;
+
     public static ErsCarModel Build(GameFormat format, int trackId, IReadOnlyList<ModelSample> samples)
     {
         var laps = samples.Select(s => (s.RecordingId, s.LapNumber)).Distinct().Count();
         var powerLaps = samples.Where(s => s.IcePower > 0).Select(s => (s.RecordingId, s.LapNumber)).Distinct().Count();
-        return new ErsCarModel(format, trackId, laps, powerLaps, BuildDeployMap(samples), FitStraightLine(format, samples), AlongLap(samples));
+        var steps = Steps(samples);
+        return new ErsCarModel(format, trackId, laps, powerLaps, BuildDeployMap(samples, steps), FitStraightLine(format, samples), AlongLap(samples),
+            BuildPositionMap(samples, steps), FitTraction(format, samples, steps));
     }
 
-    public static DeployMap BuildDeployMap(IReadOnlyList<ModelSample> samples)
+    /// <summary>What the deploy and harvest counters moved from the sample before to each sample; null across laps and gaps.</summary>
+    /// <param name="Deployed">J; null on a reset or flashback.</param>
+    /// <param name="Harvested">J; null on a reset or flashback.</param>
+    public readonly record struct CounterStep(double Seconds, double? Deployed, double? Harvested);
+
+    public static CounterStep?[] Steps(IReadOnlyList<ModelSample> samples)
     {
-        // What the battery paid from each sample to the next, by the deploy counter: J and s, per sample.
-        var paid = new (double Joules, double Seconds)?[samples.Count];
+        static double? Valid(float step) => step is >= 0 and <= (float)MaxCounterStep ? step : null;
+        var steps = new CounterStep?[samples.Count];
         for (var i = 1; i < samples.Count; i++)
         {
             var (a, b) = (samples[i - 1], samples[i]);
             var dt = b.SessionTime - a.SessionTime;
-            var step = b.Deployed - a.Deployed;
-            if (a.RecordingId == b.RecordingId && a.LapNumber == b.LapNumber && dt is > 0 and <= MaxSampleGap && step is >= 0 and <= (float)MaxCounterStep)
+            if (a.RecordingId == b.RecordingId && a.LapNumber == b.LapNumber && dt is > 0 and <= MaxSampleGap)
             {
-                paid[i] = (step, dt);
+                steps[i] = new CounterStep(dt, Valid(b.Deployed - a.Deployed), Valid(b.Harvested - a.Harvested));
             }
         }
 
+        return steps;
+    }
+
+    public static DeployMap BuildDeployMap(IReadOnlyList<ModelSample> samples) => BuildDeployMap(samples, Steps(samples));
+
+    private static DeployMap BuildDeployMap(IReadOnlyList<ModelSample> samples, CounterStep?[] steps)
+    {
+        // What the battery paid from each sample to the next, by the deploy counter: J and s, per sample.
+        var paid = steps.Select(s => s is { Deployed: { } joules } step ? (joules, step.Seconds) : ((double Joules, double Seconds)?)null).ToArray();
+
         var bands = Enumerable.Range(0, samples.Count)
-            .Where(i => samples[i] is { IcePower: > 0, Throttle: >= 0.98f, Brake: <= 0.01f, ErsStore: > 300_000, Override: false })
+            .Where(i => samples[i] is { IcePower: > 0, Throttle: >= 0.98f, Brake: <= 0.01f, ErsStore: > Charged, Override: false })
             .GroupBy(i => ((int)samples[i].Mode, (int)samples[i].Speed / SpeedBand * SpeedBand))
             .Where(b => b.Count() >= MinBandSamples)
             .Select(b =>
@@ -189,6 +228,171 @@ public static class ErsModelBuilder
             .Where(c => c.PeakW >= MinPeakW) // a mode that gave (next to) nothing, Hotlap in a race say, has no curve
             .ToList();
         return new DeployMap(curves);
+    }
+
+    /// <summary>
+    /// The game's deploy and harvest at every segment of the lap: flat out, by mode, the MGU-K output and battery draw
+    /// with charge to give and what it harvests (clipping); off full throttle, what it harvests. Harvest is only learned
+    /// where the battery and the lap's harvest limit had room, so it is what the lap could take, not what it was left.
+    /// </summary>
+    public static PositionMap BuildPositionMap(IReadOnlyList<ModelSample> samples) => BuildPositionMap(samples, Steps(samples));
+
+    private static PositionMap BuildPositionMap(IReadOnlyList<ModelSample> samples, CounterStep?[] steps)
+    {
+        const int modes = DeployModes.Overtake + 1;
+        var length = samples.Where(s => s.LapDistance >= 0).Select(s => s.LapDistance).DefaultIfEmpty(-1).Max();
+        if (length < 0)
+        {
+            return PositionMap.Empty;
+        }
+
+        var count = (int)(length / LapProfile.Step) + 1;
+        var output = new (double Watts, double Kmh, int Samples, double DrawJ, double DrawS)[modes, count];
+        var clip = new (double Joules, double Seconds, int Samples)[modes, count];
+        var lift = new (double Joules, double Seconds, int Samples)[count];
+        double drawn = 0, given = 0;
+        for (var i = 0; i < samples.Count; i++)
+        {
+            var s = samples[i];
+            if (s.LapDistance < 0 || s.Override)
+            {
+                continue;
+            }
+
+            var segment = (int)(s.LapDistance / LapProfile.Step);
+            var mode = Math.Min((int)s.Mode, modes - 1);
+            var flat = s.Throttle >= 0.98f && s.Brake <= 0.01f;
+            if (flat && s.IcePower > 0 && s.ErsStore > Charged)
+            {
+                ref var cell = ref output[mode, segment];
+                (cell.Watts, cell.Kmh, cell.Samples) = (cell.Watts + s.MgukPower, cell.Kmh + s.Speed, cell.Samples + 1);
+                if (steps[i] is { Deployed: { } joules } step)
+                {
+                    (cell.DrawJ, cell.DrawS) = (cell.DrawJ + joules, cell.DrawS + step.Seconds);
+                    (drawn, given) = (drawn + joules, given + s.MgukPower * step.Seconds);
+                }
+            }
+
+            var room = s.ErsStore < LapSimulator.Capacity - HarvestHeadroom && (s.HarvestLimit <= 0 || s.Harvested < s.HarvestLimit - HarvestHeadroom);
+            if (room && steps[i] is { Harvested: { } harvested } h)
+            {
+                ref var rate = ref flat ? ref clip[mode, segment] : ref lift[segment];
+                (rate.Joules, rate.Seconds, rate.Samples) = (rate.Joules + harvested, rate.Seconds + h.Seconds, rate.Samples + 1);
+            }
+        }
+
+        // A segment with too few counter steps draws what the map draws per watt of output over the lap.
+        var perWatt = given > 0 ? drawn / given : 1;
+        var deploy = new DeployCell?[modes][];
+        var clipping = new HarvestRate?[modes][];
+        for (var m = 0; m < modes; m++)
+        {
+            deploy[m] = new DeployCell?[count];
+            clipping[m] = new HarvestRate?[count];
+            for (var k = 0; k < count; k++)
+            {
+                var c = output[m, k];
+                if (c.Samples > 0)
+                {
+                    var watts = c.Watts / c.Samples;
+                    deploy[m][k] = new DeployCell(watts, c.DrawS >= 0.2 ? c.DrawJ / c.DrawS : watts * perWatt, c.Kmh / c.Samples, c.Samples);
+                }
+
+                clipping[m][k] = Rate(clip[m, k]);
+            }
+        }
+
+        return new PositionMap(deploy, clipping, [.. lift.Select(Rate)]);
+
+        static HarvestRate? Rate((double Joules, double Seconds, int Samples) r) => r.Seconds > 0 ? new HarvestRate(r.Joules / r.Seconds, r.Samples) : null;
+    }
+
+    /// <summary>
+    /// The share of a change of MGU-K output that becomes acceleration, by speed and lateral load, against the share
+    /// above <see cref="TractionMap.ReferenceKmh"/>. Samples are compared only with others at the same place (100 m) and
+    /// speed (10 km/h), so the corner's own grip and drag cancel and what is left is what more or less power did: the
+    /// slope of acceleration on output ÷ (m · v) there. Output counts clipping as negative.
+    /// </summary>
+    public static TractionMap FitTraction(GameFormat format, IReadOnlyList<ModelSample> samples) => FitTraction(format, samples, Steps(samples));
+
+    private static TractionMap FitTraction(GameFormat format, IReadOnlyList<ModelSample> samples, CounterStep?[] steps)
+    {
+        var mass = CarMass(format);
+        var points = new List<(int Cell, double Kmh, double G, double X, double Y)>();
+        for (var i = 0; i < samples.Count; i++)
+        {
+            var s = samples[i];
+            if (s is not { IcePower: > 0, Throttle: >= 0.98f, Brake: <= 0.01f, Override: false, Speed: >= 60, LapDistance: >= 0 })
+            {
+                continue;
+            }
+
+            var clip = steps[i] is { Harvested: { } joules } step ? joules / step.Seconds : 0;
+            var v = s.Speed / 3.6;
+            points.Add(((int)(s.LapDistance / 100) * 1000 + (int)(s.Speed / 10), s.Speed, Math.Abs(s.GForceLateral),
+                (s.MgukPower - clip) / ((mass + s.Fuel) * v), s.GForceLongitudinal * 9.81));
+        }
+
+        var reference = Slope(points.Where(p => p.Kmh >= TractionMap.ReferenceKmh));
+        if (reference is not { Samples: >= MinTractionSamples, Value: > 0.1 } r)
+        {
+            return TractionMap.Unlimited;
+        }
+
+        var bands = new List<TractionBand>();
+        for (var b = 0; b + 1 < TractionSpeeds.Length; b++)
+        {
+            var (from, to) = (TractionSpeeds[b], TractionSpeeds[b + 1]);
+            var inBand = points.Where(p => p.Kmh >= from && p.Kmh < to).ToList();
+            Add(inBand, from, to, null, null);
+            for (var g = 0; g + 1 < TractionLoads.Length; g++)
+            {
+                var (low, high) = (TractionLoads[g], TractionLoads[g + 1]);
+                Add(inBand.Where(p => p.G >= low && p.G < high), from, to, low, high);
+            }
+        }
+
+        return new TractionMap(bands);
+
+        void Add(IEnumerable<(int Cell, double Kmh, double G, double X, double Y)> band, int from, int to, double? low, double? high)
+        {
+            if (Slope(band) is { Samples: >= MinTractionSamples } s && s.Error <= MaxTractionError * r.Value)
+            {
+                bands.Add(new TractionBand(from, to, low, high, Math.Clamp(s.Value / r.Value, 0.05, 1), s.Samples));
+            }
+        }
+    }
+
+    /// <summary>Least-squares slope of Y on X within each cell (both less the cell's mean), with its standard error.</summary>
+    private static (double Value, double Error, int Samples)? Slope(IEnumerable<(int Cell, double Kmh, double G, double X, double Y)> points)
+    {
+        double sxy = 0, sxx = 0;
+        var residuals = new List<(double X, double Y)>();
+        foreach (var cell in points.GroupBy(p => p.Cell))
+        {
+            var list = cell.ToList();
+            if (list.Count < 2)
+            {
+                continue;
+            }
+
+            var (mx, my) = (list.Average(p => p.X), list.Average(p => p.Y));
+            foreach (var p in list)
+            {
+                var (x, y) = (p.X - mx, p.Y - my);
+                (sxy, sxx) = (sxy + x * y, sxx + x * x);
+                residuals.Add((x, y));
+            }
+        }
+
+        if (residuals.Count < 3 || sxx <= 0)
+        {
+            return null;
+        }
+
+        var slope = sxy / sxx;
+        var error = Math.Sqrt(residuals.Sum(p => (p.Y - slope * p.X) * (p.Y - slope * p.X)) / (residuals.Count - 2) / sxx);
+        return (slope, error, residuals.Count);
     }
 
     private static int? FadeFrom(IReadOnlyList<DeployPoint> points)

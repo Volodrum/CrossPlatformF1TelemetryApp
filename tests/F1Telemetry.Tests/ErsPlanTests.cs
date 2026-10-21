@@ -37,7 +37,7 @@ public class ErsPlanTests
     }
 
     /// <summary>One lap, Medium on the straights, from <paramref name="store"/> J; harvests 400 kW under braking.</summary>
-    private static List<TelemetrySample> DriveLap(double store)
+    private static List<TelemetrySample> DriveLap(double store, double harvestLimit = 0)
     {
         var samples = new List<TelemetrySample>();
         double t = 0, d = 0, v = CornerSpeed, harvested = 0, deployed = 0;
@@ -71,7 +71,7 @@ public class ErsPlanTests
             {
                 LapNumber = 2, SessionTime = t, LapDistance = d, Speed = (int)Math.Round(v * 3.6), Throttle = full ? 1 : corner ? 0.5 : 0,
                 Brake = braking ? 1 : 0, ErsDeployMode = DeployModes.Medium, ErsStoreEnergy = store, ErsHarvestedMguk = harvested, ErsDeployed = deployed,
-                EnginePowerIce = full ? Ice : 100_000, EnginePowerMguk = mguk, GForceLon = a / 9.81, FuelInTank = Fuel,
+                EnginePowerIce = full ? Ice : 100_000, EnginePowerMguk = mguk, GForceLon = a / 9.81, FuelInTank = Fuel, ErsHarvestLimit = harvestLimit,
             });
 
             var next = Math.Max(1, v + a * dt);
@@ -182,6 +182,55 @@ public class ErsPlanTests
 
         Assert.True(paid.ExitStore < free.ExitStore - 100_000, $"{free.ExitStore / 1e6:0.00} → {paid.ExitStore / 1e6:0.00} MJ");
         Assert.True(paid.Seconds < free.Seconds);
+    }
+
+    /// <summary>
+    /// Where the game clips in None, the harvest goes into the battery and its power comes off the wheels; once the lap
+    /// has reached its harvest limit it clips no more.
+    /// </summary>
+    [Fact]
+    public void Clipping_takes_power_from_the_wheels_and_stops_at_the_harvest_limit()
+    {
+        var lap = LapProfile.From(DriveLap(2_000_000, harvestLimit: 6_000_000), GameFormat.F1_26)!;
+        var zone = ErsOptimizer.Stages(lap).First(s => s.HasZone);
+        var count = lap.Segments.Count;
+        var clip = Enumerable.Range(0, DeployModes.Overtake + 1).Select(_ => new HarvestRate?[count]).ToArray();
+        Array.Fill(clip[DeployModes.None], new HarvestRate(80_000, 50));
+        var map = new PositionMap([.. Enumerable.Range(0, DeployModes.Overtake + 1).Select(_ => new DeployCell?[count])], clip, new HarvestRate?[count]);
+        var none = new DeployOption(DeployModes.None, DeployModes.None);
+
+        var plain = LapSimulator.Create(lap, Model)!.Run(zone.From, zone.DeployEnd, zone.DeployEnd, none, 1_000_000);
+        var clipping = LapSimulator.Create(lap, Model with { Positions = map })!;
+        var clipped = clipping.Run(zone.From, zone.DeployEnd, zone.DeployEnd, none, 1_000_000);
+        var atLimit = clipping.Run(zone.From, zone.DeployEnd, zone.DeployEnd, none, 1_000_000, harvested: 6_000_000);
+
+        Assert.True(clipped.Seconds > plain.Seconds + 0.05, $"{plain.Seconds:0.000} → {clipped.Seconds:0.000} s");
+        Assert.Equal(80_000 * clipped.Seconds, clipped.ExitHarvested - plain.ExitHarvested, 2_000.0);
+        Assert.Equal(clipped.ExitHarvested - plain.ExitHarvested, clipped.ExitStore - plain.ExitStore, 1.0);
+        Assert.Equal(plain.Seconds, atLimit.Seconds, 1e-6);
+        Assert.Equal(6_000_000, atLimit.ExitHarvested);
+    }
+
+    /// <summary>
+    /// Entering a zone with a battery the plan didn't expect, the rest of the lap is planned again from it: the zone
+    /// already driven keeps its plan, and an empty battery is never asked for a deploy mode.
+    /// </summary>
+    [Fact]
+    public void Entering_a_zone_off_plan_re_plans_the_rest_from_the_battery_the_car_has()
+    {
+        var planner = new ErsPlanner(Simulator(2_000_000, reserve: 300_000));
+        var steady = planner.Plan(PlanKind.Race).Plan.StartStore;
+        var plan = planner.PlanFrom(PlanKind.Race, steady, steady);
+        Assert.Equal(DeployModes.Overtake, plan.Zones[1].Choice.First);
+
+        var empty = planner.Continue(plan, 2, 0, 0, steady)!;
+
+        Assert.Equal(plan.Zones[0], empty.Zones[0]);
+        Assert.Equal(plan.StartStore, empty.StartStore);
+        Assert.Equal(0, empty.Zones[1].EntryStore);
+        Assert.Equal(DeployModes.None, empty.Zones[1].Choice.First);
+        Assert.Equal(plan.Modes[..10], empty.Modes[..10]);
+        Assert.Null(planner.Continue(plan, 3, 0, 0, steady)); // the lap has two zones
     }
 
     [Fact]

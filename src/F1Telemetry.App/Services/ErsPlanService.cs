@@ -13,7 +13,9 @@ namespace F1Telemetry.App.Services;
 /// Otherwise the session is the newest earlier one at the track with <see cref="MinLaps"/> typical laps, or else the
 /// one being recorded once it has driven that many: the battery over a lap or two is a poor guide (out-laps, traffic,
 /// a car model learned from too little). Until then the overlay waits, and the plan is re-learned after every lap while
-/// it rests on the session being driven. Every lap at the line it plans from the battery the car actually has.
+/// it rests on the session being driven. Every lap at the line it plans from the battery the car actually has, and
+/// entering every deploy zone it re-plans the rest of the lap from the battery and harvest the car has there: a lap
+/// that went off plan gets the best plan from where it is, never a mode the battery can't pay for.
 /// Qualifying sessions and time trial plan qualifying laps, everything else race laps; <see cref="NextMode"/> steps
 /// through race (normal, attack, recover) and qualifying. UI thread.
 /// </summary>
@@ -30,6 +32,9 @@ public sealed class ErsPlanService
 
     // The time of the lap just completed reaches the store a moment after the line.
     private static readonly TimeSpan LapTimeDelay = TimeSpan.FromSeconds(2);
+
+    // A zone starting this close to the line is planned at the line: the game's per-lap counters may not have reset yet.
+    private const double ReplanFrom = 2 * LapProfile.Step;
 
     private static readonly (PlanKind Kind, RaceStance Stance)[] Modes =
     [
@@ -51,6 +56,10 @@ public sealed class ErsPlanService
     private int _version;
     private bool _loading;
 
+    // What this lap's plan aims to cross the line with, J, and the zone it was last re-planned at (0: at the line).
+    private double _target;
+    private int _zone;
+
     // The plan rests on the session being driven (or on an earlier one with too few laps): re-learn after every lap.
     private bool _learning;
 
@@ -62,6 +71,7 @@ public sealed class ErsPlanService
         _log = log;
         hub.SessionChanged += OnSession;
         hub.LapCompleted += _ => OnLapCompleted();
+        hub.Tick += OnTick;
     }
 
     public PlanKind Kind { get; private set; } = PlanKind.Race;
@@ -318,13 +328,49 @@ public sealed class ErsPlanService
             _ => 0,
         };
 
-        var plan = await Task.Run(() => kind == PlanKind.Qualifying
-            ? planner.PlanFrom(PlanKind.Qualifying, store, 0)
-            : planner.PlanFrom(PlanKind.Race, store, Math.Clamp(target, 0, LapSimulator.Capacity)));
+        var end = kind == PlanKind.Qualifying ? 0 : Math.Clamp(target, 0, LapSimulator.Capacity);
+        var plan = await Task.Run(() => planner.PlanFrom(kind, store, end));
         if (version == _version && (Kind == PlanKind.Qualifying ? _qualifying : _race) == planner)
         {
-            Plan = plan;
+            (Plan, _target, _zone) = (plan, end, 0);
             Changed?.Invoke();
+        }
+    }
+
+    /// <summary>Entering a deploy zone: re-plan the rest of the lap from the battery and harvest the car really has.</summary>
+    private void OnTick()
+    {
+        if (Plan is not { } plan || _hub.LastSample is not { } sample || (Kind == PlanKind.Qualifying ? _qualifying : _race) is not { } planner)
+        {
+            return;
+        }
+
+        var zone = plan.Zones.FirstOrDefault(z => sample.LapDistance >= z.From && sample.LapDistance < z.To);
+        if (zone is null || zone.Number <= _zone || zone.From < ReplanFrom)
+        {
+            return;
+        }
+
+        _zone = zone.Number;
+        _ = ContinueAsync(planner, plan, zone.Number, sample.ErsStoreEnergy, sample.ErsHarvestedMguk);
+    }
+
+    private async Task ContinueAsync(ErsPlanner planner, LapPlan plan, int zone, double store, double harvested)
+    {
+        var version = _version;
+        var target = _target;
+        try
+        {
+            var next = await Task.Run(() => planner.Continue(plan, zone, store, harvested, target));
+            if (next is not null && version == _version && Plan == plan)
+            {
+                Plan = next;
+                Changed?.Invoke();
+            }
+        }
+        catch (Exception ex)
+        {
+            _log.LogError(ex, "Live ERS re-plan failed");
         }
     }
 

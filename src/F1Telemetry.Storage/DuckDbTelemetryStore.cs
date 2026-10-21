@@ -464,7 +464,8 @@ public sealed partial class DuckDbTelemetryStore(string databasePath, ILogger<Du
         QueryAsync("""
             SELECT t.recording_id, t.lap_number, t.session_time, t.lap_distance, t.speed, t.throttle, t.brake, t.steer, t.ers_store_energy,
                    t.ers_deploy_mode, t.ers_harvested_mguk, t.ers_deployed, t.engine_power_ice, t.engine_power_mguk, t.g_force_lon,
-                   t.fuel_in_tank, CASE WHEN r.game_format = 2026 THEN t.active_aero_mode ELSE t.drs END, coalesce(t.overtake_active, 0)
+                   t.fuel_in_tank, CASE WHEN r.game_format = 2026 THEN t.active_aero_mode ELSE t.drs END, coalesce(t.overtake_active, 0),
+                   t.g_force_lat, t.ers_harvest_limit
             FROM telemetry t JOIN recordings r ON r.id = t.recording_id
             WHERE r.game_format = $format AND r.track_id = $track AND t.lap_number >= 1
             ORDER BY t.recording_id, t.session_time
@@ -472,7 +473,7 @@ public sealed partial class DuckDbTelemetryStore(string databasePath, ILogger<Du
             r => new ModelSample(
                 r.GetInt64(0), r.GetInt32(1), r.GetDouble(2), F(r, 3), r.GetInt32(4), F(r, 5), F(r, 6), F(r, 7), F(r, 8),
                 (byte)(r.IsDBNull(9) ? 0 : r.GetInt32(9)), F(r, 10), F(r, 11), F(r, 12), F(r, 13), F(r, 14), F(r, 15),
-                (byte)(r.IsDBNull(16) ? 0 : r.GetInt32(16)), r.GetInt32(17) != 0),
+                (byte)(r.IsDBNull(16) ? 0 : r.GetInt32(16)), r.GetInt32(17) != 0, F(r, 18), F(r, 19)),
             cancellationToken, ("format", (int)format), ("track", trackId));
 
     private static float F(DbDataReader r, int i) => r.IsDBNull(i) ? 0 : (float)r.GetDouble(i);

@@ -31,6 +31,7 @@ try
         "seed" => await Seed(cli, cts.Token),
         "reimport" => await Reimport(cli, cts.Token),
         "list" => await List(cli, cts.Token),
+        "ers-check" => await ErsCheck(cli, cts.Token),
         _ => Help(),
     };
 }
@@ -59,6 +60,12 @@ static int Help()
                                                                    upgrade. --replace deletes the recording a capture was
                                                                    made for (recording-<id>-…) once the new one is in.
                                                                    Close the app first: it locks the database.
+          ers-check --db <file.duckdb> --recordings 1,2 [--train 2]
+                                                                   Replays each typical lap with its own deploy modes
+                                                                   through the ERS car model (learned from the --train
+                                                                   recordings, else every one at the track) and prints
+                                                                   how close it gets to the real lap and battery, then
+                                                                   the race plan on their typical lap
         """);
     return 1;
 }
@@ -255,6 +262,81 @@ static async Task<int> List(Args cli, CancellationToken ct)
         var setups = await store.GetSetupsAsync(r.Id, ct);
         Console.WriteLine($"{r.Id,4}  {r.StartTime.ToLocalTime():yyyy-MM-dd HH:mm}  {r.TrackName,-12} {SessionTypes.Name(r.SessionType),-20} "
                           + $"{(int)r.Format}  {laps.Count,3} laps  {setups.Count,2} setup(s)  {r.Description}");
+    }
+
+    return 0;
+}
+
+static async Task<int> ErsCheck(Args cli, CancellationToken ct)
+{
+    static long[] Ids(string? list) => list?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Select(long.Parse).ToArray() ?? [];
+    var dbPath = cli.Get("--db") ?? throw new ArgumentException("ers-check needs --db <file>");
+    var ids = Ids(cli.Get("--recordings"));
+    if (ids.Length == 0)
+    {
+        throw new ArgumentException("ers-check needs --recordings <id,id>");
+    }
+
+    await using var store = new DuckDbTelemetryStore(dbPath);
+    await store.InitializeAsync(ct);
+    var recordings = new List<RecordingInfo>();
+    foreach (var id in ids)
+    {
+        recordings.Add(await store.GetRecordingAsync(id, ct) ?? throw new ArgumentException($"no recording {id}"));
+    }
+
+    var (format, trackId) = (recordings[0].Format, recordings[0].TrackId);
+    var train = Ids(cli.Get("--train")).ToHashSet();
+    var samples = (await store.GetModelSamplesAsync(format, trackId, ct)).Where(s => train.Count == 0 || train.Contains(s.RecordingId)).ToList();
+    var model = F1Telemetry.Core.Energy.ErsModelBuilder.Build(format, trackId, samples);
+    Console.WriteLine($"Car model: {model.Laps} laps from recordings {(train.Count == 0 ? "at the track" : string.Join(",", train))}; "
+                      + $"modes {string.Join(" ", model.Deploy.Curves.Select(c => F1Telemetry.Core.Energy.DeployModes.Letter(c.Mode)))}");
+    Console.WriteLine("Traction (share of a change of power that becomes acceleration): "
+                      + string.Join(" · ", model.Grip.Bands.Select(b => $"{b.FromKmh}–{(b.ToKmh >= 1000 ? "" : b.ToKmh)} km/h{(b.FromG is { } g ? $" {g:0.#}–{(double.IsInfinity(b.ToG!.Value) ? "" : b.ToG.Value.ToString("0.#"))} g" : "")} {b.Factor:0.00}")));
+
+    var profiles = new List<F1Telemetry.Core.Energy.LapProfile>();
+    var rows = new List<(double Time, double End, double Battery)>();
+    Console.WriteLine("  rec  lap   actual   time err   end real → map (MJ)   battery RMS (MJ)");
+    foreach (var recording in recordings)
+    {
+        foreach (var lap in F1Telemetry.Core.Energy.SessionLaps.Representative(await store.GetLapsAsync(recording.Id, ct)))
+        {
+            var lapSamples = await store.GetLapSamplesAsync(recording.Id, lap.LapNumber, ct);
+            if (F1Telemetry.Core.Energy.LapProfile.From(lapSamples, format, lap.LapTimeMs / 1000.0) is not { } profile
+                || F1Telemetry.Core.Energy.LapSimulator.Create(profile, model) is not { } simulator)
+            {
+                continue;
+            }
+
+            profiles.Add(profile);
+            var check = F1Telemetry.Core.Energy.ErsOptimizer.Check(simulator);
+            rows.Add((check.Error, check.MapEndStore - check.ActualEndStore, check.BatteryError));
+            Console.WriteLine($"  {recording.Id,3}  {lap.LapNumber,3}  {check.ActualSeconds,7:0.000}  {check.Error,+8:+0.000;-0.000}   "
+                              + $"{check.ActualEndStore / 1e6,5:0.00} → {check.MapEndStore / 1e6,5:0.00}          {check.BatteryError / 1e6,5:0.00}");
+        }
+    }
+
+    if (rows.Count == 0)
+    {
+        Console.WriteLine("No lap to check.");
+        return 1;
+    }
+
+    Console.WriteLine($"Mean |time error| {rows.Average(r => Math.Abs(r.Time)):0.000} s · mean |end battery error| {rows.Average(r => Math.Abs(r.End)) / 1e6:0.00} MJ "
+                      + $"· mean battery RMS {rows.Average(r => r.Battery) / 1e6:0.00} MJ over {rows.Count} laps");
+
+    if (F1Telemetry.Core.Energy.LapProfile.Average(profiles) is { } typical
+        && F1Telemetry.Core.Energy.LapSimulator.Create(typical, model, F1Telemetry.Core.Energy.LapSimulator.RaceReserve) is { } raceLap)
+    {
+        var watch = Stopwatch.StartNew();
+        var result = F1Telemetry.Core.Energy.ErsOptimizer.Plan(raceLap, F1Telemetry.Core.Energy.PlanKind.Race);
+        var plan = result.Plan;
+        Console.WriteLine($"Race plan on the typical lap ({watch.Elapsed.TotalSeconds:0.00} s): gain {result.Gain:+0.000;-0.000} s, battery {plan.StartStore / 1e6:0.00} → {plan.EndStore / 1e6:0.00} MJ, "
+                          + $"harvest {plan.Harvested / 1e6:0.00} / deploy {plan.Deployed / 1e6:0.00} MJ, model check {result.Check.Error:+0.000;-0.000} s");
+        foreach (var zone in plan.Zones)
+        {
+            Console.WriteLine($"  Z{zone.Number,-2} {zone.From,5:0}–{zone.To,5:0} m  {zone.Choice.Describe(),-40} {zone.EntryStore / 1e6:0.00} → {zone.ExitStore / 1e6:0.00} MJ  {zone.Gain:+0.000;-0.000} s");
+        }
     }
 
     return 0;
