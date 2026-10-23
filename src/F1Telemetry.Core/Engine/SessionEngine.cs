@@ -38,6 +38,10 @@ public sealed class SessionEngine
     private readonly Dictionary<int, uint> _lapTimesFromLapData = [];
     private uint _lastLapTimeMs;
     private uint _currentLapTimeMs;
+    private bool _timerRestartOwed; // the lap number went up without the lap timer restarting (see CrossedLineAtFlag)
+
+    // Past the line at the flag, from the moment it was crossed (the car may be classified a packet or more later).
+    private bool _tookFlag;
     private SessionHistoryPacket? _playerHistory;
 
     private ulong? _sessionUid;
@@ -224,6 +228,8 @@ public sealed class SessionEngine
         _lapTimesFromLapData.Clear();
         _lastLapTimeMs = 0;
         _currentLapTimeMs = 0;
+        _timerRestartOwed = false;
+        _tookFlag = false;
         _playerHistory = null;
         _lapTypes.Reset();
         _consumption.Reset();
@@ -293,13 +299,15 @@ public sealed class SessionEngine
             return;
         }
 
-        EmitTiming(packet.Header.SessionTime, lap);
-
         var lapNum = (int)lap.CurrentLapNum;
+        var lineAtFlag = CrossedLineAtFlag(lapNum, lap);
+        _tookFlag = lap.ResultStatus == ResultStatus.Finished || lineAtFlag || (_tookFlag && lapNum == _currentLap);
+        EmitTiming(packet.Header.SessionTime, lap, lineAtFlag);
+
         _lapTypes.OnPitStatus(lapNum, lap.PitStatus);
         TrackPitStops(lapNum, lap);
         TrackPitLane(lapNum, lap);
-        TrackLapTimes(lapNum, lap);
+        TrackLapTimes(lapNum, lap, lineAtFlag);
         _consumption.EnsureStarted(_status, _damage);
 
         if (_currentLap != 0 && lapNum > _currentLap)
@@ -369,12 +377,24 @@ public sealed class SessionEngine
     }
 
     /// <summary>
-    /// Keeps the time of each lap as the car finishes it (<c>m_lastLapTimeInMS</c>), the lap history's fallback. On the
-    /// line the lap number goes up with it, except at the flag, where the car is classified and the lap number stays:
-    /// there the last-lap time changing or the lap timer restarting (two laps can take the same time) marks the line.
-    /// Otherwise a new time belongs to the lap before (first packet received, or the lap number moved first).
+    /// The car crossed the line on this packet without the lap number moving on, which in a race happens only at the flag:
+    /// the final lap's time comes in and the lap timer restarts. The game can mark the car classified on this packet or on
+    /// a later one (Imola, COTA), so this does not wait for <see cref="ResultStatus.Finished"/>. A flashback within the lap
+    /// also takes the timer back, but never brings a new time; a timer restart still owed to a lap number that went up
+    /// first is that lap's start, not the flag.
     /// </summary>
-    private void TrackLapTimes(int lapNum, LapData lap)
+    private bool CrossedLineAtFlag(int lapNum, LapData lap) =>
+        SessionTypes.IsRace(Session?.SessionType ?? 0) && _currentLap != 0 && lapNum == _currentLap && !_timerRestartOwed
+        && lap.CurrentLapTimeMs < _currentLapTimeMs && lap.LastLapTimeMs != _lastLapTimeMs && lap.LastLapTimeMs != 0;
+
+    /// <summary>
+    /// Keeps the time of each lap as the car finishes it (<c>m_lastLapTimeInMS</c>), the lap history's fallback. On the
+    /// line the lap number goes up with it, except at the flag, where the lap number stays: there the line is the new
+    /// time with the lap timer restarting (see <see cref="CrossedLineAtFlag"/>), or, once the car is classified, the
+    /// last-lap time changing or the lap timer restarting (two laps can take the same time). Otherwise a new time belongs
+    /// to the lap before (first packet received, or the lap number moved first).
+    /// </summary>
+    private void TrackLapTimes(int lapNum, LapData lap, bool lineAtFlag)
     {
         if (lapNum < _currentLap)
         {
@@ -390,14 +410,18 @@ public sealed class SessionEngine
         var timerRestarted = lap.CurrentLapTimeMs < _currentLapTimeMs;
         _lastLapTimeMs = time;
         _currentLapTimeMs = lap.CurrentLapTimeMs;
+        _timerRestartOwed = lapNum == _currentLap
+            ? _timerRestartOwed && !timerRestarted
+            : _currentLap != 0 && lapNum > _currentLap && !timerRestarted;
 
         int finishedLap;
         if (_currentLap != 0 && lapNum > _currentLap)
         {
             finishedLap = _currentLap;
         }
-        else if (lap.ResultStatus == ResultStatus.Finished && lapNum == _currentLap
-                 && (timeChanged || (timerRestarted && !_lapTimesFromLapData.ContainsKey(lapNum))))
+        else if (lineAtFlag
+                 || (lap.ResultStatus == ResultStatus.Finished && lapNum == _currentLap
+                     && (timeChanged || (timerRestarted && !_lapTimesFromLapData.ContainsKey(lapNum)))))
         {
             finishedLap = lapNum;
         }
@@ -499,9 +523,9 @@ public sealed class SessionEngine
     /// Field and sector box at most every 50 ms of session time, but always on the packet where the player crosses a
     /// split or the line, so the sector box never misses a split.
     /// </summary>
-    private void EmitTiming(double time, LapData lap)
+    private void EmitTiming(double time, LapData lap, bool lineAtFlag)
     {
-        var box = _sectors.Update(lap, time, _field);
+        var box = _sectors.Update(lap, time, _field, lineAtFlag);
         var changed = box.IsFinished != _lastBoxFinished || box.LastSplit?.Sector != _lastBoxSplit;
         _lastBoxFinished = box.IsFinished;
         _lastBoxSplit = box.LastSplit?.Sector;
@@ -576,7 +600,7 @@ public sealed class SessionEngine
             StrategyUpdated?.Invoke(BuildStrategy(status, damage));
 
             // Past the flag the lap number stays on the final lap: a sample there would join it from the start line.
-            if (_lapData?.Player.ResultStatus != ResultStatus.Finished)
+            if (!_tookFlag)
             {
                 SampleCaptured?.Invoke(BuildSample(packet.Header, telemetry, status, damage));
             }

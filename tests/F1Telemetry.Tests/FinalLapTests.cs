@@ -60,6 +60,45 @@ public class FinalLapTests
     }
 
     [Fact]
+    public void Final_lap_is_timed_when_its_time_comes_a_packet_before_the_car_is_classified()
+    {
+        // COTA and Imola: the packet on the line has the new time and a restarted lap timer, but the car is only marked
+        // finished on the next one. The time used to go to the lap before, and the sector box dropped the lap's splits.
+        SectorBoxSnapshot? box = null;
+        _engine.SectorBoxUpdated += b => box = b;
+        Race();
+        LapData(lapNum: 3, lastLapMs: 92_884, ResultStatus.Active, time: 100, currentMs: 30_000, sector: 1, s1: 29_507);
+        LapData(lapNum: 3, lastLapMs: 92_884, ResultStatus.Active, time: 160, currentMs: 90_000, sector: 2, s1: 29_507, s2: 40_121);
+        History(RaceHistory);
+
+        LapData(lapNum: 3, lastLapMs: 91_731, ResultStatus.Active, time: 162, currentMs: 0);
+
+        Assert.Equal(91_731u, _laps[2].LapTimeMs);
+        Assert.Equal(91_731u - 29_507 - 40_121, _laps[2].Sector3Ms);
+        Assert.Equal(92_884u, _laps[1].LapTimeMs);
+        Assert.True(box!.IsFinished);
+        Assert.Equal(91_731u - 29_507 - 40_121, box.LastSplit!.SectorMs);
+
+        LapData(lapNum: 3, lastLapMs: 91_731, ResultStatus.Finished, time: 162.03, currentMs: 16);
+        Assert.Equal(91_731u, _laps[2].LapTimeMs);
+        Assert.True(box.IsFinished);
+        Assert.Equal(91_731u, box.LapTimeMs);
+    }
+
+    [Fact]
+    public void Lap_time_after_the_lap_number_belongs_to_the_lap_before_even_when_the_timer_restarts_with_it()
+    {
+        Race();
+        LapData(lapNum: 2, lastLapMs: 93_127, ResultStatus.Active, currentMs: 92_000);
+        LapData(lapNum: 3, lastLapMs: 93_127, ResultStatus.Active, currentMs: 92_016); // lap number first...
+        LapData(lapNum: 3, lastLapMs: 92_884, ResultStatus.Active, currentMs: 16); // ...then its time and timer
+        History([RaceHistory[0], RaceHistory[1] with { LapTimeMs = 0, Sector3Ms = 0 }, new(0, 0, 0, 0, 0x0F)]);
+
+        Assert.Equal(92_884u, _laps[1].LapTimeMs);
+        Assert.Equal(0u, _laps[2].LapTimeMs);
+    }
+
+    [Fact]
     public void Final_lap_is_timed_from_the_final_classification()
     {
         LapData(lapNum: 3, lastLapMs: 92_884, ResultStatus.Active);
@@ -112,6 +151,14 @@ public class FinalLapTests
         var packet = Writer.Create(PacketId.LapData, 1, (float)time, 0, Player);
         Writer.WriteLapData(packet, Player, new LapData(lastLapMs, currentMs, s1, s2, 0, 0, 10, 0, 0, 1, (byte)lapNum, PitStatus.None, 0, sector,
             false, 0, 0, 0, 0, 0, 1, DriverStatus.OnTrack, result, false, 0, 0, 0));
+        _engine.Process(PacketParser.Parse(packet).Packet!);
+    }
+
+    private void Race()
+    {
+        var packet = Writer.Create(PacketId.Session, 1, 0, 0, Player);
+        Writer.WriteSession(packet, new SessionData(0, 30, 20, 3, 5000, 15, 11, 0, 3600, 3600, 80, false, 0, false, [], 0, 0, 0, 0, 0, 0, 0, 0,
+            1600, 3300, null));
         _engine.Process(PacketParser.Parse(packet).Packet!);
     }
 

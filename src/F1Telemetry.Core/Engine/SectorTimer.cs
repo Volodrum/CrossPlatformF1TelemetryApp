@@ -38,16 +38,21 @@ public sealed class SectorTimer
         ClearLap();
     }
 
-    public SectorBoxSnapshot Update(LapData lap, double sessionTime, FieldTracker field)
+    /// <param name="lineAtFlag">The car crossed the line at the flag on this packet, before the game classified it.</param>
+    public SectorBoxSnapshot Update(LapData lap, double sessionTime, FieldTracker field, bool lineAtFlag = false)
     {
         var lapNum = (int)lap.CurrentLapNum;
         var sessionBest = field.SessionBestLap();
         var personalBest = field.PersonalBestLap();
 
         // Classified once the final lap's time is in (it may follow the status by a packet): the last-lap time has
-        // changed, or the lap timer has restarted (two laps can take the same time).
-        var classified = lap.ResultStatus == ResultStatus.Finished
-            && (_classified || lapNum != _lapNum || lap.LastLapTimeMs != _lastLapMsAtLapStart || lap.CurrentLapTimeMs < _currentLapMs);
+        // changed, or the lap timer has restarted (two laps can take the same time). The time can also come first, a
+        // packet before the status: the line is then the flag, and the lap must finish there, before its splits are
+        // taken for a flashback to sector 1.
+        var classified = lineAtFlag
+            || (_classified && lapNum == _lapNum)
+            || (lap.ResultStatus == ResultStatus.Finished
+                && (lapNum != _lapNum || lap.LastLapTimeMs != _lastLapMsAtLapStart || lap.CurrentLapTimeMs < _currentLapMs));
         _currentLapMs = lap.CurrentLapTimeMs;
         var tookFlag = classified && !_classified && lapNum == _lapNum;
         if (_lapNum > 0 && (lapNum == _lapNum + 1 || tookFlag))
