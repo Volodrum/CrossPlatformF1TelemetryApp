@@ -255,8 +255,14 @@ public sealed partial class RacePlansViewModel(TelemetryRuntime runtime, Setting
             }
 
             HasLibrary = Compounds.Count > 0;
+            var defaults = new PlannerOptions();
+            string Neutralised(string name, double? measured, int stops, double factor) => measured is { } seconds
+                ? string.Create(CultureInfo.InvariantCulture, $"{name} {seconds:0.0} s ({stops} recorded)")
+                : string.Create(CultureInfo.InvariantCulture, $"{name} {library.PitLossSeconds * factor:0.0} s (default {factor:0%})");
             Basis = string.Create(CultureInfo.InvariantCulture,
                 $"Pit stop {library.PitLossSeconds:0.0} s ({(library.PitLossStops > 0 ? $"median of {library.PitLossStops} recorded {(library.PitLossStops == 1 ? "stop" : "stops")}" : "default: no race with a stop recorded here")}) · "
+                + $"under {Neutralised("SC", library.SafetyCarPitLossSeconds, library.SafetyCarPitLossStops, defaults.SafetyCarPitLossFactor)}, "
+                + $"{Neutralised("VSC", library.VirtualSafetyCarPitLossSeconds, library.VirtualSafetyCarPitLossStops, defaults.VirtualSafetyCarPitLossFactor)} · "
                 + $"fuel {library.FuelPerLap:0.00} kg/lap at {library.FuelEffect.SecondsPerKg:0.000} s/kg ({library.FuelEffect.Basis}) · paces in this session's conditions");
 
             if (firstLoad)

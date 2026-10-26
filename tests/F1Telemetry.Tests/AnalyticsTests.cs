@@ -61,6 +61,39 @@ public class AnalyticsTests
     }
 
     [Fact]
+    public void Stop_under_a_safety_car_is_measured_against_the_laps_behind_it()
+    {
+        static LapRecord Sc(LapRecord lap) => lap with { Neutralisation = Neutralisation.SafetyCar };
+        var laps = new[]
+        {
+            Lap(1, 90_000), Lap(2, 90_100), Lap(3, 90_200), Lap(4, 90_300), Sc(Lap(5, 120_000, type: LapType.SafetyCar)),
+            Sc(Lap(6, 128_000, type: LapType.SafetyCar)), Sc(Lap(7, 126_000, "Hard", 1, LapType.SafetyCar)),
+            Sc(Lap(8, 120_000, "Hard", 1, LapType.SafetyCar)), Lap(9, 90_500, "Hard", 1), Lap(10, 90_600, "Hard", 1),
+        };
+        var classified = LapClassifier.Classify(laps, 15);
+        Assert.Equal([LapType.SafetyCar, LapType.Pit, LapType.Pit, LapType.SafetyCar], classified.Skip(4).Take(4).Select(l => l.LapType));
+
+        var stop = Assert.Single(PitStopAnalyzer.Analyze(classified, 15));
+        Assert.Equal(6, stop.InLap);
+        Assert.Equal(Neutralisation.SafetyCar, stop.Neutralisation);
+        Assert.Equal(8 + 6, stop.LossSeconds, 6); // against 2:00 laps behind the safety car, not 1:30 racing laps
+    }
+
+    [Fact]
+    public void Pit_lap_keeps_the_safety_car_it_ran_under()
+    {
+        var tracker = new LapTypeTracker();
+        tracker.OnSafetyCar(6, 2);
+        tracker.OnSafetyCar(6, 1);
+        tracker.OnSafetyCar(6, 0);
+        tracker.OnPitStatus(6, PitStatus.Pitting);
+
+        Assert.Equal(LapType.Pit, tracker.Get(6));
+        Assert.Equal(Neutralisation.SafetyCar, tracker.GetNeutralisation(6));
+        Assert.Equal(Neutralisation.None, tracker.GetNeutralisation(7));
+    }
+
+    [Fact]
     public void Red_flag_laps_stay_red_flag_laps_outside_races()
     {
         var classified = LapClassifier.Classify([Lap(1, 80_000), Lap(2, 300_000, type: LapType.RedFlag), Lap(3, 0)], sessionType: 5);

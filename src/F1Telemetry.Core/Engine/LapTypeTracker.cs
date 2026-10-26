@@ -12,15 +12,34 @@ namespace F1Telemetry.Core.Engine;
 public sealed class LapTypeTracker
 {
     private readonly Dictionary<int, LapType> _types = [];
+    private readonly Dictionary<int, Neutralisation> _neutralisations = [];
 
-    public void Reset() => _types.Clear();
+    public void Reset()
+    {
+        _types.Clear();
+        _neutralisations.Clear();
+    }
 
     public LapType Get(int lap) => _types.GetValueOrDefault(lap, LapType.Regular);
 
     public IReadOnlyDictionary<int, LapType> All => _types;
 
+    /// <summary>The strongest safety car seen on the lap, kept apart from its type so a pit stop under one still shows it.</summary>
+    public Neutralisation GetNeutralisation(int lap) => _neutralisations.GetValueOrDefault(lap);
+
     public void OnSafetyCar(int lap, byte safetyCarStatus)
     {
+        var neutralisation = safetyCarStatus switch
+        {
+            SafetyCarStatus.Full => Neutralisation.SafetyCar,
+            SafetyCarStatus.Virtual => Neutralisation.VirtualSafetyCar,
+            _ => Neutralisation.None,
+        };
+        if (lap > 0 && neutralisation > GetNeutralisation(lap))
+        {
+            _neutralisations[lap] = neutralisation;
+        }
+
         switch (safetyCarStatus)
         {
             case SafetyCarStatus.Full:

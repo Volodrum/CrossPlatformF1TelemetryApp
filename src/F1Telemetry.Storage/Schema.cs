@@ -112,6 +112,11 @@ internal static class Schema
             )
             """,
         ],
+
+        // v7: the safety car out on each lap, kept for pit laps too (pit-stop cost under a safety car)
+        [
+            "ALTER TABLE laps ADD COLUMN IF NOT EXISTS neutralisation VARCHAR",
+        ],
     ];
 
     public static int LatestVersion => Migrations.Length;

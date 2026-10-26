@@ -746,6 +746,7 @@ public sealed class SessionEngine
                 StintIndex = stintIdx,
                 CarPosition = _positionByLap.TryGetValue(lapNumber, out var pos) ? pos : null,
                 LapType = lapType != LapType.RedFlag && stintPitLaps.Contains(lapNumber) ? LapType.Pit : lapType,
+                Neutralisation = _lapTypes.GetNeutralisation(lapNumber),
                 PitLaneTimeMs = _pitVisits.GetValueOrDefault(lapNumber).Lane,
                 PitStopTimeMs = _pitVisits.GetValueOrDefault(lapNumber).Stationary,
             });
