@@ -364,7 +364,6 @@ Switch on **PREVIEW OVERLAYS** at the top of the **OVERLAYS** page (in the rail)
 ## Next steps
 
 - Setup autopilot: dial a library setup into the game's setup screen with simulated key presses, checked against the live setup packet.
-- Driver names on the radar.
 - Race plans: an extra stop for fresh tyres under a late safety car, and the laps behind it at safety-car pace.
 - A first signed and notarised release, once the repository has the certificates (the workflow steps have only run unsigned so far).
 - Checking click-through overlays on real macOS and X11 machines (only Windows has been run so far).
