@@ -9,8 +9,10 @@ namespace F1Telemetry.Core.Analytics;
 /// <list type="bullet">
 /// <item>Out-laps with an unknown compound inherit it from the next known lap.</item>
 /// <item>Race: laps flagged in-session plus in-laps detected from stint / compound transitions are PIT, and
-/// an isolated pit entry also marks the following out-lap; every other lap is REGULAR.</item>
+/// an isolated pit entry also marks the following out-lap; every other lap keeps its in-session type (REGULAR, SC,
+/// VSC).</item>
 /// <item>Practice / qualifying / time trial: laps without a lap time are PIT (out/in-laps), others REGULAR.</item>
+/// <item>RED FLAG laps stay so in every session. A set changed under a red flag is no pit stop.</item>
 /// </list>
 /// </summary>
 public static class LapClassifier
@@ -21,7 +23,8 @@ public static class LapClassifier
 
         if (!SessionTypes.IsRace(sessionType))
         {
-            return laps.Select(l => l with { LapType = l.HasTime ? LapType.Regular : LapType.Pit }).ToList();
+            return laps.Select(l => l with { LapType = l.LapType == LapType.RedFlag ? LapType.RedFlag : l.HasTime ? LapType.Regular : LapType.Pit })
+                .ToList();
         }
 
         var pitEntries = new HashSet<int>();
@@ -42,7 +45,7 @@ public static class LapClassifier
                 continue;
             }
 
-            if (lastKnown >= 0 && StintChanged(laps[lastKnown], laps[i]))
+            if (lastKnown >= 0 && StintChanged(laps[lastKnown], laps[i]) && !UnderRedFlag(laps[lastKnown], laps[i]))
             {
                 pitEntries.Add(lastKnown);
             }
@@ -60,8 +63,17 @@ public static class LapClassifier
             }
         }
 
-        return laps.Select((l, i) => l with { LapType = pitLaps.Contains(i) ? LapType.Pit : LapType.Regular }).ToList();
+        return laps.Select((l, i) => l with
+        {
+            LapType = l.LapType == LapType.RedFlag ? LapType.RedFlag
+                : pitLaps.Contains(i) ? LapType.Pit
+                : l.LapType,
+        }).ToList();
     }
+
+    /// <summary>Whether a set change between these two laps happened under a red flag (a free change, not a stop).</summary>
+    internal static bool UnderRedFlag(LapRecord previous, LapRecord current) =>
+        previous.LapType == LapType.RedFlag || current.LapType == LapType.RedFlag;
 
     internal static bool StintChanged(LapRecord previous, LapRecord current) =>
         previous.StintIndex >= 0 && current.StintIndex >= 0

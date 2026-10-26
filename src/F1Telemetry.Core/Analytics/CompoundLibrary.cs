@@ -1,4 +1,5 @@
 using F1Telemetry.Core.Engine;
+using F1Telemetry.Core.Models;
 using F1Telemetry.Protocol.Lookups;
 
 namespace F1Telemetry.Core.Analytics;
@@ -50,7 +51,7 @@ public sealed record CompoundModel(
     public bool IsDry => Compound is "Soft" or "Medium" or "Hard";
 }
 
-/// <param name="PitLossSeconds">What a stop costs at the track: median of the recorded races' stops, or the default.</param>
+/// <param name="PitLossSeconds">What a stop costs at the track: median of the recorded races' stops (not those under a safety car), or the default.</param>
 /// <param name="PitLossStops">Stops behind <paramref name="PitLossSeconds"/>; 0 = the default.</param>
 /// <param name="FuelPerLap">Median fuel burn per clean lap, kg.</param>
 /// <param name="RaceLaps">Longest race recorded at the track; null when there is none.</param>
@@ -64,6 +65,19 @@ public sealed record CompoundLibrary(
     int? RaceLaps)
 {
     public CompoundModel? this[string compound] => Compounds.FirstOrDefault(c => c.Compound == compound);
+
+    /// <summary>
+    /// What a stop under a safety car costs here: the median of the recorded races' stops under one, each measured against
+    /// the laps behind it; null when none was recorded.
+    /// </summary>
+    public double? SafetyCarPitLossSeconds { get; init; }
+
+    public int SafetyCarPitLossStops { get; init; }
+
+    /// <summary>The same for a virtual safety car.</summary>
+    public double? VirtualSafetyCarPitLossSeconds { get; init; }
+
+    public int VirtualSafetyCarPitLossStops { get; init; }
 }
 
 /// <summary>
@@ -180,12 +194,16 @@ public static class CompoundLibraryBuilder
                 cliff is not null);
         }).OrderBy(c => CompoundOrder(c.Compound)).ToList();
 
-        var stops = sessions
+        List<double> Losses(Neutralisation neutralisation, double min) => sessions
             .Where(r => SessionTypes.IsRace(r.Recording.SessionType))
             .SelectMany(r => r.Analysis.PitStops)
+            .Where(p => p.Neutralisation == neutralisation)
             .Select(p => p.LossSeconds)
-            .Where(loss => loss is > 5 and < 90)
+            .Where(loss => loss > min && loss < 90)
             .ToList();
+        var stops = Losses(Neutralisation.None, 5);
+        var safetyCar = Losses(Neutralisation.SafetyCar, 0);
+        var virtualSafetyCar = Losses(Neutralisation.VirtualSafetyCar, 0);
         var fuel = sessions.SelectMany(r => r.Analysis.Stints).Select(st => st.AverageFuelPerLap).Where(f => f > 0).ToList();
         var raceLaps = sessions.Where(r => SessionTypes.IsRace(r.Recording.SessionType) && r.Laps.Count > 0).Select(r => r.Laps[^1].LapNumber).DefaultIfEmpty().Max();
 
@@ -196,7 +214,13 @@ public static class CompoundLibraryBuilder
             stops.Count,
             fuel.Count > 0 ? PaceModel.Median(fuel) : 0,
             sessions.Count(r => r.Analysis.PaceLaps.Count > 0),
-            raceLaps > 0 ? raceLaps : null);
+            raceLaps > 0 ? raceLaps : null)
+        {
+            SafetyCarPitLossSeconds = safetyCar.Count > 0 ? PaceModel.Median(safetyCar) : null,
+            SafetyCarPitLossStops = safetyCar.Count,
+            VirtualSafetyCarPitLossSeconds = virtualSafetyCar.Count > 0 ? PaceModel.Median(virtualSafetyCar) : null,
+            VirtualSafetyCarPitLossStops = virtualSafetyCar.Count,
+        };
     }
 
     /// <summary>Soft, medium, hard, then the wet compounds.</summary>

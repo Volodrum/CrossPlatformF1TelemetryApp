@@ -6,7 +6,7 @@ namespace F1Telemetry.Protocol.Packets;
 /// <summary>
 /// Event packet. The 4-character code is always decoded; of the per-event payload union only the button
 /// bit field of <c>BUTN</c> is. Useful codes: SSTA (session started), SEND (session ended), FTLP (fastest lap),
-/// FLBK (flashback), LGOT (lights out), CHQF (chequered flag), BUTN (button status changed).
+/// FLBK (flashback), LGOT (lights out), CHQF (chequered flag), RDFL (red flag), BUTN (button status changed).
 /// </summary>
 /// <param name="ButtonStatus">For <c>BUTN</c>: bit flags of the buttons held down right now (see <see cref="UdpActionMask"/>).</param>
 public sealed record EventPacket(PacketHeader Header, string Code, uint? ButtonStatus = null) : Packet(Header)
@@ -16,6 +16,8 @@ public sealed record EventPacket(PacketHeader Header, string Code, uint? ButtonS
     public const string Flashback = "FLBK";
     public const string FastestLap = "FTLP";
     public const string Buttons = "BUTN";
+    public const string RedFlag = "RDFL";
+    public const string LightsOut = "LGOT";
 
     public const int UdpActionCount = 12;
 

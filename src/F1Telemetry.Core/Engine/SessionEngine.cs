@@ -42,6 +42,13 @@ public sealed class SessionEngine
 
     // Past the line at the flag, from the moment it was crossed (the car may be classified a packet or more later).
     private bool _tookFlag;
+
+    // Red flag: from the race being stopped to the first lap after the restart (see TrackRedFlag).
+    private bool _redFlag;
+    private bool _redFlagInPits; // the car has been in the pit lane or garage since the flag
+    private bool _redFlagBackOnTrack; // ...and has driven out of them since
+    private int? _redFlagRestartLap; // the lap the lights went out on for a standing restart
+    private byte? _redFlagPeriods;
     private SessionHistoryPacket? _playerHistory;
 
     private ulong? _sessionUid;
@@ -199,6 +206,7 @@ public sealed class SessionEngine
                 break;
             case EventPacket evt:
                 GameEvent?.Invoke(evt.Code);
+                OnRaceControl(evt.Code);
                 if (evt.ButtonStatus is { } buttons)
                 {
                     OnButtons(buttons);
@@ -230,6 +238,11 @@ public sealed class SessionEngine
         _currentLapTimeMs = 0;
         _timerRestartOwed = false;
         _tookFlag = false;
+        _redFlag = false;
+        _redFlagInPits = false;
+        _redFlagBackOnTrack = false;
+        _redFlagRestartLap = null;
+        _redFlagPeriods = null;
         _playerHistory = null;
         _lapTypes.Reset();
         _consumption.Reset();
@@ -284,6 +297,14 @@ public sealed class SessionEngine
             _lapTypes.OnSafetyCar(_currentLap, data.SafetyCarStatus);
         }
 
+        // The red-flag count backs up the RDFL event, which a dropped packet can lose.
+        if (_redFlagPeriods is { } periods && data.NumRedFlagPeriods > periods)
+        {
+            OnRedFlag();
+        }
+
+        _redFlagPeriods = data.NumRedFlagPeriods;
+
         ConditionsUpdated?.Invoke(new TrackConditions(
             track.Name, data.Weather, data.TrackTemperature, data.AirTemperature, data.TotalLaps,
             data.SafetyCarStatus, data.WeatherForecast));
@@ -304,6 +325,7 @@ public sealed class SessionEngine
         _tookFlag = lap.ResultStatus == ResultStatus.Finished || lineAtFlag || (_tookFlag && lapNum == _currentLap);
         EmitTiming(packet.Header.SessionTime, lap, lineAtFlag);
 
+        TrackRedFlag(lapNum, lap);
         _lapTypes.OnPitStatus(lapNum, lap.PitStatus);
         TrackPitStops(lapNum, lap);
         TrackPitLane(lapNum, lap);
@@ -327,6 +349,70 @@ public sealed class SessionEngine
         }
 
         _positionByLap[lapNum] = lap.CarPosition;
+    }
+
+    private void OnRaceControl(string code)
+    {
+        switch (code)
+        {
+            case EventPacket.RedFlag:
+                OnRedFlag();
+                break;
+            case EventPacket.LightsOut when _redFlag && _currentLap > 0:
+                // A standing restart: the lap it starts on is no clean lap either.
+                _redFlagRestartLap = _currentLap;
+                _lapTypes.OnRedFlag(_currentLap);
+                break;
+        }
+    }
+
+    private void OnRedFlag()
+    {
+        if (_redFlag)
+        {
+            return;
+        }
+
+        _redFlag = true;
+        _redFlagInPits = false;
+        _redFlagBackOnTrack = false;
+        _redFlagRestartLap = null;
+        if (_currentLap > 0)
+        {
+            _lapTypes.OnRedFlag(_currentLap);
+        }
+    }
+
+    /// <summary>
+    /// Marks every lap from the red flag to the restart as a red-flag lap. The field drives into the pit lane and may
+    /// change tyres there, which used to look like a pit stop with a loss of minutes. The red flag ends on the first new
+    /// lap after a standing restart (lights out), or, for a restart without one, on the first line the car crosses after
+    /// driving out of the pits. A car put on the grid straight from the garage has not driven out: that lap is the
+    /// restart's.
+    /// </summary>
+    private void TrackRedFlag(int lapNum, LapData lap)
+    {
+        if (!_redFlag)
+        {
+            return;
+        }
+
+        if (_currentLap != 0 && lapNum > _currentLap
+            && (_redFlagRestartLap is { } restart ? lapNum > restart : _redFlagBackOnTrack))
+        {
+            _redFlag = false;
+            return;
+        }
+
+        _lapTypes.OnRedFlag(lapNum);
+        if (lap.PitStatus != PitStatus.None || lap.DriverStatus == DriverStatus.InGarage)
+        {
+            (_redFlagInPits, _redFlagBackOnTrack) = (true, false);
+        }
+        else if (_redFlagInPits && IsCleanDrivingState(lap))
+        {
+            _redFlagBackOnTrack = true;
+        }
     }
 
     /// <summary>
@@ -614,13 +700,15 @@ public sealed class SessionEngine
         // In races, stint boundaries are pit stops: in-lap = stint end lap, out-lap = next lap. This also covers stops
         // made before the app was listening; stops seen live correct the game's end laps (see TrackPitStops).
         // Recomputed on every packet (not stored in the sticky tracker), so a later correction also clears a lap.
+        // A set changed under a red flag is no pit stop.
         var stintEnds = StintEndLaps(history);
         var stintPitLaps = new HashSet<int>();
         if (isRace)
         {
             foreach (var end in stintEnds)
             {
-                if (end is not TyreStint.Current and > 0)
+                if (end is not TyreStint.Current and > 0
+                    && _lapTypes.Get(end) != LapType.RedFlag && _lapTypes.Get(end + 1) != LapType.RedFlag)
                 {
                     stintPitLaps.Add(end);
                     stintPitLaps.Add(end + 1);
@@ -636,6 +724,7 @@ public sealed class SessionEngine
             var stintIdx = StintIndexForLap(stintEnds, lapNumber);
             var stint = stintIdx >= 0 ? history.Stints[stintIdx] : default;
             var lapTimeMs = LapTimeMs(history, lapNumber);
+            var lapType = _lapTypes.Get(lapNumber);
             var sector3Ms = h.Sector3Ms == 0 && h.Sector1Ms > 0 && h.Sector2Ms > 0 && lapTimeMs > h.Sector1Ms + h.Sector2Ms
                 ? lapTimeMs - h.Sector1Ms - h.Sector2Ms
                 : h.Sector3Ms;
@@ -656,7 +745,8 @@ public sealed class SessionEngine
                 ActualCompound = stintIdx >= 0 ? Compounds.Actual(stint.ActualCompound) : "Unknown",
                 StintIndex = stintIdx,
                 CarPosition = _positionByLap.TryGetValue(lapNumber, out var pos) ? pos : null,
-                LapType = stintPitLaps.Contains(lapNumber) ? LapType.Pit : _lapTypes.Get(lapNumber),
+                LapType = lapType != LapType.RedFlag && stintPitLaps.Contains(lapNumber) ? LapType.Pit : lapType,
+                Neutralisation = _lapTypes.GetNeutralisation(lapNumber),
                 PitLaneTimeMs = _pitVisits.GetValueOrDefault(lapNumber).Lane,
                 PitStopTimeMs = _pitVisits.GetValueOrDefault(lapNumber).Stationary,
             });

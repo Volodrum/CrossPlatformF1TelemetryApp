@@ -251,7 +251,7 @@ public sealed class StrategyPlannerTests
         Assert.Equal(stop.InLap, sc.LastLap);
         Assert.True(sc.FirstLap < stop.InLap);
         Assert.InRange(sc.FirstLap, 3, stop.InLap);
-        Assert.True(sc.GainSeconds >= 20 * 0.55 - 1e-9); // at the planned in-lap the stop simply costs less
+        Assert.True(sc.GainSeconds >= 20 * (1 - new PlannerOptions().SafetyCarPitLossFactor) - 1e-9); // at the planned in-lap the stop simply costs less
 
         // A virtual safety car saves less of the stop, so it pays over fewer laps.
         var vsc = stop.VirtualSafetyCar!;
@@ -263,6 +263,45 @@ public sealed class StrategyPlannerTests
         var bounded = StrategyPlanner.Plan(shortHard, 30, new PlannerOptions { MaxStops = 1 }).Best!.Stops[0];
         Assert.Equal(8, bounded.SafetyCar!.FirstLap);
         Assert.Equal(bounded.InLap, bounded.SafetyCar.LastLap);
+    }
+
+    [Fact]
+    public void Stops_under_a_safety_car_are_measured_apart_and_used_before_the_default()
+    {
+        var green = Session(1, 15, [("Medium", 10, 80.0, 0.10, 2.0), ("Hard", 10, 80.6, 0.05, 1.2)], pitLoss: 21);
+
+        // The same race with a safety car on laps 9–12 and the stop (in-lap 10, out-lap 11) under it.
+        var sc = Session(2, 15, [("Medium", 10, 80.0, 0.10, 2.0), ("Hard", 10, 80.6, 0.05, 1.2)], pitLoss: 21);
+        var laps = sc.Laps.Select(l => l.LapNumber is < 9 or > 12 ? l : l with
+        {
+            Neutralisation = Neutralisation.SafetyCar,
+            LapType = l.LapType == LapType.Pit ? LapType.Pit : LapType.SafetyCar,
+            LapTimeMs = l.LapType == LapType.Pit ? 127_000u : 120_000u,
+        }).ToList();
+        var analysis = StintAnalyzer.Analyze(laps, sc.Aggregates, default, 15, new StrategyOptions { FuelEffectSecondsPerKg = FuelEffect })!;
+        sc = sc with { Laps = laps, Analysis = analysis };
+
+        var library = CompoundLibraryBuilder.Build([green, sc], anchorRecordingId: 1);
+        Assert.Equal(21.0, library.PitLossSeconds, 1); // the stop under the safety car stays out of the green median
+        Assert.Equal(1, library.PitLossStops);
+        Assert.Equal(14.0, library.SafetyCarPitLossSeconds!.Value, 6);
+        Assert.Equal(1, library.SafetyCarPitLossStops);
+        Assert.Null(library.VirtualSafetyCarPitLossSeconds);
+
+        var options = new PlannerOptions();
+        Assert.Equal(14.0, StrategyPlanner.SafetyCarPitLoss(library, options), 6);
+        Assert.Equal(library.PitLossSeconds * options.VirtualSafetyCarPitLossFactor, StrategyPlanner.VirtualSafetyCarPitLoss(library, options), 6);
+    }
+
+    [Fact]
+    public void Safety_car_window_uses_the_recorded_stop_cost()
+    {
+        var models = new[] { Model("Medium", 80.0, 0.10), Model("Hard", 80.0, 0.05) };
+        var free = Library(20, models) with { SafetyCarPitLossSeconds = 5 };
+        var full = Library(20, models) with { SafetyCarPitLossSeconds = 20 };
+
+        Assert.True(StrategyPlanner.Plan(free, 30, new PlannerOptions { MaxStops = 1 }).Best!.Stops[0].SafetyCar!.GainSeconds >= 15 - 1e-9);
+        Assert.Null(StrategyPlanner.Plan(full, 30, new PlannerOptions { MaxStops = 1 }).Best!.Stops[0].SafetyCar); // saves nothing
     }
 
     [Fact]

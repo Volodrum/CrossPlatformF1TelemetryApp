@@ -96,11 +96,14 @@ public sealed record PlannerOptions
     /// </summary>
     public PlannerSet? StartSet { get; init; }
 
-    /// <summary>Share of the pit-stop loss a stop under a safety car costs (the field is slow while you are in the lane).</summary>
-    public double SafetyCarPitLossFactor { get; init; } = 0.45;
+    /// <summary>
+    /// Share of the pit-stop loss a stop under a safety car costs (the field is slow while you are in the lane), until a
+    /// stop under one is recorded at the track. Real F1 races: about 14.2 s against 21.9 s under green.
+    /// </summary>
+    public double SafetyCarPitLossFactor { get; init; } = 0.65;
 
-    /// <summary>Share of the pit-stop loss a stop under a virtual safety car costs.</summary>
-    public double VirtualSafetyCarPitLossFactor { get; init; } = 0.6;
+    /// <summary>The same for a virtual safety car. Real F1 races: about 18.1 s against 21.9 s.</summary>
+    public double VirtualSafetyCarPitLossFactor { get; init; } = 0.83;
 
     public static IReadOnlyDictionary<string, int> DefaultSets { get; } = new Dictionary<string, int> { ["Soft"] = 8, ["Medium"] = 3, ["Hard"] = 2 };
 }
@@ -116,6 +119,14 @@ public sealed record PlannerOptions
 /// </summary>
 public static class StrategyPlanner
 {
+    /// <summary>What a stop under a safety car costs at the track: as recorded there, else the share of a green stop.</summary>
+    public static double SafetyCarPitLoss(CompoundLibrary library, PlannerOptions options) =>
+        library.SafetyCarPitLossSeconds ?? library.PitLossSeconds * options.SafetyCarPitLossFactor;
+
+    /// <summary>The same for a virtual safety car.</summary>
+    public static double VirtualSafetyCarPitLoss(CompoundLibrary library, PlannerOptions options) =>
+        library.VirtualSafetyCarPitLossSeconds ?? library.PitLossSeconds * options.VirtualSafetyCarPitLossFactor;
+
     public static StrategyPlans Plan(CompoundLibrary library, int raceLaps, PlannerOptions? options = null)
     {
         options ??= new PlannerOptions();
@@ -173,7 +184,7 @@ public static class StrategyPlanner
                 var suffix = Suffix(stints, raceLaps, options.MinStintLaps);
                 if (Lengths(stints, suffix, raceLaps, options.MinStintLaps) is { } lengths)
                 {
-                    candidates.Add(Build(stints, lengths, suffix, raceLaps, library.PitLossSeconds, FuelAt, options));
+                    candidates.Add(Build(stints, lengths, suffix, raceLaps, library, FuelAt, options));
                 }
             }
         }
@@ -346,9 +357,12 @@ public static class StrategyPlanner
         return lengths;
     }
 
-    private static RacePlan Build(IReadOnlyList<StintSet> sets, int[] lengths, double[,] suffix, int raceLaps, double pitLoss,
+    private static RacePlan Build(IReadOnlyList<StintSet> sets, int[] lengths, double[,] suffix, int raceLaps, CompoundLibrary library,
         Func<int, double> fuelAt, PlannerOptions options)
     {
+        var pitLoss = library.PitLossSeconds;
+        var safetyCarSaving = Math.Max(0, pitLoss - SafetyCarPitLoss(library, options));
+        var virtualSafetyCarSaving = Math.Max(0, pitLoss - VirtualSafetyCarPitLoss(library, options));
         var stints = new List<PlannedStint>();
         var lap = 1;
         for (var i = 0; i < sets.Count; i++)
@@ -380,8 +394,8 @@ public static class StrategyPlanner
             stops.Add(new PlannedStop(inLap, first, last, before.Model.Compound, after.Model.Compound,
                 before.LapSeconds(lengths[i]) - after.LapSeconds(1))
             {
-                SafetyCar = SafetyCarWindow(sets, stints, suffix, i, raceLaps, pitLoss * (1 - options.SafetyCarPitLossFactor), options.MinStintLaps),
-                VirtualSafetyCar = SafetyCarWindow(sets, stints, suffix, i, raceLaps, pitLoss * (1 - options.VirtualSafetyCarPitLossFactor), options.MinStintLaps),
+                SafetyCar = SafetyCarWindow(sets, stints, suffix, i, raceLaps, safetyCarSaving, options.MinStintLaps),
+                VirtualSafetyCar = SafetyCarWindow(sets, stints, suffix, i, raceLaps, virtualSafetyCarSaving, options.MinStintLaps),
             });
         }
 

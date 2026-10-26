@@ -46,6 +46,7 @@ public sealed record EnergyLapRow(LapEnergy Energy, LapRecord? Lap, EnergyUnit U
         LapType.Pit => "PIT",
         LapType.SafetyCar => "SC",
         LapType.VirtualSafetyCar => "VSC",
+        LapType.RedFlag => "RED",
         _ => "",
     };
 }

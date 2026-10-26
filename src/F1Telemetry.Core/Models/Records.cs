@@ -9,6 +9,20 @@ public enum LapType
     Pit,
     SafetyCar,
     VirtualSafetyCar,
+
+    /// <summary>
+    /// A lap the race was stopped on or restarted from: the field goes to the pit lane, tyres can be changed for free and
+    /// the race restarts from the grid. Not a pit stop, and never a clean lap.
+    /// </summary>
+    RedFlag,
+}
+
+/// <summary>The strongest safety car out at any point of a lap.</summary>
+public enum Neutralisation
+{
+    None,
+    VirtualSafetyCar,
+    SafetyCar,
 }
 
 /// <summary>Summary of one lap: timing from the session-history packet plus engine-derived context.</summary>
@@ -35,6 +49,12 @@ public sealed record LapRecord
 
     public int? CarPosition { get; init; }
     public LapType LapType { get; init; } = LapType.Regular;
+
+    /// <summary>
+    /// The safety car out on this lap, whatever else the lap was: unlike <see cref="LapType"/>, a pit stop under a safety
+    /// car keeps it.
+    /// </summary>
+    public Neutralisation Neutralisation { get; init; }
 
     /// <summary>Time in the pit lane (entry to exit) of a visit that started on this lap; 0 = none or not recorded.</summary>
     public uint PitLaneTimeMs { get; init; }
