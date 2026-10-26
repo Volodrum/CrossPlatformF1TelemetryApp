@@ -38,7 +38,7 @@ public sealed record LapRowViewModel(
 {
     public string Label => $"L{Lap.LapNumber}";
     public string Compound => Lap.Compound;
-    public string TyreText => Lap.LapType == LapType.Regular ? $"{Lap.Compound.ToUpperInvariant()} {Lap.ActualCompound}" : Lap.LapType == LapType.Pit ? "PIT" : Lap.LapType == LapType.SafetyCar ? "SC" : "VSC";
+    public string TyreText => Lap.LapType == LapType.Regular ? $"{Lap.Compound.ToUpperInvariant()} {Lap.ActualCompound}" : Lap.LapType switch { LapType.Pit => "PIT", LapType.SafetyCar => "SC", LapType.RedFlag => "RED", _ => "VSC" };
     public IBrush TyreBrush => Lap.LapType == LapType.Regular ? Palette.TextMid : Palette.Slower;
 }
 

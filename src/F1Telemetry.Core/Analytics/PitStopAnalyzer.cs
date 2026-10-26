@@ -21,7 +21,8 @@ public sealed record PitStopAnalysis(
 /// Measures what each pit stop cost. A stop spans two laps (in-lap and out-lap), and both are slower for reasons beyond
 /// the pit lane itself (slowing for the entry, cold tyres), so the cost is the pair against clean laps. The clean-lap
 /// time for each comes from its stint's pace fit where there is one: the in-lap on the oldest tyres, the out-lap on
-/// fresh ones. Otherwise it is the median of the clean laps on that side of the stop.
+/// fresh ones. Otherwise it is the median of the clean laps on that side of the stop. A set changed under a red flag cost
+/// no stop and is left out.
 /// </summary>
 public static class PitStopAnalyzer
 {
@@ -36,7 +37,7 @@ public static class PitStopAnalyzer
         for (var i = 1; i < classifiedLaps.Count; i++)
         {
             var (inLap, outLap) = (classifiedLaps[i - 1], classifiedLaps[i]);
-            if (!LapClassifier.StintChanged(inLap, outLap) || outLap.LapNumber != inLap.LapNumber + 1 || !inLap.HasTime || !outLap.HasTime)
+            if (!LapClassifier.StintChanged(inLap, outLap) || LapClassifier.UnderRedFlag(inLap, outLap) || outLap.LapNumber != inLap.LapNumber + 1 || !inLap.HasTime || !outLap.HasTime)
             {
                 continue;
             }

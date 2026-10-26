@@ -34,7 +34,7 @@ public sealed record LapOption(RecordingInfo? Recording, LapRecord? Lap, string 
 
         if (lap.LapType != LapType.Regular)
         {
-            tags.Add(lap.LapType switch { LapType.Pit => "PIT", LapType.SafetyCar => "SC", _ => "VSC" });
+            tags.Add(lap.LapType switch { LapType.Pit => "PIT", LapType.SafetyCar => "SC", LapType.RedFlag => "RED", _ => "VSC" });
         }
 
         var time = lap.HasTime ? TimeFormat.Lap(lap.LapTimeMs) : "no time";

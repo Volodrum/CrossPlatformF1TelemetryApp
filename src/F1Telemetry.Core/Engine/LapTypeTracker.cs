@@ -5,8 +5,9 @@ using F1Telemetry.Protocol.Packets;
 namespace F1Telemetry.Core.Engine;
 
 /// <summary>
-/// Live classification of laps. States are sticky with priority PIT &gt; SC &gt; VSC &gt; REGULAR: once a lap
-/// has seen the pit lane or a safety car it keeps that label.
+/// Live classification of laps. States are sticky with priority RED FLAG &gt; PIT &gt; SC &gt; VSC &gt; REGULAR: once a
+/// lap has seen a red flag, the pit lane or a safety car it keeps that label. A red flag outranks the pit lane because
+/// the field drives into it when the race is stopped.
 /// </summary>
 public sealed class LapTypeTracker
 {
@@ -30,6 +31,8 @@ public sealed class LapTypeTracker
                 break;
         }
     }
+
+    public void OnRedFlag(int lap) => Promote(lap, LapType.RedFlag);
 
     public void OnPitStatus(int lap, PitStatus pitStatus)
     {
@@ -55,6 +58,7 @@ public sealed class LapTypeTracker
 
     private static int Priority(LapType type) => type switch
     {
+        LapType.RedFlag => 4,
         LapType.Pit => 3,
         LapType.SafetyCar => 2,
         LapType.VirtualSafetyCar => 1,

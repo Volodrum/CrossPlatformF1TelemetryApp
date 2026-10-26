@@ -9,6 +9,12 @@ public enum LapType
     Pit,
     SafetyCar,
     VirtualSafetyCar,
+
+    /// <summary>
+    /// A lap the race was stopped on or restarted from: the field goes to the pit lane, tyres can be changed for free and
+    /// the race restarts from the grid. Not a pit stop, and never a clean lap.
+    /// </summary>
+    RedFlag,
 }
 
 /// <summary>Summary of one lap: timing from the session-history packet plus engine-derived context.</summary>
