@@ -5,10 +5,28 @@
              x:Class="F1Telemetry.App.Views.StrategyView"
              x:DataType="vm:SessionViewModel">
   <!-- Design: Strategy.dc.html -->
-  <ScrollViewer Margin="0,16,0,0">
-    <StackPanel Spacing="16">
-      <controls:PageHeader Eyebrow="RACE STRATEGY" Title="{Binding Header}" Margin="0"
-                           Help="Stints come from the game's tyre history. Pit, safety-car and out-laps are excluded from every average. Pick a stint to see its tyre life, degradation and fuel; the fuel calculator uses the selected stint's rate." />
+  <DockPanel Margin="0,16,0,0">
+    <controls:PageHeader DockPanel.Dock="Top" Eyebrow="RACE STRATEGY" Title="{Binding Header}" Margin="0,0,8,12"
+                         Help="THIS SESSION: what happened. Stints come from the game's tyre history; pit, safety-car and out-laps are excluded from every average. Pick a stint to see its tyre life, degradation and fuel. RACE PLANS: what to do in the race, from every recording at this track. DATA GUIDE: what those plans rest on, and what to drive in practice, qualifying and the race to measure the rest." />
+
+    <!-- Pages: the session as it went, the plans for the race, and how to feed the plans -->
+    <Border DockPanel.Dock="Top" Classes="segmented" HorizontalAlignment="Left" Margin="0,0,0,12">
+      <StackPanel Orientation="Horizontal">
+        <Button Theme="{StaticResource ModeToggle}" Content="THIS SESSION" Classes.selected="{Binding IsSessionPage}"
+                Command="{Binding SetStrategyPageCommand}" CommandParameter="{x:Static vm:StrategyPage.Session}"
+                ToolTip.Tip="What happened: stints, tyre life, degradation, fuel, pit stops and positions" />
+        <Button Theme="{StaticResource ModeToggle}" Content="RACE PLANS" Classes.selected="{Binding IsPlansPage}"
+                Command="{Binding SetStrategyPageCommand}" CommandParameter="{x:Static vm:StrategyPage.Plans}"
+                ToolTip.Tip="What to do in the race: the track's compounds and the ranked 1-, 2- and 3-stop plans" />
+        <Button Theme="{StaticResource ModeToggle}" Content="DATA GUIDE" Classes.selected="{Binding IsGuidePage}"
+                Command="{Binding SetStrategyPageCommand}" CommandParameter="{x:Static vm:StrategyPage.Guide}"
+                ToolTip.Tip="What the plans rest on here, and what to drive to measure the rest" />
+      </StackPanel>
+    </Border>
+
+    <Panel>
+  <ScrollViewer IsVisible="{Binding IsSessionPage}">
+    <StackPanel Spacing="16" Margin="0,0,8,0">
 
       <Grid ColumnDefinitions="Auto,*" ColumnSpacing="16">
         <ListBox Classes="cards horizontal" ItemsSource="{Binding Stints}" SelectedItem="{Binding SelectedStint}">
@@ -169,6 +187,22 @@
         </StackPanel>
       </Border>
 
+    </StackPanel>
+  </ScrollViewer>
+
+  <ScrollViewer IsVisible="{Binding IsPlansPage}">
+    <StackPanel Spacing="16" Margin="0,0,8,0">
+      <!-- How much of what the plans use was measured here: one line, with the way to the guide -->
+      <Border Classes="raised" Padding="14,10" IsVisible="{Binding Plans.HasGuide}">
+        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="16">
+          <TextBlock Classes="label strong" Text="{Binding Plans.GuideScore}" VerticalAlignment="Center" />
+          <TextBlock Grid.Column="1" Classes="body" FontSize="14" Text="{Binding Plans.GuideNext}" VerticalAlignment="Center"
+                     TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Plans.GuideNext}" />
+          <Button Grid.Column="2" Theme="{StaticResource SecondaryButton}" Content="DATA GUIDE" Command="{Binding SetStrategyPageCommand}"
+                  CommandParameter="{x:Static vm:StrategyPage.Guide}" VerticalAlignment="Center" />
+        </Grid>
+      </Border>
+
       <!-- Strategy optimiser: the track's compound library from every recording, and the race plans it gives -->
       <Border Classes="panel" Padding="18" DataContext="{Binding Plans}" x:DataType="vm:RacePlansViewModel">
         <StackPanel Spacing="16">
@@ -316,4 +350,89 @@
       </Border>
     </StackPanel>
   </ScrollViewer>
+
+  <!-- Data guide: every figure the plans use, measured here or assumed, and the run that measures it -->
+  <ScrollViewer IsVisible="{Binding IsGuidePage}">
+    <StackPanel Spacing="16" Margin="0,0,8,0" DataContext="{Binding Plans}" x:DataType="vm:RacePlansViewModel">
+      <TextBlock Classes="body" Text="Select a recording to see what the plans know at its track." IsVisible="{Binding !HasGuide}" />
+
+      <Border Classes="panel" Padding="18" IsVisible="{Binding HasGuide}">
+        <StackPanel Spacing="10">
+          <Grid ColumnDefinitions="Auto,*" ColumnSpacing="16">
+            <TextBlock Classes="label strong" FontSize="14" Text="{Binding GuideScore}" VerticalAlignment="Center" />
+            <ProgressBar Grid.Column="1" Classes="bar" Minimum="0" Maximum="1" Value="{Binding GuideProgress}" Foreground="{StaticResource FasterBrush}"
+                         MaxWidth="420" HorizontalAlignment="Left" MinWidth="240" VerticalAlignment="Center" />
+          </Grid>
+          <TextBlock Classes="body" Foreground="{StaticResource TextHiBrush}" Text="{Binding GuideNext}" />
+        </StackPanel>
+      </Border>
+
+      <Border Classes="panel" Padding="18" IsVisible="{Binding HasGuide}">
+        <StackPanel Spacing="4">
+          <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,0,0,8">
+            <TextBlock Classes="label strong" Text="WHAT THE RACE PLANS REST ON · MOST IMPORTANT FIRST" VerticalAlignment="Center" />
+            <controls:HelpTip Width="18" Height="18"
+                              Text="MEASURED: taken from laps recorded at this track. THIN: recorded, but more of it steadies the figure. TO DO: nothing recorded, so the plans use a default or leave the compound out. OPTIONAL: can't be set up on purpose, and isn't counted. Every recording at this track in this game format counts, whatever the session." />
+          </StackPanel>
+          <ItemsControl ItemsSource="{Binding Guide}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:GuideRowViewModel">
+                <Border BorderBrush="{StaticResource DividerBrush}" BorderThickness="0,1,0,0" Padding="0,12">
+                  <Grid ColumnDefinitions="130,290,*,110" ColumnSpacing="16">
+                    <Border Height="28" CornerRadius="5" BorderThickness="2" Padding="10,0" HorizontalAlignment="Left" VerticalAlignment="Top"
+                            Background="{Binding StateBackground}" BorderBrush="{Binding StateBorder}">
+                      <TextBlock Text="{Binding State}" FontFamily="{StaticResource DisplayFont}" FontSize="13" FontWeight="Bold" LetterSpacing="1.2"
+                                 Foreground="{Binding StateForeground}" VerticalAlignment="Center" />
+                    </Border>
+                    <StackPanel Grid.Column="1" Spacing="3">
+                      <TextBlock Classes="h2" FontSize="15" Text="{Binding Title}" TextWrapping="Wrap" />
+                      <TextBlock Classes="mono" FontSize="13" Foreground="{StaticResource TextMidBrush}" Text="{Binding Have}" TextWrapping="Wrap" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="2" Spacing="4">
+                      <TextBlock Classes="body" Foreground="{StaticResource TextHiBrush}" Text="{Binding Do}" IsVisible="{Binding HasDo}" />
+                      <TextBlock Classes="muted" FontSize="13" Text="{Binding Why}" TextWrapping="Wrap" />
+                    </StackPanel>
+                    <TextBlock Grid.Column="3" Classes="label" Text="{Binding Session}" HorizontalAlignment="Right" />
+                  </Grid>
+                </Border>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
+      </Border>
+
+      <!-- The same, turned round: what to do in the session you are about to drive -->
+      <ItemsControl ItemsSource="{Binding Playbooks}" IsVisible="{Binding HasGuide}">
+        <ItemsControl.ItemsPanel>
+          <ItemsPanelTemplate>
+            <UniformGrid Columns="3" />
+          </ItemsPanelTemplate>
+        </ItemsControl.ItemsPanel>
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="vm:PlaybookViewModel">
+            <Border Classes="panel" Padding="18" Margin="0,0,12,0">
+              <StackPanel Spacing="10">
+                <StackPanel Spacing="2">
+                  <TextBlock Classes="label strong" FontSize="14" Text="{Binding Session}" />
+                  <TextBlock Classes="h2" Text="{Binding Goal}" TextWrapping="Wrap" />
+                </StackPanel>
+                <ItemsControl ItemsSource="{Binding Steps}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="x:String">
+                      <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10" Margin="0,0,0,8">
+                        <Border Width="6" Height="6" CornerRadius="3" Background="{StaticResource BrandBrush}" VerticalAlignment="Top" Margin="0,8,0,0" />
+                        <TextBlock Grid.Column="1" Classes="body" FontSize="14" Text="{Binding}" />
+                      </Grid>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </StackPanel>
+            </Border>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </StackPanel>
+  </ScrollViewer>
+    </Panel>
+  </DockPanel>
 </UserControl>

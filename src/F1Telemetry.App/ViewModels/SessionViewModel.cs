@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using Avalonia.Media;
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 using F1Telemetry.App.Services;
 using F1Telemetry.Core.Analytics;
 using F1Telemetry.Core.Formatting;
@@ -14,7 +15,7 @@ public sealed partial class RecordingItemViewModel(RecordingInfo info) : Observa
     public RecordingInfo Info { get; private set; } = info;
 
     public string Title => $"{Info.TrackName} · {SessionTypes.Name(Info.SessionType)}";
-    public string Subtitle => $"#{Info.Id} · {(Info.Format == Protocol.GameFormat.F1_26 ? "F1 26" : "F1 25")} · {Info.StartTime.LocalDateTime:g}";
+    public string Subtitle => $"#{Info.Id} · {Core.Games.GameCatalog.FormatName(Info.Format)} · {Info.StartTime.LocalDateTime:g}";
     public bool IsLive => Info.EndTime is null;
     public string Description => Info.Description;
 
@@ -90,10 +91,38 @@ public sealed record StintViewModel(StintAnalysis Stint, IReadOnlyList<LapBar> B
     public string FuelNote => HasData ? $"{Stint.TotalFuelUsed:0.0} kg used on clean laps this stint" : "-";
 }
 
+/// <summary>The strategy tab's pages.</summary>
+public enum StrategyPage
+{
+    /// <summary>What happened in this session: stints, pit stops, positions, the fuel calculator.</summary>
+    Session,
+
+    /// <summary>What to do in the race: the track's compound library and the ranked plans.</summary>
+    Plans,
+
+    /// <summary>What the plans rest on at this track, and what to drive to measure the rest.</summary>
+    Guide,
+}
+
 /// <summary>Laps list, race-strategy post-mortem and position history for one recording (live or stored).</summary>
 public sealed partial class SessionViewModel(TelemetryRuntime runtime, SettingsService settings) : ObservableObject
 {
     private CancellationTokenSource? _loadCts;
+
+    [ObservableProperty] public partial StrategyPage StrategyPage { get; set; }
+    public bool IsSessionPage => StrategyPage == StrategyPage.Session;
+    public bool IsPlansPage => StrategyPage == StrategyPage.Plans;
+    public bool IsGuidePage => StrategyPage == StrategyPage.Guide;
+
+    partial void OnStrategyPageChanged(StrategyPage value)
+    {
+        OnPropertyChanged(nameof(IsSessionPage));
+        OnPropertyChanged(nameof(IsPlansPage));
+        OnPropertyChanged(nameof(IsGuidePage));
+    }
+
+    [RelayCommand]
+    private void SetStrategyPage(StrategyPage page) => StrategyPage = page;
 
     [ObservableProperty] public partial RecordingInfo? Recording { get; set; }
     [ObservableProperty] public partial string Header { get; set; } = "Select a recording";

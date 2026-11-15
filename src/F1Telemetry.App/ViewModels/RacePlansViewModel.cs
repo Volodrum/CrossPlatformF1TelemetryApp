@@ -92,6 +92,48 @@ public sealed record PlanRowViewModel(int Rank, RacePlan Plan, IReadOnlyList<Pla
     }
 }
 
+/// <summary>One line of the data guide: something the plans rest on, and how to measure it.</summary>
+public sealed record GuideRowViewModel(GuideItem Item)
+{
+    public string Title => Item.Title.ToUpperInvariant();
+    public string Have => Item.Have;
+    public string Do => Item.Do;
+    public bool HasDo => Item.Do.Length > 0;
+    public string Why => Item.Why;
+
+    public string State => Item switch
+    {
+        { State: GuideState.Done } => "MEASURED",
+        { Optional: true } => "OPTIONAL",
+        { State: GuideState.Partial } => "THIN",
+        _ => "TO DO",
+    };
+
+    /// <summary>Filled when measured, outlined otherwise: the state reads without relying on the colour.</summary>
+    public IBrush StateBackground => Item.State == GuideState.Done ? Palette.Faster : Palette.Transparent;
+
+    public IBrush StateBorder => Item switch
+    {
+        { State: GuideState.Done } => Palette.Faster,
+        { Optional: true } => Palette.LineStrong,
+        { State: GuideState.Partial } => Palette.Slower,
+        _ => Palette.Danger,
+    };
+
+    public IBrush StateForeground => Item switch
+    {
+        { State: GuideState.Done } => Palette.OnColor,
+        { Optional: true } => Palette.TextMid,
+        { State: GuideState.Partial } => Palette.Slower,
+        _ => Palette.Danger,
+    };
+
+    public string Session => Item.Session.ToString().ToUpperInvariant();
+}
+
+/// <summary>What to do in one kind of session: the open items measured there, then what always applies.</summary>
+public sealed record PlaybookViewModel(string Session, string Goal, IReadOnlyList<string> Steps);
+
 /// <summary>A choice of the set the race starts on.</summary>
 /// <param name="Set">The set; null lets the plan pick a new one.</param>
 /// <param name="ManualWear">The wear is typed in (<see cref="RacePlansViewModel.StartWear"/>), not read from the game.</param>
@@ -120,7 +162,25 @@ public sealed partial class RacePlansViewModel(TelemetryRuntime runtime, Setting
     private DateTime _loadedAt;
     private int _version;
 
+    /// <summary>Set while a load fills several inputs at once, so the plans are built once at its end.</summary>
+    private bool _replanHeld;
+
     [ObservableProperty] public partial string Context { get; set; } = "RACE PLANS";
+
+    /// <summary>"5 OF 7 MEASURED": how much of what the plans rest on was measured at this track.</summary>
+    [ObservableProperty] public partial string GuideScore { get; set; } = "";
+
+    /// <summary>Share of the guide's items that are measured, 0–1.</summary>
+    [ObservableProperty] public partial double GuideProgress { get; set; }
+
+    /// <summary>The most valuable run still to do, or that everything is measured.</summary>
+    [ObservableProperty] public partial string GuideNext { get; set; } = "";
+
+    [ObservableProperty] public partial bool HasGuide { get; set; }
+
+    public ObservableCollection<GuideRowViewModel> Guide { get; } = [];
+
+    public ObservableCollection<PlaybookViewModel> Playbooks { get; } = [];
     [ObservableProperty] public partial int RaceLaps { get; set; } = 20;
     [ObservableProperty] public partial string Basis { get; set; } = "";
     [ObservableProperty] public partial string Problem { get; set; } = "";
@@ -209,10 +269,14 @@ public sealed partial class RacePlansViewModel(TelemetryRuntime runtime, Setting
         _loadedFor = null;
         Compounds.Clear();
         Plans.Clear();
-        HasLibrary = HasPlans = HasGameSets = false;
+        HasLibrary = HasPlans = HasGameSets = HasGuide = false;
         GameSets = "";
         StartChoices.Clear();
         PlanChart = null;
+        Guide.Clear();
+        Playbooks.Clear();
+        GuideScore = GuideNext = "";
+        GuideProgress = 0;
     }
 
     /// <summary>
@@ -234,18 +298,22 @@ public sealed partial class RacePlansViewModel(TelemetryRuntime runtime, Setting
         _loadedAt = DateTime.UtcNow;
         try
         {
-            var library = await runtime.Analysis.BuildCompoundLibraryAsync(recording);
+            var knowledge = await runtime.Analysis.BuildTrackKnowledgeAsync(recording.Format, recording.TrackId, recording.Id);
+            var library = knowledge.Library;
             var snapshots = await runtime.Store.GetTyreSetsAsync(recording.Id);
             if (version != _version)
             {
                 return;
             }
 
+            // Every input below would build the plans again as it is set: hold that until they are all in.
+            _replanHeld = true;
             _library = library;
             _gameSets = RaceTyreSets.ForPlanning(snapshots, recording.SessionType);
             _gameSetsFromRace = SessionTypes.IsRace(recording.SessionType);
             LoadGameSets(firstLoad);
-            Context = ($"RACE PLANS · {recording.TrackName} · {(recording.Format == GameFormat.F1_26 ? "F1 26" : "F1 25")} · "
+            LoadGuide(knowledge.Guide, recording.TrackName);
+            Context = ($"RACE PLANS · {recording.TrackName} · {Core.Games.GameCatalog.FormatName(recording.Format)} · "
                        + $"FROM {library.Sessions} {(library.Sessions == 1 ? "SESSION" : "SESSIONS")} AT THIS TRACK").ToUpperInvariant();
             var fastest = library.Compounds.Where(c => c.IsDry).Select(c => c.BaseLapSeconds).DefaultIfEmpty(0).Min();
             Compounds.Clear();
@@ -271,6 +339,7 @@ public sealed partial class RacePlansViewModel(TelemetryRuntime runtime, Setting
                 RaceLaps = Math.Max(6, library.RaceLaps ?? sessionLaps);
             }
 
+            _replanHeld = false;
             Replan();
         }
         catch (Exception ex)
@@ -278,6 +347,42 @@ public sealed partial class RacePlansViewModel(TelemetryRuntime runtime, Setting
             Problem = $"Could not build the compound library: {ex.Message}";
             HasPlans = false;
         }
+        finally
+        {
+            _replanHeld = false;
+        }
+    }
+
+    /// <summary>The data guide: the checklist, its score, and what to do in each kind of session.</summary>
+    private void LoadGuide(DataGuide guide, string trackName)
+    {
+        Guide.Clear();
+        foreach (var item in guide.Items)
+        {
+            Guide.Add(new GuideRowViewModel(item));
+        }
+
+        HasGuide = Guide.Count > 0;
+        GuideScore = $"{guide.Done} OF {guide.Total} MEASURED AT {trackName.ToUpperInvariant()}";
+        GuideProgress = guide.Total > 0 ? (double)guide.Done / guide.Total : 0;
+        GuideNext = guide.Next is { } next
+            ? $"Next: {next.Title.ToLowerInvariant()} ({next.Session.ToString().ToLowerInvariant()}). {next.Do}"
+            : "Everything the plans use is measured here. More clean laps still steady the figures.";
+
+        IReadOnlyList<string> Open(GuideSession session, params string[] always) =>
+            [.. guide.Items.Where(i => i.Session == session && !i.Optional && i.State != GuideState.Done).Select(i => i.Do), .. always];
+
+        Playbooks.Clear();
+        Playbooks.Add(new PlaybookViewModel("PRACTICE", "Where the plans are built: tyres and fuel.", Open(GuideSession.Practice,
+            "Record the whole session: laps on any compound add to its pace here.",
+            "Laps more than 3 s off a stint's median are dropped as traffic or a mistake, so a tidy run counts for more than a fast one.")));
+        Playbooks.Add(new PlaybookViewModel("QUALIFYING", "The start set and a reference lap.", Open(GuideSession.Qualifying,
+            "Keep recording through qualifying: the game's tyre sets (which are used, and how worn) carry into the race plan's START ON.",
+            "A clean push lap gives the ERS plan a qualifying lap to work from, and the lap compare a reference.")));
+        Playbooks.Add(new PlaybookViewModel("RACE", "The stop itself, and the check on the plan.", Open(GuideSession.Race,
+            "Record from the grid to the flag: the stops, the safety-car laps and the final lap are all measured.",
+            "If a safety car comes out inside a stop's SC window on the plan, pitting under it is the faster race.",
+            "Afterwards, COMPARE the race with an earlier one at the track to see where the time went.")));
     }
 
     /// <summary>
@@ -328,7 +433,7 @@ public sealed partial class RacePlansViewModel(TelemetryRuntime runtime, Setting
 
     private void Replan()
     {
-        if (_library is not { } library)
+        if (_replanHeld || _library is not { } library)
         {
             return;
         }

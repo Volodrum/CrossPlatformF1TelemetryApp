@@ -216,7 +216,8 @@ The UI implements the "F1 Telemetry Design Template": a dark, high-contrast race
 - **Tokens:** `src/F1Telemetry.App/Theme/Tokens.axaml` holds colours, fonts and radii. `ViewModels/Palette.cs` mirrors the status colours for code. On the panel background, live values reach 17.3:1 contrast, secondary text 11.4:1, labels 6.3:1 and every status colour at least 6:1.
 - **Type:** JetBrains Mono for every number, Chakra Petch for labels and headings, IBM Plex Sans for body text. All three are embedded (`Assets/Fonts`, SIL OFL). Numbers are 18 px or larger, and each overlay has one headline number of 56 px or larger.
 - **Status is never colour alone:** filled purple = session best, filled green = faster, amber outline = slower, filled red = warning. Deltas carry ▲/▼ and compounds carry a letter (`CompoundBadge`). The shared `Chip` model and template (`App.axaml`) render the same way on overlays, the laps table and lap detail.
-- **Navigation:** a rail on the left picks what you are doing: **LIVE** (the car now), **SESSION** (one recording), **COMPARE** (**RACES**: race vs race; **LAPS**: any lap against any lap on the same track), **SETUPS** (the library) and **OVERLAYS** (the HUD over the game). Only SESSION follows the recordings sidebar, and only SESSION shows it. It has three tabs: **LAPS** (click a lap to open its telemetry in place; ← ALL LAPS goes back), **STRATEGY** (stints, pit stops, position history, the fuel calculator and race plans) and **ENERGY** (pages SESSION, ERS PLAN and CAR MODEL). Settings (**CONTROLS**, **TELEMETRY & STRATEGY**, **DATA** and **UPDATES**) is a page of its own behind the gear button in the toolbar. Starting a recording never changes the page.
+- **Navigation:** a rail on the left, top to bottom in the order you use it. At the top, the **GAME** the app is set up for (see *Games* below). Then drive: **LIVE** (the car now). Review: **SESSION** (one recording) and **COMPARE** (**RACES**: race vs race; **LAPS**: any lap against any lap on the same track). Prepare: **SETUPS** (the library) and **OVERLAYS** (the HUD over the game). **SETTINGS** (**CONTROLS**, **TELEMETRY & STRATEGY**, **DATA** and **UPDATES**) sits at the foot of the rail. Only SESSION follows the recordings sidebar, and only SESSION shows it. It has three tabs: **LAPS** (click a lap to open its telemetry in place; ← ALL LAPS goes back), **STRATEGY** (pages **THIS SESSION**, **RACE PLANS** and **DATA GUIDE**) and **ENERGY** (pages SESSION, ERS PLAN and CAR MODEL). Starting a recording never changes the page.
+- **Games:** everything that differs between games hangs off one entry in `GameCatalog` (`Core/Games`): its name, its telemetry modes (for F1 the toolbar's F1 25 / F1 26 switch) and the features its telemetry carries (`GameFeatures`: tyre compounds, ERS, setups, a timing feed, damage, a forecast). Pages and tabs built on a feature show only for games that have it, and the recordings sidebar lists the current game's recordings. F1 25 is supported; Le Mans Ultimate and Assetto Corsa Competizione are listed in the rail's game picker as planned. Adding one means its catalog entry, a packet source and an engine for its telemetry (`TelemetryRuntime.Game` is where they plug in), not changes to each page.
 - **Pages:** every page opens with the same header: a context line, the title, and the page's own switches on the right. Explanations sit behind an ⓘ next to the context line (tooltip) instead of taking page space. Every comparison picks its two sides in the same A / B bar (`CompareBar`), with each side's tag in its trace colour.
 - **Controls:** `Theme/Controls.axaml` defines the primary and secondary buttons, the navigation rail, the segmented mode toggle, section and segment tabs, card lists and text roles (`label`, `h1`, `data-xl`…`data-s`). Strokes are 2 px or thicker and targets 44 px or larger.
 - **ERS deploy modes:** one blue ramp, lighter for more power (None `#3A404C`, Medium `#1F6FB2`, Hotlap `#4DB5FF`, Overtake `#B5E2FF`), always with the mode letter N/M/H/O. It is kept apart from the status colours, so a mode never reads as good or bad.
@@ -250,7 +251,7 @@ Within one stint the two effects can't be told apart, because fuel falls in step
 
 The fits need a few clean laps per stint: with only two or three, wear rates are noisy.
 
-**Race plans (strategy optimiser).** At the bottom of the STRATEGY tab, every recording at the session's track in the same game format, practice included, builds a **compound library** (`CompoundLibraryBuilder`):
+**Race plans (strategy optimiser).** On the STRATEGY tab's **RACE PLANS** page, every recording at the session's track in the same game format, practice included, builds a **compound library** (`CompoundLibraryBuilder`):
 
 - each clean lap is fuel-corrected with one fuel effect for the whole library (the median of the sessions that measured it, else 0.03 s/kg) and fitted as *lap = compound pace + session offset + degradation × tyre age*;
 - the **degradation** is the slope within each stint, pooled over the compound's stints, so a session that was quicker overall doesn't tilt it (never below 0; a compound with no stint long enough borrows the others' mean and says so);
@@ -275,6 +276,19 @@ For each mix of sets, dynamic programming over the laps picks the stint lengths 
 A chart under the list plots the three best plans' predicted lap times with their stints and stops on a timeline. A stint's cost depends on its set and its length, not on the lap it starts on, so the order of the stints doesn't change the time: plans are shown softest first, after the start set when there is one. Wet compounds stay in the library but out of the dry plans.
 
 ![Race plans](docs/screenshots/18-race-plans.png)
+
+**Data guide: what to drive to make the plans better.** The plans are only as good as what was recorded at the track, and most of it is measured best in practice. The STRATEGY tab's **DATA GUIDE** page (`DataGuideBuilder`) lists every figure the plans rest on, most important first, as **MEASURED**, **THIN** (recorded, but more steadies it) or **TO DO** (a default is used, or the compound is left out), with what is recorded now, the run that measures it and what the plans do without it:
+
+- a **long run on each dry compound**: 3+ clean laps to be planned with at all, a run of 6+ in a row to show its degradation;
+- **two compounds in one session**, so the day's conditions come out of the gap between them;
+- the **fuel effect**: the same compound in two stints at different fuel loads in one session, else 0.03 s/kg is assumed;
+- the **tyre cliff**: 3+ clean laps with a set past 60 % wear, else 0.2 s per lap past it is assumed;
+- the **pit-stop loss**: a race with a green stop, else 22 s;
+- a stop under a **safety car** (optional: it can't be set up, and isn't counted).
+
+A score ("3 OF 7 MEASURED AT MONZA") and the next thing to do head the page and the RACE PLANS page. Under the list, three cards turn it round per session: what to do in **practice**, **qualifying** and the **race**. The LIVE page shows the next open item for the kind of session being driven (on the map, "FOR THE RACE PLANS · …"), and checks again after each recorded lap.
+
+**Speed.** A finished recording never changes, so its laps and analysis are read once and kept (`SessionAnalysisService`); a live one is read afresh. The library reads every recording at the track, so after the first build it takes about 1–2 ms instead of 55–105 ms for six races, and a race comparison about 6 ms instead of 26. Loading a recording also builds its plans once, not once per input it fills in.
 
 ## Energy analysis
 
@@ -324,6 +338,10 @@ The game can't load a setup from outside: its setups live in the encrypted, sign
 ## Overlays
 
 There are eight HUD windows: **lap timing**, **lap/sector delta**, **proximity radar**, **conditions & strategy**, **input trace**, **sector box**, **timing tower** and **ERS plan**. Each can be set to *Always*, *Session* (only while recording) or *Never*. The sector box and timing tower, plus the damage page, are meant to replace the game's own HUD.
+
+The **proximity radar** has two styles, picked on the Overlays page. **SPOTTER BARS** (default) draws nothing in the middle, so the road stays visible without fading the overlay: a bar appears on a side only while a car is there, its whole bar tinted amber while the car comes alongside and red with a glow once the cars overlap. The car is a block that moves along the bar (between the two ticks = beside you, from 12 m ahead to 12 m behind), and a strip at the bottom shows a car in line right behind. Colour at the edge of vision is what the bars are made for: a side lights up rather than a picture to read (`Spotter`). A car in line ahead is left out; it is on screen. **CLASSIC DISC** is the top-down disc with every car within 25 m. Switching keeps the overlay centred where it was, and settings from before the bars move to them centred on the old disc.
+
+![Radar styles](docs/screenshots/19-radar.png)
 
 The **sector box** (top right by default) works like the TV qualifying graphic. It shows your position, team colour and the reference lap, then three colour-only sector bars: purple = fastest of anyone this session, green = your personal best, yellow = slower. The live sector fills as you drive through it, using the session's sector boundaries. Below the bars is the lap time. For 4 s after each split, that sector's time replaces it, in the same large type, with the cumulative gap to the reference lap at that split in coloured text (green ahead, amber behind). The reference is the session's fastest lap (P1) or your personal best, chosen on the Overlays page. Colours and gaps are fixed when you cross the split. A finished lap is held for 4 s, with the lap time filled in its colour and the lap gap beside it (purple when it beats the session best). An invalid lap turns grey with a red strike-through.
 
@@ -377,4 +395,5 @@ Switch on **PREVIEW OVERLAYS** at the top of the **OVERLAYS** page (in the rail)
 - Race plans: an extra stop for fresh tyres under a late safety car, and the laps behind it at safety-car pace.
 - A safety-car overlay that shows only while a real SC or VSC is out: box or stay out, from the race plan, the tyres' wear and the car's damage, with the stop costs recorded at the track (or the defaults until there are some).
 - A first signed and notarised release, once the repository has the certificates (the workflow steps have only run unsigned so far).
+- Le Mans Ultimate and Assetto Corsa Competizione: a shared-memory packet source and engine for each, behind the game picker.
 - Checking click-through overlays on real macOS and X11 machines (only Windows has been run so far).

@@ -3,6 +3,7 @@ using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using F1Telemetry.App.Services;
+using F1Telemetry.Core.Games;
 using F1Telemetry.Core.Recording;
 using F1Telemetry.Protocol;
 using Microsoft.Extensions.Logging;
@@ -10,6 +11,38 @@ using Microsoft.Extensions.Logging;
 namespace F1Telemetry.App.ViewModels;
 
 public sealed record SourceOption(SourceKind Kind, string Label);
+
+/// <summary>A game in the rail's game picker. A planned game is listed but can't be picked yet.</summary>
+public sealed partial class GameOptionViewModel(GameInfo game, Action<GameInfo> select) : ObservableObject
+{
+    public GameInfo Game { get; } = game;
+    public string Name => Game.Name;
+    public string ShortName => Game.ShortName;
+    public string Detail => Game.Detail;
+    public bool IsSupported => Game.Supported;
+    public string Status => Game.Supported ? Game.Connection.ToUpperInvariant() : "PLANNED";
+
+    [ObservableProperty] public partial bool IsSelected { get; set; }
+
+    [RelayCommand]
+    private void Select() => select(Game);
+}
+
+/// <summary>A telemetry mode of the current game in the toolbar (for F1: the UDP format, F1 25 or F1 26).</summary>
+public sealed partial class ModeOptionViewModel(GameMode mode, Func<GameFormat, Task> select) : ObservableObject
+{
+    public string Label => mode.Label;
+    public GameFormat Format => mode.Format;
+
+    [ObservableProperty] public partial bool IsSelected { get; set; }
+
+    /// <summary>
+    /// Explicit click only. (A two-way bound RadioButton group flips the mode when a radio receives focus on
+    /// window activation, which silently switched modes in testing.)
+    /// </summary>
+    [RelayCommand]
+    private Task SelectAsync() => select(Format);
+}
 
 /// <summary>
 /// Every place the main window can show. <see cref="MainSection"/> (the rail) and the sub-tabs are derived from it;
@@ -91,6 +124,8 @@ public sealed partial class MainWindowViewModel : ObservableObject
             new(SourceKind.Replay, "Replay .f1rec file…"),
         ];
         _selectedSource = Sources.FirstOrDefault(s => s.Kind == runtime.ActiveSourceKind);
+        Games = [.. GameCatalog.All.Select(g => new GameOptionViewModel(g, SelectGame))];
+        ApplyGame();
 
         session.LapOpened += async (recording, lap, reference) =>
         {
@@ -111,11 +146,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
         hotkeys.ErsPlanPressed += ersPlan.NextMode;
         gamepads.ErsPlanPressed += ersPlan.NextMode;
         overlays.StateChanged += () => OnPropertyChanged(nameof(OverlaysEnabled));
-        runtime.ModeChanged += _ => Dispatcher.UIThread.Post(() =>
-        {
-            OnPropertyChanged(nameof(IsF125Mode));
-            OnPropertyChanged(nameof(IsF126Mode));
-        });
+        runtime.ModeChanged += _ => Dispatcher.UIThread.Post(MarkSelectedMode);
         runtime.Pipeline.SourceChanged += _ => Dispatcher.UIThread.Post(RestoreSourceSelection);
         runtime.Store.WriteFailed += ex => Dispatcher.UIThread.Post(() =>
             StatusMessage = $"Telemetry could not be saved: {ex.Message} (details in the log)");
@@ -176,21 +207,84 @@ public sealed partial class MainWindowViewModel : ObservableObject
         }
     }
 
-    /// <summary>Telemetry mode "F1 25" (UDP format 2025). Read-only: the mode changes only via <see cref="SetModeCommand"/>.</summary>
-    public bool IsF125Mode => _runtime.Mode == GameFormat.F1_25;
+    /// <summary>Every game the app knows, for the rail's picker: the supported ones and the planned ones.</summary>
+    public IReadOnlyList<GameOptionViewModel> Games { get; }
 
-    /// <summary>Telemetry mode "F1 26" (2026 Season Pack, UDP format 2026).</summary>
-    public bool IsF126Mode => _runtime.Mode == GameFormat.F1_26;
+    /// <summary>The game everything on screen is about.</summary>
+    public GameInfo Game => _runtime.Game;
 
-    /// <summary>
-    /// Explicit click only. (A two-way bound RadioButton group flips the mode when a radio receives focus on
-    /// window activation, which silently switched modes in testing.)
-    /// </summary>
-    [RelayCommand]
+    public string GameShortName => Game.ShortName;
+    public string GameTip => $"Game: {Game.Name}. Click to see the games.";
+
+    /// <summary>The current game's telemetry modes (F1: F1 25 / F1 26), shown in the toolbar when there is a choice.</summary>
+    public ObservableCollection<ModeOptionViewModel> Modes { get; } = [];
+
+    public bool HasModes => Modes.Count > 1;
+
+    // Pages that exist only for games whose telemetry carries what they are built on.
+    public bool HasEnergy => Game.Has(GameFeatures.Ers);
+    public bool HasSetups => Game.Has(GameFeatures.Setups);
+
+    private void SelectGame(GameInfo game)
+    {
+        if (!_runtime.SetGame(game.Id))
+        {
+            StatusMessage = $"{game.Name} isn't supported yet: it is planned. The app stays on {Game.Name}.";
+            return;
+        }
+
+        ApplyGame();
+        StatusMessage = $"Game: {Game.Name} ({Game.Connection}).";
+        _ = RefreshRecordingsAsync();
+    }
+
+    /// <summary>Brings the picker, the toolbar's modes and the game's pages in line with the current game.</summary>
+    private void ApplyGame()
+    {
+        foreach (var option in Games)
+        {
+            option.IsSelected = option.Game.Id == Game.Id;
+        }
+
+        Modes.Clear();
+        foreach (var mode in Game.Modes)
+        {
+            Modes.Add(new ModeOptionViewModel(mode, SetModeAsync));
+        }
+
+        MarkSelectedMode();
+
+        // A page the new game doesn't have can't stay on screen.
+        if (!HasEnergy && _lastSessionTab == MainTab.Energy)
+        {
+            _lastSessionTab = MainTab.Laps;
+        }
+
+        if ((!HasSetups && SelectedTab == MainTab.Setups) || (!HasEnergy && SelectedTab == MainTab.Energy))
+        {
+            SelectedTab = MainTab.Live;
+        }
+
+        OnPropertyChanged(nameof(Game));
+        OnPropertyChanged(nameof(GameShortName));
+        OnPropertyChanged(nameof(GameTip));
+        OnPropertyChanged(nameof(HasModes));
+        OnPropertyChanged(nameof(HasEnergy));
+        OnPropertyChanged(nameof(HasSetups));
+    }
+
+    private void MarkSelectedMode()
+    {
+        foreach (var mode in Modes)
+        {
+            mode.IsSelected = mode.Format == _runtime.Mode;
+        }
+    }
+
     private async Task SetModeAsync(GameFormat mode)
     {
         await _runtime.SetModeAsync(mode);
-        StatusMessage = $"Telemetry mode: {(mode == GameFormat.F1_26 ? "F1 26" : "F1 25")}. Set the same UDP Format in the game (Settings → Telemetry).";
+        StatusMessage = $"Telemetry mode: {GameCatalog.FormatName(mode)}. Set the same UDP Format in the game (Settings → Telemetry).";
     }
 
     public string RecordButtonText => IsRecording ? "■  STOP RECORDING" : "●  START RECORDING";
@@ -426,7 +520,8 @@ public sealed partial class MainWindowViewModel : ObservableObject
         var recordings = await _runtime.Store.GetRecordingsAsync();
         var selectedId = select ?? SelectedRecording?.Info.Id;
         Recordings.Clear();
-        foreach (var recording in recordings)
+        // The sidebar lists the current game's recordings: a session, a comparison or a setup never mixes games.
+        foreach (var recording in recordings.Where(r => GameCatalog.ForFormat(r.Format).Id == Game.Id))
         {
             Recordings.Add(new RecordingItemViewModel(recording));
         }

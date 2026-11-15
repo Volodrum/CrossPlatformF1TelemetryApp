@@ -4,7 +4,9 @@ using Avalonia.Media;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using F1Telemetry.App.Services;
+using F1Telemetry.Core.Analytics;
 using F1Telemetry.Core.Formatting;
+using F1Telemetry.Core.Games;
 using F1Telemetry.Core.Models;
 using F1Telemetry.Core.Recording;
 using F1Telemetry.Core.Tracks;
@@ -45,9 +47,19 @@ public sealed partial class LiveViewModel : ObservableObject
         _statsTimer.Start();
         hub.SessionChanged += s =>
         {
-            Session = $"{s.TrackName} · {s.SessionTypeName} · {(s.Format == GameFormat.F1_26 ? "F1 26" : "F1 25")}";
+            Session = $"{s.TrackName} · {s.SessionTypeName} · {GameCatalog.FormatName(s.Format)}";
+            _ = UpdateGuideAsync(s);
             TotalLaps = s.TotalLaps > 0 ? $"/{s.TotalLaps}" : "";
             Outline = runtime.Tracks.ForTrackId(s.TrackId);
+        };
+
+        // A recorded lap can tick an item of the guide off; the lap reaches the store a moment after the line.
+        hub.LapCompleted += lap =>
+        {
+            if (runtime.Recorder.IsRecording && hub.Session is { } session)
+            {
+                DispatcherTimer.RunOnce(() => { _ = UpdateGuideAsync(session, force: true); }, TimeSpan.FromSeconds(2));
+            }
         };
     }
 
@@ -85,6 +97,54 @@ public sealed partial class LiveViewModel : ObservableObject
     [ObservableProperty] public partial TrackOutline? Outline { get; set; }
     [ObservableProperty] public partial IReadOnlyList<TelemetrySample>? CurrentLapSamples { get; set; }
     [ObservableProperty] public partial ChartModel? CurrentLapChart { get; set; }
+
+    /// <summary>
+    /// What to drive in the session on now to feed the race plans at this track (the first open item of the data guide
+    /// for this kind of session); empty when the session has no kind (time trial) or no track yet.
+    /// </summary>
+    [ObservableProperty] public partial string Guide { get; set; } = "";
+
+    [ObservableProperty] public partial bool HasGuide { get; set; }
+
+    private (GameFormat Format, int TrackId, int SessionType)? _guideFor;
+
+    /// <summary>Works the guide out again for a session it hasn't seen, or when <paramref name="force"/> (a recorded lap may have ticked an item off).</summary>
+    private async Task UpdateGuideAsync(SessionInfo session, bool force = false)
+    {
+        var key = (session.Format, session.TrackId, session.SessionType);
+        if (!force && _guideFor == key)
+        {
+            return;
+        }
+
+        _guideFor = key;
+        var text = "";
+        if (session.TrackId >= 0 && DataGuide.SessionOf(session.SessionType) is { } kind)
+        {
+            try
+            {
+                await _runtime.Store.FlushAsync();
+                var knowledge = await _runtime.Analysis.BuildTrackKnowledgeAsync(session.Format, session.TrackId, null);
+                text = knowledge.Guide.NextIn(kind) switch
+                {
+                    { } next => $"FOR THE RACE PLANS · {next.Title.ToUpperInvariant()}: {next.Do}",
+                    null when kind == GuideSession.Practice => "FOR THE RACE PLANS · Every figure they use is measured here. More clean laps still steady them.",
+                    null when kind == GuideSession.Qualifying => "FOR THE RACE PLANS · Keep recording: the tyre sets (used, and how worn) carry into the plan's START ON.",
+                    _ => "FOR THE RACE PLANS · Record to the flag: this race's stops and laps add to what is known here.",
+                };
+            }
+            catch (Exception)
+            {
+                // The guide is a hint: the dashboard carries on without it.
+            }
+        }
+
+        if (_guideFor == key)
+        {
+            Guide = text;
+            HasGuide = text.Length > 0;
+        }
+    }
 
     private void OnDelta(DeltaUpdate delta)
     {
@@ -191,7 +251,7 @@ public sealed partial class LiveViewModel : ObservableObject
         _lastRejectedMode = stats.RejectedMode;
         HasModeWarning = mismatched > 0;
         ModeWarning = mismatched > 0
-            ? $"The game is sending {(stats.LastMismatchedFormat == GameFormat.F1_26 ? "F1 26" : "F1 25")} telemetry but the app is in {(_runtime.Mode == GameFormat.F1_26 ? "F1 26" : "F1 25")} mode. Switch the mode in the toolbar."
+            ? $"The game is sending {GameCatalog.FormatName(stats.LastMismatchedFormat ?? GameFormat.F1_25)} telemetry but the app is in {GameCatalog.FormatName(_runtime.Mode)} mode. Switch the mode in the toolbar."
             : "";
 
         PacketStats.Clear();

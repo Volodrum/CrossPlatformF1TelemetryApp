@@ -189,6 +189,36 @@ public class AnalyticsTests
     }
 
     [Fact]
+    public void Spotter_calls_the_sides_and_the_car_behind_but_not_the_car_ahead()
+    {
+        static RadarBlip Car(float x, float z) => new(1, x, z, 0, MathF.Sqrt(x * x + z * z), RadarSeverity.Far);
+
+        // Alongside on the right: the cars overlap, so it is an alert.
+        Assert.Equal(new SpotterMark(SpotterZone.Right, 0.6f, 2.7f, true), Spotter.Mark(Car(2.7f, 0.6f)));
+
+        // Pulling out on the left, still a car length back: called, not yet an alert.
+        var left = Spotter.Mark(Car(-2.6f, -7.6f))!.Value;
+        Assert.Equal((SpotterZone.Left, false), (left.Zone, left.Alert));
+        Assert.Equal(-7.6f, left.Offset, 3);
+
+        // Overlapping but a lane away: beside, no alert.
+        Assert.False(Spotter.Mark(Car(5.5f, 1f))!.Value.Alert);
+
+        // In line behind: the rear strip, an alert once it is on the gearbox.
+        Assert.Equal(new SpotterMark(SpotterZone.Behind, 0.4f, 10.5f, false), Spotter.Mark(Car(0.4f, -10.5f)));
+        Assert.True(Spotter.Mark(Car(-0.2f, -6f))!.Value.Alert);
+
+        // In line ahead (it is on screen), far behind, or far to the side: no call.
+        Assert.Null(Spotter.Mark(Car(0.5f, 9f)));
+        Assert.Null(Spotter.Mark(Car(2f, -14f)));
+        Assert.Null(Spotter.Mark(Car(8f, 0f)));
+
+        var frame = new RadarFrame([Car(2.7f, 0.6f), Car(0.5f, 9f), Car(0.4f, -10.5f)], false, true, RadarCalculator.Range);
+        Assert.Equal([SpotterZone.Right, SpotterZone.Behind], Spotter.Marks(frame).Select(m => m.Zone));
+        Assert.Empty(Spotter.Marks(null));
+    }
+
+    [Fact]
     public void Consumption_tracker_averages_clean_laps_and_resets_on_tyre_change()
     {
         var tracker = new ConsumptionTracker(new StrategyOptions());

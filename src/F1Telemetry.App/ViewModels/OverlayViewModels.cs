@@ -153,6 +153,9 @@ public sealed partial class RadarOverlayViewModel : OverlayViewModelBase
     [ObservableProperty] public partial RadarFrame? Frame { get; set; }
     [ObservableProperty] public partial bool HasCars { get; set; }
 
+    /// <summary>Spotter bars or the top-down disc (overlays page).</summary>
+    [ObservableProperty] public partial RadarStyle Style { get; set; } = RadarStyle.Spotter;
+
     /// <summary>The radar fades out instead of collapsing, so the overlay window keeps its size.</summary>
     public double Opacity => HasCars ? 1 : 0;
 
@@ -176,11 +179,13 @@ public sealed partial class RadarOverlayViewModel : OverlayViewModelBase
     public override void LoadPreview()
     {
         Preview = true;
+        // Alongside on the right, one pulling out on the left, one in line behind and one ahead.
         Update(new RadarFrame(
         [
             new RadarBlip(1, 2.7f, 0.6f, 0, 2.8f, RadarSeverity.Danger),
-            new RadarBlip(2, -1.2f, -9.5f, 3, 9.6f, RadarSeverity.Near),
-            new RadarBlip(3, 0.6f, 14f, -2, 14f, RadarSeverity.Far),
+            new RadarBlip(2, -2.6f, -7.6f, 3, 8.0f, RadarSeverity.Near),
+            new RadarBlip(3, 0.4f, -10.5f, 0, 10.5f, RadarSeverity.Far),
+            new RadarBlip(4, 0.6f, 14f, -2, 14f, RadarSeverity.Far),
         ], false, true, 25.2f));
     }
 }

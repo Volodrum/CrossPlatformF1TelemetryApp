@@ -37,7 +37,7 @@ public sealed partial class SetupRowViewModel(SetupEntry entry, int version, IRe
     private void ToggleFavourite() => Favourite = !Favourite;
 
     public string Name => SetupLibrary.DisplayName(Entry, Version);
-    public string Subtitle => $"{Entry.TrackName} · {(Entry.Format == GameFormat.F1_26 ? "F1 26" : "F1 25")} · "
+    public string Subtitle => $"{Entry.TrackName} · {Core.Games.GameCatalog.FormatName(Entry.Format)} · "
                               + (Runs.Count == 0 ? Entry.Source == SetupSource.Imported ? "imported" : "no runs" : Runs.Count == 1 ? "1 run" : $"{Runs.Count} runs");
     public string Wings => $"{Entry.Setup.FrontWing} / {Entry.Setup.RearWing}";
 

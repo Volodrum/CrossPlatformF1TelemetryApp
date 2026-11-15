@@ -54,6 +54,10 @@
           <controls:TrackMapControl Outline="{Binding Outline}" ActiveLap="{Binding CurrentLapSamples}" />
           <StackPanel Margin="16,14" HorizontalAlignment="Left" VerticalAlignment="Top" Spacing="2" IsHitTestVisible="False">
             <TextBlock Classes="h2" Text="{Binding Session}" FontSize="18" />
+            <!-- What to drive in this session to feed the race plans at this track (Session → Strategy → Data guide) -->
+            <Border Background="#E6101216" CornerRadius="6" Padding="8,6" Margin="-8,4,0,0" MaxWidth="330" HorizontalAlignment="Left" IsVisible="{Binding HasGuide}">
+              <TextBlock Classes="body" FontSize="13" Text="{Binding Guide}" />
+            </Border>
           </StackPanel>
           <StackPanel Margin="16,14" HorizontalAlignment="Right" VerticalAlignment="Bottom" Spacing="8" IsHitTestVisible="False">
             <StackPanel Orientation="Horizontal" Spacing="6"><Border Width="18" Height="6" CornerRadius="3" Background="{StaticResource FasterBrush}" VerticalAlignment="Center" /><TextBlock Classes="label" Text="FULL THROTTLE" Foreground="{StaticResource FasterBrush}" /></StackPanel>

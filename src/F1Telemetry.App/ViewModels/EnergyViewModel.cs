@@ -454,7 +454,7 @@ public sealed partial class EnergyViewModel : ObservableObject
             return;
         }
 
-        var format = model.Format == Protocol.GameFormat.F1_26 ? "F1 26" : "F1 25";
+        var format = Core.Games.GameCatalog.FormatName(model.Format);
         ModelHeader = $"CAR MODEL · {recording.TrackName.ToUpperInvariant()} · {format} · LEARNED FROM {model.Laps} LAPS";
         ModelNote = model.HasPowerData
             ? "What each deploy mode delivers by speed, where the lap harvests and spends energy, and how the car accelerates on the straights. "

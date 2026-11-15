@@ -85,6 +85,21 @@
                     <TextBlock Classes="body" Text="what the gap after each sector is measured against" VerticalAlignment="Center" />
                   </StackPanel>
 
+                  <StackPanel Orientation="Horizontal" Spacing="12" IsVisible="{Binding HasRadarStyle}">
+                    <TextBlock Classes="label" Text="STYLE" VerticalAlignment="Center" />
+                    <Border Classes="segmented">
+                      <StackPanel Orientation="Horizontal">
+                        <Button Theme="{StaticResource ModeToggle}" Content="SPOTTER BARS" Classes.selected="{Binding IsSpotter}"
+                                Command="{Binding SetRadarStyleCommand}" CommandParameter="{x:Static models:RadarStyle.Spotter}"
+                                ToolTip.Tip="A bar on each side, only while a car is there: amber when it is coming alongside, red with a glow once you overlap. The block moves along the bar (between the two ticks = beside you). A strip at the bottom shows a car right behind. Nothing is drawn in the middle." />
+                        <Button Theme="{StaticResource ModeToggle}" Content="CLASSIC DISC" Classes.selected="{Binding IsDisc}"
+                                Command="{Binding SetRadarStyleCommand}" CommandParameter="{x:Static models:RadarStyle.Disc}"
+                                ToolTip.Tip="The top-down disc with every car within 25 m on it." />
+                      </StackPanel>
+                    </Border>
+                    <TextBlock Classes="body" Text="the bars leave the road visible; SIZE sets how far apart they sit" VerticalAlignment="Center" />
+                  </StackPanel>
+
                   <StackPanel Orientation="Horizontal" Spacing="12" IsVisible="{Binding HasGapMode}">
                     <TextBlock Classes="label" Text="RACE GAP" VerticalAlignment="Center" />
                     <Border Classes="segmented">
