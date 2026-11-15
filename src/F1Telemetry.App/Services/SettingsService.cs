@@ -3,6 +3,7 @@ using System.Text.Json.Serialization;
 using Avalonia.Threading;
 using F1Telemetry.App.Infrastructure;
 using F1Telemetry.Core.Engine;
+using F1Telemetry.Core.Games;
 using F1Telemetry.Core.Models;
 using F1Telemetry.Ingest;
 using F1Telemetry.Protocol;
@@ -58,6 +59,9 @@ public sealed class OverlaySettings
 
 public sealed class AppSettings
 {
+    /// <summary>The game the app is set up for (see <see cref="GameCatalog"/>): its telemetry modes, pages and overlays.</summary>
+    public GameId Game { get; set; } = GameId.F1;
+
     /// <summary>F1 25 or F1 26 (2026 Season Pack). Must match the game's Settings → Telemetry → UDP Format.</summary>
     public GameFormat TelemetryMode { get; set; } = GameFormat.F1_25;
 
@@ -89,6 +93,12 @@ public sealed class AppSettings
 
     /// <summary>What the sector box's gap chips compare against.</summary>
     public SectorReference SectorBoxReference { get; set; } = SectorReference.SessionBest;
+
+    /// <summary>
+    /// How the proximity radar is drawn. Null in settings saved before the spotter bars existed: those get the bars,
+    /// with the overlay kept centred where the disc was (see <see cref="OverlayManager.Initialize"/>).
+    /// </summary>
+    public RadarStyle? RadarStyle { get; set; }
 
     /// <summary>Race gap column of the timing tower.</summary>
     public TowerGapMode TowerGap { get; set; } = TowerGapMode.GapToMe;

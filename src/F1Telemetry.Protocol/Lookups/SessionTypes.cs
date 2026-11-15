@@ -15,6 +15,8 @@ public static class SessionTypes
     public static string Name(int sessionType) =>
         sessionType >= 0 && sessionType < Names.Length ? Names[sessionType] : $"Session {sessionType}";
 
+    public static bool IsPractice(int sessionType) => sessionType is >= 1 and <= 4;
+
     public static bool IsRace(int sessionType) => sessionType is >= 15 and <= 17;
 
     public static bool IsQualifying(int sessionType) => sessionType is >= 5 and <= 14;

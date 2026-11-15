@@ -44,6 +44,9 @@ public partial class MainWindow : Window
         }
     }
 
+    /// <summary>A game was clicked in the rail's picker (its command has run): close the picker.</summary>
+    private void OnGamePicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => GameButton.Flyout?.Hide();
+
     private async Task<string?> PickReplayFileAsync()
     {
         var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions

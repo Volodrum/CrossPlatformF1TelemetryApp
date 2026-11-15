@@ -1,10 +1,12 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Threading;
+using F1Telemetry.App.Controls;
 using F1Telemetry.App.Platform;
 using F1Telemetry.App.ViewModels;
 using F1Telemetry.App.Views.Overlays;
 using F1Telemetry.Core.Engine;
+using F1Telemetry.Core.Models;
 using F1Telemetry.Core.Recording;
 using F1Telemetry.Protocol.Lookups;
 using F1Telemetry.Protocol.Packets;
@@ -87,6 +89,9 @@ public sealed class OverlayManager
         [OverlayKind.ErsPlan] = new(300, 112),
     };
 
+    /// <summary>Design size of an overlay as it is set up now: the radar's depends on its style.</summary>
+    public Size SizeOf(OverlayKind kind) => kind == OverlayKind.Radar ? RadarControl.DesignSize(Radar.Style) : Sizes[kind];
+
     public event Action? StateChanged;
 
     /// <summary>
@@ -168,8 +173,15 @@ public sealed class OverlayManager
 
         Create(OverlayKind.LapTiming, new LapTimingOverlayView { DataContext = LapTiming });
         Create(OverlayKind.Delta, new DeltaOverlayView { DataContext = Delta });
-        // The radar is a square that fills whatever it gets, so give it its design size (the window scales it).
-        Create(OverlayKind.Radar, new RadarOverlayView { DataContext = Radar, Width = Sizes[OverlayKind.Radar].Width, Height = Sizes[OverlayKind.Radar].Height });
+        // Settings from before the spotter bars have no radar style: they get the bars, kept where the disc was centred.
+        var radarFromDisc = _settings.Current.RadarStyle is null && _settings.Current.Overlay(OverlayKind.Radar).X is not null;
+        Radar.Style = _settings.Current.RadarStyle ??= RadarStyle.Spotter;
+        Create(OverlayKind.Radar, new RadarOverlayView { DataContext = Radar });
+        if (radarFromDisc)
+        {
+            Recentre(OverlayKind.Radar, RadarControl.DesignSize(RadarStyle.Disc), RadarControl.DesignSize(Radar.Style));
+        }
+
         Create(OverlayKind.TrackConditions, new TrackConditionsOverlayView { DataContext = TrackConditions });
         Create(OverlayKind.Inputs, new InputTraceOverlayView { DataContext = Inputs });
         Create(OverlayKind.SectorBox, new SectorBoxOverlayView { DataContext = SectorBox });
@@ -304,6 +316,36 @@ public sealed class OverlayManager
         }
     }
 
+    /// <summary>Switches the radar between the spotter bars and the disc, keeping its centre where it was.</summary>
+    public void SetRadarStyle(RadarStyle style)
+    {
+        var previous = Radar.Style;
+        if (previous == style)
+        {
+            return;
+        }
+
+        _settings.Current.RadarStyle = style;
+        Radar.Style = style;
+        Recentre(OverlayKind.Radar, RadarControl.DesignSize(previous), RadarControl.DesignSize(style));
+    }
+
+    /// <summary>Moves an overlay whose design size changed so that its centre stays put.</summary>
+    private void Recentre(OverlayKind kind, Size from, Size to)
+    {
+        if (!_windows.TryGetValue(kind, out var window))
+        {
+            return;
+        }
+
+        var scaling = (window.Screens.ScreenFromPoint(window.Position) ?? window.Screens.Primary)?.Scaling ?? 1.0;
+        var k = window.Scale * scaling;
+        window.Position = new PixelPoint(
+            window.Position.X + (int)Math.Round((from.Width - to.Width) / 2 * k),
+            window.Position.Y + (int)Math.Round((from.Height - to.Height) / 2 * k));
+        Store(kind, window.Position);
+    }
+
     /// <summary>Seconds of pedal history on the input overlay, applied live.</summary>
     public void SetInputTraceSeconds(double seconds)
     {
@@ -339,7 +381,7 @@ public sealed class OverlayManager
             return;
         }
 
-        var position = PresetPosition(window, kind, preset);
+        var position = PresetPosition(window, SizeOf(kind), preset);
         window.Position = position;
         Store(kind, position);
     }
@@ -410,7 +452,7 @@ public sealed class OverlayManager
         saved.Scale = Math.Clamp(saved.Scale, OverlaySettings.MinScale, OverlaySettings.MaxScale);
         saved.Opacity = Math.Clamp(saved.Opacity, OverlaySettings.MinOpacity, 1);
         var window = new OverlayWindow(kind, view, saved.Scale, saved.Opacity);
-        window.Position = saved is { X: { } x, Y: { } y } ? new PixelPoint(x, y) : PresetPosition(window, kind, DefaultPreset(kind));
+        window.Position = saved is { X: { } x, Y: { } y } ? new PixelPoint(x, y) : PresetPosition(window, SizeOf(kind), DefaultPreset(kind));
         window.PositionChanged += (_, e) =>
         {
             if (_editMode)
@@ -442,12 +484,11 @@ public sealed class OverlayManager
         _ => OverlayPreset.RightCenter,
     };
 
-    private static PixelPoint PresetPosition(OverlayWindow window, OverlayKind kind, OverlayPreset preset)
+    private static PixelPoint PresetPosition(OverlayWindow window, Size size, OverlayPreset preset)
     {
         var screen = window.Screens.Primary;
         var area = screen?.WorkingArea ?? new PixelRect(0, 0, 1920, 1080);
         var scaling = screen?.Scaling ?? 1.0;
-        var size = Sizes[kind];
         var w = (int)(size.Width * window.Scale * scaling);
         var h = (int)(size.Height * window.Scale * scaling);
         var margin = (int)(20 * scaling);

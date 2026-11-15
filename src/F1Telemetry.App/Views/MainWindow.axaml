@@ -3,7 +3,6 @@
         xmlns:vm="using:F1Telemetry.App.ViewModels"
         xmlns:views="using:F1Telemetry.App.Views"
         xmlns:controls="using:F1Telemetry.App.Controls"
-        xmlns:protocol="using:F1Telemetry.Protocol"
         x:Class="F1Telemetry.App.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
         Title="F1 Telemetry"
@@ -37,18 +36,25 @@
           </TextBlock>
         </StackPanel>
 
-        <Grid ColumnDefinitions="Auto,Auto,Auto,*,Auto,Auto,Auto" ColumnSpacing="20" VerticalAlignment="Center">
+        <Grid ColumnDefinitions="Auto,Auto,Auto,*,Auto,Auto" ColumnSpacing="20" VerticalAlignment="Center">
           <Button Theme="{StaticResource PrimaryButton}" Content="{Binding RecordButtonText}" Command="{Binding ToggleRecordingCommand}" MinWidth="200" />
 
-          <!-- Telemetry mode: must match the game's Settings → Telemetry → UDP Format -->
-          <Border Grid.Column="1" Classes="segmented" VerticalAlignment="Center"
+          <!-- Telemetry mode of the current game (F1: must match the game's Settings → Telemetry → UDP Format).
+               Hidden for a game with nothing to choose. -->
+          <Border Grid.Column="1" Classes="segmented" VerticalAlignment="Center" IsVisible="{Binding HasModes}"
                   ToolTip.Tip="Telemetry mode – must match the UDP Format selected in the game">
-            <StackPanel Orientation="Horizontal">
-              <Button Theme="{StaticResource ModeToggle}" Content="F1 25" Classes.selected="{Binding IsF125Mode}"
-                      Command="{Binding SetModeCommand}" CommandParameter="{x:Static protocol:GameFormat.F1_25}" />
-              <Button Theme="{StaticResource ModeToggle}" Content="F1 26" Classes.selected="{Binding IsF126Mode}"
-                      Command="{Binding SetModeCommand}" CommandParameter="{x:Static protocol:GameFormat.F1_26}" />
-            </StackPanel>
+            <ItemsControl ItemsSource="{Binding Modes}">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                  <StackPanel Orientation="Horizontal" />
+                </ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:ModeOptionViewModel">
+                  <Button Theme="{StaticResource ModeToggle}" Content="{Binding Label}" Classes.selected="{Binding IsSelected}" Command="{Binding SelectCommand}" />
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
           </Border>
 
           <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
@@ -85,13 +91,8 @@
             </Border>
           </StackPanel>
 
-          <ToggleSwitch Grid.Column="5" IsChecked="{Binding OverlaysEnabled}" OnContent="OVERLAYS" OffContent="OVERLAYS" VerticalAlignment="Center" />
-
-          <Button Grid.Column="6" Theme="{StaticResource SecondaryButton}" Padding="0" Width="44" Command="{Binding ToggleSettingsCommand}"
-                  Classes.selected="{Binding IsSettingsOpen}" ToolTip.Tip="Settings" AutomationProperties.Name="Settings">
-            <PathIcon Width="20" Height="20" Foreground="{StaticResource TextMidBrush}"
-                      Data="M19.14,12.94c0.04-0.3,0.06-0.61,0.06-0.94c0-0.32-0.02-0.64-0.07-0.94l2.03-1.58c0.18-0.14,0.23-0.41,0.12-0.61l-1.92-3.32c-0.12-0.22-0.37-0.29-0.59-0.22l-2.39,0.96c-0.5-0.38-1.03-0.7-1.62-0.94L14.4,2.81c-0.04-0.24-0.24-0.41-0.48-0.41h-3.84c-0.24,0-0.43,0.17-0.47,0.41L9.25,5.35C8.66,5.59,8.12,5.92,7.63,6.29L5.24,5.33c-0.22-0.08-0.47,0-0.59,0.22L2.74,8.87C2.62,9.08,2.66,9.34,2.86,9.48l2.03,1.58C4.84,11.36,4.8,11.69,4.8,12s0.02,0.64,0.07,0.94l-2.03,1.58c-0.18,0.14-0.23,0.41-0.12,0.61l1.92,3.32c0.12,0.22,0.37,0.29,0.59,0.22l2.39-0.96c0.5,0.38,1.03,0.7,1.62,0.94l0.36,2.54c0.05,0.24,0.24,0.41,0.48,0.41h3.84c0.24,0,0.44-0.17,0.47-0.41l0.36-2.54c0.59-0.24,1.13-0.56,1.62-0.94l2.39,0.96c0.22,0.08,0.47,0,0.59-0.22l1.92-3.32c0.12-0.22,0.07-0.47-0.12-0.61L19.14,12.94z M12,15.6c-1.98,0-3.6-1.62-3.6-3.6s1.62-3.6,3.6-3.6s3.6,1.62,3.6,3.6S13.98,15.6,12,15.6z" />
-          </Button>
+          <ToggleSwitch Grid.Column="5" IsChecked="{Binding OverlaysEnabled}" OnContent="OVERLAYS" OffContent="OVERLAYS" VerticalAlignment="Center"
+                        ToolTip.Tip="Show or hide every HUD overlay over the game" />
         </Grid>
       </DockPanel>
     </Border>
@@ -111,9 +112,63 @@
       <TextBlock Text="{Binding StatusMessage}" Foreground="{StaticResource TextMidBrush}" FontSize="13" />
     </Border>
 
-    <!-- Navigation rail: what the user is doing. Picking a section also leaves the settings page. -->
+    <!-- Navigation rail, top to bottom: the game everything is about; drive (live); review (session, compare);
+         prepare (setups, overlays); and the app's settings at the foot. Picking a section also leaves the settings page. -->
     <Border DockPanel.Dock="Left" Width="96" Background="{StaticResource ChromeBrush}" BorderBrush="{StaticResource DividerBrush}" BorderThickness="0,0,2,0">
-      <StackPanel Margin="0,16" Spacing="6">
+      <DockPanel Margin="0,10,0,8">
+        <!-- Game: listed with the planned ones, which can't be picked yet -->
+        <Button x:Name="GameButton" DockPanel.Dock="Top" Theme="{StaticResource RailButton}" Height="64" ToolTip.Tip="{Binding GameTip}" AutomationProperties.Name="Game">
+          <StackPanel Spacing="5">
+            <Border Width="60" Height="30" CornerRadius="6" Background="{StaticResource RaisedBrush}" BorderBrush="{StaticResource LineStrongBrush}" BorderThickness="2"
+                    HorizontalAlignment="Center">
+              <TextBlock Text="{Binding GameShortName}" FontFamily="{StaticResource DisplayFont}" FontSize="15" FontWeight="Bold" LetterSpacing="1"
+                         Foreground="{StaticResource TextHiBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+            </Border>
+            <TextBlock Text="GAME ▾" HorizontalAlignment="Center" FontSize="11" />
+          </StackPanel>
+          <Button.Flyout>
+            <Flyout Placement="RightEdgeAlignedTop">
+              <StackPanel Spacing="8" Width="440">
+                <TextBlock Classes="label strong" Text="GAME" />
+                <ItemsControl ItemsSource="{Binding Games}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:GameOptionViewModel">
+                      <Button Theme="{StaticResource SecondaryButton}" Classes.selected="{Binding IsSelected}" Command="{Binding SelectCommand}"
+                              Click="OnGamePicked" Height="NaN" Padding="12,10" Margin="0,0,0,6" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+                              AutomationProperties.Name="{Binding Name}">
+                        <Grid ColumnDefinitions="52,*,Auto" ColumnSpacing="12">
+                          <TextBlock Text="{Binding ShortName}" FontFamily="{StaticResource DisplayFont}" FontSize="17" FontWeight="Bold" VerticalAlignment="Center" />
+                          <StackPanel Grid.Column="1" Spacing="1" VerticalAlignment="Center">
+                            <TextBlock Classes="h2" FontSize="15" Text="{Binding Name}" />
+                            <TextBlock Classes="muted" FontSize="12" Text="{Binding Detail}" TextTrimming="CharacterEllipsis" />
+                          </StackPanel>
+                          <Border Grid.Column="2" Classes="pill" BorderBrush="{StaticResource LineStrongBrush}" BorderThickness="1" VerticalAlignment="Center">
+                            <TextBlock Text="{Binding Status}" FontFamily="{StaticResource DisplayFont}" FontSize="11" FontWeight="Bold" LetterSpacing="1.1"
+                                       Foreground="{StaticResource TextMidBrush}" />
+                          </Border>
+                        </Grid>
+                      </Button>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap"
+                           Text="The pages, overlays and recordings on screen are the selected game's. Planned games are listed but can't be selected yet." />
+              </StackPanel>
+            </Flyout>
+          </Button.Flyout>
+        </Button>
+        <Border DockPanel.Dock="Top" Classes="divider" Margin="18,8,18,8" />
+
+        <Button DockPanel.Dock="Bottom" Theme="{StaticResource RailButton}" Classes.selected="{Binding IsSettingsOpen}"
+                Command="{Binding ToggleSettingsCommand}" ToolTip.Tip="Settings: controls, connection, data and updates" AutomationProperties.Name="Settings">
+          <StackPanel Spacing="6">
+            <PathIcon Width="24" Height="24" HorizontalAlignment="Center"
+                      Data="M19.14,12.94c0.04-0.3,0.06-0.61,0.06-0.94c0-0.32-0.02-0.64-0.07-0.94l2.03-1.58c0.18-0.14,0.23-0.41,0.12-0.61l-1.92-3.32c-0.12-0.22-0.37-0.29-0.59-0.22l-2.39,0.96c-0.5-0.38-1.03-0.7-1.62-0.94L14.4,2.81c-0.04-0.24-0.24-0.41-0.48-0.41h-3.84c-0.24,0-0.43,0.17-0.47,0.41L9.25,5.35C8.66,5.59,8.12,5.92,7.63,6.29L5.24,5.33c-0.22-0.08-0.47,0-0.59,0.22L2.74,8.87C2.62,9.08,2.66,9.34,2.86,9.48l2.03,1.58C4.84,11.36,4.8,11.69,4.8,12s0.02,0.64,0.07,0.94l-2.03,1.58c-0.18,0.14-0.23,0.41-0.12,0.61l1.92,3.32c0.12,0.22,0.37,0.29,0.59,0.22l2.39-0.96c0.5,0.38,1.03,0.7,1.62,0.94l0.36,2.54c0.05,0.24,0.24,0.41,0.48,0.41h3.84c0.24,0,0.44-0.17,0.47-0.41l0.36-2.54c0.59-0.24,1.13-0.56,1.62-0.94l2.39,0.96c0.22,0.08,0.47,0,0.59-0.22l1.92-3.32c0.12-0.22,0.07-0.47-0.12-0.61L19.14,12.94z M12,15.6c-1.98,0-3.6-1.62-3.6-3.6s1.62-3.6,3.6-3.6s3.6,1.62,3.6,3.6S13.98,15.6,12,15.6z" />
+            <TextBlock Text="SETTINGS" HorizontalAlignment="Center" />
+          </StackPanel>
+        </Button>
+
+      <StackPanel Spacing="4">
         <Button Theme="{StaticResource RailButton}" Classes.selected="{Binding IsLiveActive}"
                 Command="{Binding NavigateCommand}" CommandParameter="{x:Static vm:MainSection.Live}"
                 ToolTip.Tip="Live dashboard: what the car is doing now" AutomationProperties.Name="Live">
@@ -123,6 +178,7 @@
             <TextBlock Text="LIVE" HorizontalAlignment="Center" />
           </StackPanel>
         </Button>
+        <Border Classes="divider" Margin="18,4" />
         <Button Theme="{StaticResource RailButton}" Classes.selected="{Binding IsSessionActive}"
                 Command="{Binding NavigateCommand}" CommandParameter="{x:Static vm:MainSection.Session}"
                 ToolTip.Tip="One recorded session: laps, strategy and energy" AutomationProperties.Name="Session">
@@ -140,7 +196,8 @@
             <TextBlock Text="COMPARE" HorizontalAlignment="Center" />
           </StackPanel>
         </Button>
-        <Button Theme="{StaticResource RailButton}" Classes.selected="{Binding IsSetupsActive}"
+        <Border Classes="divider" Margin="18,4" />
+        <Button Theme="{StaticResource RailButton}" Classes.selected="{Binding IsSetupsActive}" IsVisible="{Binding HasSetups}"
                 Command="{Binding NavigateCommand}" CommandParameter="{x:Static vm:MainSection.Setups}"
                 ToolTip.Tip="Setup library: every setup you drove" AutomationProperties.Name="Setups">
           <StackPanel Spacing="6">
@@ -159,6 +216,7 @@
           </StackPanel>
         </Button>
       </StackPanel>
+      </DockPanel>
     </Border>
 
     <!-- Recordings sidebar (design: Sidebar.dc.html): only in the session section, the one part of the app it drives -->
@@ -219,7 +277,7 @@
     <Panel>
       <DockPanel Margin="20,12,20,16" MaxWidth="1100" HorizontalAlignment="Left" IsVisible="{Binding IsSettingsOpen}">
         <controls:PageHeader DockPanel.Dock="Top" Eyebrow="APP · CONTROLS, CONNECTION AND DATA" Title="Settings" Margin="0,4,0,0"
-                             Help="Overlays are set up on their own page: OVERLAYS in the rail.">
+                             Help="Overlays are set up on their own page: OVERLAYS in the rail. The game is picked at the top of the rail.">
           <Button Theme="{StaticResource SecondaryButton}" Content="DONE" Command="{Binding CloseSettingsCommand}" MinWidth="120" ToolTip.Tip="Back (Esc)" />
         </controls:PageHeader>
         <views:SettingsView DataContext="{Binding Settings}" />
@@ -245,7 +303,7 @@
         <TabItem Header="STRATEGY">
           <views:StrategyView DataContext="{Binding Session}" />
         </TabItem>
-        <TabItem Header="ENERGY">
+        <TabItem Header="ENERGY" IsVisible="{Binding HasEnergy}">
           <views:EnergyView DataContext="{Binding Energy}" />
         </TabItem>
       </TabControl>

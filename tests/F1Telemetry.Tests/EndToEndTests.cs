@@ -1,4 +1,5 @@
 using F1Telemetry.Core;
+using F1Telemetry.Core.Analytics;
 using F1Telemetry.Core.Energy;
 using F1Telemetry.Core.Engine;
 using F1Telemetry.Core.Models;
@@ -160,6 +161,22 @@ public sealed class EndToEndTests : IAsyncLifetime
         Assert.Equal(VisualCompound.Hard.ToString(), laps[^1].Compound);
         Assert.Single(laps, l => l.IsBestLap);
         Assert.Contains(laps[^1].LapTimeMs, finishedLaps); // the sector box finished the final lap at the flag
+
+        // A finished recording is read from the database once: the same analysis comes back until it is forgotten.
+        var kept = await analysis.LoadRaceAsync(recording, TestContext.Current.CancellationToken);
+        Assert.NotNull(kept);
+        Assert.Same(kept, await analysis.LoadRaceAsync(recording, TestContext.Current.CancellationToken));
+        Assert.Same(laps, await analysis.GetClassifiedLapsAsync(recording, TestContext.Current.CancellationToken));
+        Assert.Same(kept.Analysis, await analysis.AnalyzeAsync(recording, ct: TestContext.Current.CancellationToken));
+        var knowledge = await analysis.BuildTrackKnowledgeAsync(format, recording.TrackId, recording.Id, TestContext.Current.CancellationToken);
+        Assert.Equal(1, knowledge.Library.Sessions);
+        Assert.Contains(knowledge.Guide.Items, i => i.Title == "Pit stop loss" && i.State == GuideState.Done);
+        analysis.Forget(recording.Id);
+        Assert.NotSame(kept, await analysis.LoadRaceAsync(recording, TestContext.Current.CancellationToken));
+
+        // A recording still running is read afresh each time.
+        var live = recording with { EndTime = null };
+        Assert.NotSame(await analysis.LoadRaceAsync(live, TestContext.Current.CancellationToken), await analysis.LoadRaceAsync(live, TestContext.Current.CancellationToken));
 
         var finalLap = await store.GetLapSamplesAsync(recording.Id, 5, TestContext.Current.CancellationToken);
         Assert.True(finalLap.MaxBy(s => s.SessionTime)!.LapDistance > 1000); // nothing from past the flag

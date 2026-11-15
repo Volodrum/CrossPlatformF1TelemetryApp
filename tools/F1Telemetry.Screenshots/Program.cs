@@ -9,14 +9,17 @@ using F1Telemetry.App.Services;
 using F1Telemetry.App.ViewModels;
 using F1Telemetry.App.Views;
 using F1Telemetry.App.Views.Overlays;
+using F1Telemetry.Core.Models;
 using F1Telemetry.Protocol;
 using F1Telemetry.Simulation;
 using Microsoft.Extensions.DependencyInjection;
 
-// Usage: f1telemetry-screenshots <output-folder>
+// Usage: f1telemetry-screenshots <output-folder> [--overlays]
 // Renders offscreen only (no windows appear): seeds a simulated race into a temporary database, drives the real
 // view models, and captures each main-window tab plus the HUD overlays in preview state.
-var output = Path.GetFullPath(args.Length > 0 ? args[0] : "screenshots");
+// --overlays: only the HUD overlay boards (no seeding, a few seconds).
+var overlaysOnly = args.Contains("--overlays");
+var output = Path.GetFullPath(args.FirstOrDefault(a => !a.StartsWith("--", StringComparison.Ordinal)) ?? "screenshots");
 Directory.CreateDirectory(output);
 var dataDir = Path.Combine(Path.GetTempPath(), "f1tel-shots-" + Guid.NewGuid().ToString("N"));
 Environment.SetEnvironmentVariable("F1TELEMETRY_DATA_DIR", dataDir);
@@ -85,6 +88,13 @@ void Seed(SimulationOptions options, string description, TimeSpan? stopAt = null
     }
 }
 
+if (!overlaysOnly)
+{
+    CaptureMainWindow();
+}
+
+void CaptureMainWindow()
+{
 // Two finished 12-lap races at Monza for the compare tab: one stop against two.
 Seed(new SimulationOptions
 {
@@ -167,16 +177,20 @@ Pump(vm.Session.RefreshAsync(), 300);
 vm.SelectedTab = MainTab.Strategy;
 Capture(window, "11-strategy-two-stops");
 
-// Race plans: the strategy tab's last panel, built from all three Monza recordings.
+// Race plans and the data guide: the strategy tab's other pages, built from all three Monza recordings.
 Pump(minMs: 1500);
-if (window.GetVisualDescendants().OfType<StrategyView>().FirstOrDefault() is { } strategy
-    && strategy.GetVisualDescendants().OfType<ScrollViewer>().FirstOrDefault() is { Content: Visual content } plansScroll
-    && strategy.GetVisualDescendants().OfType<Border>().FirstOrDefault(b => b.DataContext is RacePlansViewModel) is { } plansPanel
-    && plansPanel.TranslatePoint(default, content) is { } top)
+vm.Session.StrategyPage = StrategyPage.Plans;
+Capture(window, "18-race-plans");
+vm.Session.StrategyPage = StrategyPage.Guide;
+Capture(window, "20-data-guide");
+vm.Session.StrategyPage = StrategyPage.Session;
+
+// The game picker at the top of the rail.
+if (window.FindControl<Button>("GameButton") is { Flyout: { } games } gameButton)
 {
-    plansScroll.Offset = plansScroll.Offset.WithY(top.Y - 8);
-    Capture(window, "18-race-plans");
-    plansScroll.Offset = default;
+    games.ShowAt(gameButton);
+    Capture(window, "21-game-picker");
+    games.Hide();
 }
 
 // Energy: the one-stop race's battery map, lap summary and trace, with the two-stop race's typical laps added.
@@ -202,6 +216,7 @@ vm.Setups.Rows[0].Favourite = true;
 Capture(window, "14-setups");
 
 vm.SelectedTab = MainTab.Live;
+}
 
 // Overlays in preview state, on the worst-case bright background used in the design's overlay board.
 overlays.LapTiming.LoadPreview();
@@ -211,7 +226,7 @@ overlays.TrackConditions.LoadPreview();
 overlays.Inputs.LoadPreview();
 var board = new Window
 {
-    Width = 1320,
+    Width = 1640,
     Height = 560,
     Background = new SolidColorBrush(Color.Parse("#8A929C")),
     Content = new StackPanel
@@ -236,7 +251,7 @@ var board = new Window
                 Children =
                 {
                     new DeltaOverlayView { DataContext = overlays.Delta },
-                    new RadarOverlayView { DataContext = overlays.Radar, Width = 240, Height = 240 },
+                    new RadarOverlayView { DataContext = overlays.Radar },
                 },
             },
             new TrackConditionsOverlayView { DataContext = overlays.TrackConditions, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top },
@@ -284,6 +299,57 @@ var ersBoard = new Window
 };
 ersBoard.Show();
 Capture(ersBoard, "16-ers-plan-overlay");
+
+// The radar where it sits while driving: over a road, at the size the overlay has on a 1080p screen. Left: the spotter
+// bars, which leave the road between them clear. Right: the classic disc at the same place.
+Control Road(RadarStyle style)
+{
+    var radar = new RadarOverlayViewModel { Style = style };
+    radar.LoadPreview();
+    return new Panel
+    {
+        Width = 760,
+        Height = 428,
+        ClipToBounds = true,
+        Children =
+        {
+            new Border { Background = new SolidColorBrush(Color.Parse("#6FA0CF")) },
+            new Border { Background = new SolidColorBrush(Color.Parse("#4F7A45")), Height = 250, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Bottom },
+            new Avalonia.Controls.Shapes.Polygon
+            {
+                Fill = new SolidColorBrush(Color.Parse("#4A4D55")),
+                Points = [new Point(330, 178), new Point(430, 178), new Point(760, 428), new Point(0, 428)],
+            },
+            new Avalonia.Controls.Shapes.Polygon
+            {
+                Fill = new SolidColorBrush(Color.Parse("#E8E8E8")),
+                Points = [new Point(378, 178), new Point(382, 178), new Point(392, 428), new Point(368, 428)],
+            },
+            new RadarOverlayView { DataContext = radar, HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center, Margin = new Thickness(0, 60, 0, 0) },
+            new TextBlock
+            {
+                Text = style == RadarStyle.Spotter ? "SPOTTER BARS" : "CLASSIC DISC", Foreground = Brushes.White, FontWeight = FontWeight.Bold, FontSize = 15,
+                Margin = new Thickness(14, 10), HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top,
+            },
+        },
+    };
+}
+
+var radarBoard = new Window
+{
+    Width = 1568,
+    Height = 476,
+    Background = new SolidColorBrush(Color.Parse("#101216")),
+    Content = new StackPanel
+    {
+        Orientation = Avalonia.Layout.Orientation.Horizontal,
+        Spacing = 24,
+        Margin = new Thickness(24),
+        Children = { Road(RadarStyle.Spotter), Road(RadarStyle.Disc) },
+    },
+};
+radarBoard.Show();
+Capture(radarBoard, "19-radar");
 
 runtime.Recorder.Stop();
 Pump(services.DisposeAsync().AsTask(), 200);

@@ -1,6 +1,7 @@
 using F1Telemetry.App.Infrastructure;
 using F1Telemetry.Core;
 using F1Telemetry.Core.Engine;
+using F1Telemetry.Core.Games;
 using F1Telemetry.Core.Models;
 using F1Telemetry.Core.Recording;
 using F1Telemetry.Core.Tracks;
@@ -59,6 +60,35 @@ public sealed class TelemetryRuntime : IAsyncDisposable
     public SessionAnalysisService Analysis { get; }
     public TrackLibrary Tracks { get; }
     public SourceKind? ActiveSourceKind { get; private set; }
+
+    /// <summary>
+    /// The game the app is set up for. Today every source, the engine and the store speak F1's UDP telemetry; another
+    /// game plugs in here with its own packet source and engine, picked by this, and the pages follow its
+    /// <see cref="GameInfo.Features"/>. A game that isn't supported yet can't be selected.
+    /// </summary>
+    public GameInfo Game => GameCatalog.Get(_settings.Current.Game) is { Supported: true } game ? game : GameCatalog.F1;
+
+    public event Action<GameInfo>? GameChanged;
+
+    /// <summary>Switches the game; false when it isn't supported yet (nothing changes).</summary>
+    public bool SetGame(GameId id)
+    {
+        var game = GameCatalog.Get(id);
+        if (!game.Supported)
+        {
+            return false;
+        }
+
+        if (game.Id != Game.Id)
+        {
+            _settings.Current.Game = game.Id;
+            _settings.Save();
+            _log.LogInformation("Game set to {Game}", game.Name);
+            GameChanged?.Invoke(game);
+        }
+
+        return true;
+    }
 
     public GameFormat Mode => _settings.Current.TelemetryMode;
 
@@ -153,6 +183,7 @@ public sealed class TelemetryRuntime : IAsyncDisposable
         var existing = (await Store.GetRecordingsAsync()).Select(r => r.Id).ToHashSet();
         var captures = RecordingCaptures.Find(_paths.CapturesDirectory, recording, existing);
         await Store.DeleteRecordingAsync(recording.Id);
+        Analysis.Forget(recording.Id);
 
         var deleted = new List<string>();
         var failed = new List<string>();

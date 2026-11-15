@@ -93,6 +93,56 @@ public sealed class StrategyPlannerTests
     }
 
     [Fact]
+    public void Data_guide_lists_what_the_plans_assume_and_what_to_drive_next()
+    {
+        // One practice run on mediums: the only thing measured is the medium itself.
+        var practice = Session(1, 1, [("Medium", 8, 80.0, 0.05, 2.0)]);
+        var guide = DataGuideBuilder.Build(CompoundLibraryBuilder.Build([practice], 1), [practice]);
+        GuideItem Item(string title) => guide.Items.Single(i => i.Title == title);
+
+        Assert.Equal(GuideState.Missing, Item("Soft long run").State);
+        Assert.Equal(GuideState.Done, Item("Medium long run").State);
+        Assert.Equal("8 clean laps, longest run 8", Item("Medium long run").Have);
+        Assert.Equal(GuideState.Missing, Item("Fuel effect").State);
+        Assert.Equal(GuideState.Missing, Item("Tyre cliff").State);
+        Assert.Equal(GuideState.Missing, Item("Pit stop loss").State);
+        Assert.DoesNotContain(guide.Items, i => i.Title == "Compounds in the same conditions"); // one compound: nothing to compare
+        Assert.True(Item("Stop under a safety car").Optional);
+
+        Assert.Equal((1, 6), (guide.Done, guide.Total)); // the optional item isn't counted
+        Assert.Equal("Soft long run", guide.Next!.Title);
+        Assert.Equal("Pit stop loss", guide.NextIn(GuideSession.Race)!.Title);
+        Assert.Null(guide.NextIn(GuideSession.Qualifying));
+        Assert.Contains("6+ clean laps", guide.Next.Do);
+        Assert.Equal(GuideSession.Practice, DataGuide.SessionOf(3));
+        Assert.Equal(GuideSession.Race, DataGuide.SessionOf(15));
+        Assert.Null(DataGuide.SessionOf(18));
+    }
+
+    [Fact]
+    public void Data_guide_follows_what_was_recorded()
+    {
+        // Practice: a long run on each compound (the softs to past the cliff) and the mediums again on less fuel. Race: one stop.
+        var practice = Session(1, 1, [("Soft", 11, 79.5, 0.10, 8.0), ("Medium", 8, 80.0, 0.05, 2.0), ("Hard", 8, 80.6, 0.02, 1.0), ("Medium", 8, 80.0, 0.05, 2.0)],
+            cliff: 0.3);
+        var race = Session(2, 15, [("Medium", 10, 80.0, 0.05, 2.0), ("Hard", 12, 80.6, 0.02, 1.0)]);
+        var options = new StrategyOptions { FuelEffectSecondsPerKg = FuelEffect };
+        var guide = DataGuideBuilder.Build(CompoundLibraryBuilder.Build([practice, race], 2, options), [practice, race], options);
+        GuideItem Item(string title) => guide.Items.Single(i => i.Title == title);
+
+        Assert.All(new[] { "Soft long run", "Medium long run", "Hard long run", "Compounds in the same conditions", "Fuel effect", "Pit stop loss" },
+            title => Assert.Equal(GuideState.Done, Item(title).State));
+        Assert.All(guide.Items.Where(i => i.State == GuideState.Done), i => Assert.Equal("", i.Do));
+
+        // Only the softs were run past the cliff: that is what is left.
+        Assert.Equal(GuideState.Partial, Item("Tyre cliff").State);
+        Assert.Equal("measured on the soft", Item("Tyre cliff").Have);
+        Assert.Same(Item("Tyre cliff"), guide.Next);
+        Assert.Contains("medium or hard", guide.Next!.Do);
+        Assert.Equal((6, 7), (guide.Done, guide.Total));
+    }
+
+    [Fact]
     public void One_stop_splits_the_race_where_the_two_stints_cost_the_same_at_the_margin()
     {
         // Equal compounds apart from wear: the faster-wearing one gets the shorter stint.
