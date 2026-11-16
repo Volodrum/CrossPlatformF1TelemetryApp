@@ -9,6 +9,7 @@ using F1Telemetry.App.Services;
 using F1Telemetry.App.ViewModels;
 using F1Telemetry.App.Views;
 using F1Telemetry.App.Views.Overlays;
+using F1Telemetry.Core.Engine;
 using F1Telemetry.Core.Models;
 using F1Telemetry.Protocol;
 using F1Telemetry.Simulation;
@@ -288,6 +289,27 @@ var hudBoard = new Window
 hudBoard.Show();
 Capture(hudBoard, "08-hud-overlays");
 
+// The damage page close up (2×), to check the car drawing.
+var damageCloseUp = new TrackConditionsOverlayViewModel();
+damageCloseUp.LoadPreview();
+damageCloseUp.TogglePage();
+var damageBoard = new Window
+{
+    Width = 800,
+    Height = 1040,
+    Background = new SolidColorBrush(Color.Parse("#8A929C")),
+    Content = new LayoutTransformControl
+    {
+        LayoutTransform = new ScaleTransform(2, 2),
+        Margin = new Thickness(24),
+        HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left,
+        VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top,
+        Child = new TrackConditionsOverlayView { DataContext = damageCloseUp },
+    },
+};
+damageBoard.Show();
+Capture(damageBoard, "22-damage-page");
+
 // The ERS PLAN overlay in preview: Overtake wanted while the car runs Medium, so the switch is called out.
 overlays.ErsPlan.LoadPreview();
 var ersBoard = new Window
@@ -300,12 +322,13 @@ var ersBoard = new Window
 ersBoard.Show();
 Capture(ersBoard, "16-ers-plan-overlay");
 
-// The radar where it sits while driving: over a road, at the size the overlay has on a 1080p screen. Left: the spotter
-// bars, which leave the road between them clear. Right: the classic disc at the same place.
-Control Road(RadarStyle style)
+// The radar where it sits while driving, over a road at its size on a 1080p screen. Left: a car closing on the left.
+// Right: a car alongside on the right, with that edge of the screen darkened (the side shade).
+Control Road(string title, RadarFrame frame)
 {
-    var radar = new RadarOverlayViewModel { Style = style };
-    radar.LoadPreview();
+    var radar = new RadarOverlayViewModel();
+    radar.Update(frame);
+    var shade = SideShadeCalculator.Compute(frame);
     return new Panel
     {
         Width = 760,
@@ -325,10 +348,16 @@ Control Road(RadarStyle style)
                 Fill = new SolidColorBrush(Color.Parse("#E8E8E8")),
                 Points = [new Point(378, 178), new Point(382, 178), new Point(392, 428), new Point(368, 428)],
             },
-            new RadarOverlayView { DataContext = radar, HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center, Margin = new Thickness(0, 60, 0, 0) },
+            new Border { Background = SideShadeWindow.Gradient(true), Opacity = shade.Left, Width = 760 * SideShadeWindow.WidthShare, HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left },
+            new Border { Background = SideShadeWindow.Gradient(false), Opacity = shade.Right, Width = 760 * SideShadeWindow.WidthShare, HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right },
+            new RadarOverlayView
+            {
+                DataContext = radar, Width = 200, Height = 200,
+                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Bottom, Margin = new Thickness(0, 0, 0, 24),
+            },
             new TextBlock
             {
-                Text = style == RadarStyle.Spotter ? "SPOTTER BARS" : "CLASSIC DISC", Foreground = Brushes.White, FontWeight = FontWeight.Bold, FontSize = 15,
+                Text = title, Foreground = Brushes.White, FontWeight = FontWeight.Bold, FontSize = 15,
                 Margin = new Thickness(14, 10), HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top,
             },
         },
@@ -345,7 +374,20 @@ var radarBoard = new Window
         Orientation = Avalonia.Layout.Orientation.Horizontal,
         Spacing = 24,
         Margin = new Thickness(24),
-        Children = { Road(RadarStyle.Spotter), Road(RadarStyle.Disc) },
+        Children =
+        {
+            Road("CAR CLOSING ON THE LEFT", new RadarFrame(
+            [
+                new RadarBlip(1, -2.8f, -6.5f, 2, 7.1f, RadarSeverity.Near),
+                new RadarBlip(2, 0.5f, 15f, 0, 15f, RadarSeverity.Far),
+                new RadarBlip(3, 0.3f, -18f, 0, 18f, RadarSeverity.Far),
+            ], false, false, RadarCalculator.Range)),
+            Road("CAR ALONGSIDE ON THE RIGHT", new RadarFrame(
+            [
+                new RadarBlip(1, 2.4f, 0.6f, 0, 2.5f, RadarSeverity.Danger),
+                new RadarBlip(2, -1.4f, -10f, 3, 10.1f, RadarSeverity.Far),
+            ], false, true, RadarCalculator.Range)),
+        },
     },
 };
 radarBoard.Show();

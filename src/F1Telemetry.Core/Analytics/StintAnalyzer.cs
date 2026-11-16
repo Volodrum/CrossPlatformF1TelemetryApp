@@ -82,7 +82,7 @@ public static class StintAnalyzer
 
         var aggregateByLap = aggregates.ToDictionary(a => a.LapNumber);
         var segments = Segment(classifiedLaps).ToList();
-        var paceLaps = segments.Select((laps, idx) => PaceModel.CleanLaps(idx + 1, laps, aggregateByLap, sessionType)).ToList();
+        var paceLaps = segments.Select((laps, idx) => PaceModel.CleanLaps(idx + 1, laps, aggregateByLap, sessionType, options.TyreCliffWearPercent)).ToList();
         var allPaceLaps = paceLaps.SelectMany(l => l).ToList();
         var fuelEffect = PaceModel.Resolve(allPaceLaps, options.FuelEffectSecondsPerKg);
         var stints = segments
@@ -136,8 +136,8 @@ public static class StintAnalyzer
     {
         var regular = laps.Where(l => l.LapType == LapType.Regular && l.HasTime).ToList();
 
-        double sumFl = 0, sumFr = 0, sumRl = 0, sumRr = 0, fuelSum = 0;
-        int wearCount = 0, fuelCount = 0;
+        // Per lap, then the median: one lap with a flashback, a refuel artefact or a trip through the gravel can't move it.
+        List<double> fl = [], fr = [], rl = [], rr = [], fuel = [];
         foreach (var lap in regular)
         {
             if (!aggregates.TryGetValue(lap.LapNumber, out var a))
@@ -145,22 +145,20 @@ public static class StintAnalyzer
                 continue;
             }
 
-            sumFl += Math.Max(0, a.MaxWearFl - a.MinWearFl);
-            sumFr += Math.Max(0, a.MaxWearFr - a.MinWearFr);
-            sumRl += Math.Max(0, a.MaxWearRl - a.MinWearRl);
-            sumRr += Math.Max(0, a.MaxWearRr - a.MinWearRr);
-            wearCount++;
+            fl.Add(Math.Max(0, a.MaxWearFl - a.MinWearFl));
+            fr.Add(Math.Max(0, a.MaxWearFr - a.MinWearFr));
+            rl.Add(Math.Max(0, a.MaxWearRl - a.MinWearRl));
+            rr.Add(Math.Max(0, a.MaxWearRr - a.MinWearRr));
 
             var used = a.MaxFuel - a.MinFuel;
             if (used > 0 && used < options.MaxPlausibleFuelPerLap)
             {
-                fuelSum += used;
-                fuelCount++;
+                fuel.Add(used);
             }
         }
 
-        var rate = wearCount > 0
-            ? new WheelValues(sumFl / wearCount, sumFr / wearCount, sumRl / wearCount, sumRr / wearCount)
+        var rate = fl.Count > 0
+            ? new WheelValues(PaceModel.Median(fl), PaceModel.Median(fr), PaceModel.Median(rl), PaceModel.Median(rr))
             : default;
 
         aggregates.TryGetValue(laps[0].LapNumber, out var first);
@@ -198,8 +196,8 @@ public static class StintAnalyzer
             EndWear = endWear,
             TyreLifespanLaps = rate.Average > 0 ? options.TyreWearLimitPercent / rate.Average : 0,
             LimitingTyre = limiting,
-            AverageFuelPerLap = fuelCount > 0 ? fuelSum / fuelCount : 0,
-            TotalFuelUsed = fuelSum,
+            AverageFuelPerLap = fuel.Count > 0 ? PaceModel.Median(fuel) : 0,
+            TotalFuelUsed = fuel.Sum(),
             BestLapMs = regular.Count > 0 ? regular.Min(l => l.LapTimeMs) : 0,
             AverageLapMs = lapTimes.Count > 0 ? lapTimes.Average() : 0,
             PaceDegradationPerLap = fit?.RawDegradationPerLap ?? 0,

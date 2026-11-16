@@ -153,9 +153,6 @@ public sealed partial class RadarOverlayViewModel : OverlayViewModelBase
     [ObservableProperty] public partial RadarFrame? Frame { get; set; }
     [ObservableProperty] public partial bool HasCars { get; set; }
 
-    /// <summary>Spotter bars or the top-down disc (overlays page).</summary>
-    [ObservableProperty] public partial RadarStyle Style { get; set; } = RadarStyle.Spotter;
-
     /// <summary>The radar fades out instead of collapsing, so the overlay window keeps its size.</summary>
     public double Opacity => HasCars ? 1 : 0;
 
@@ -166,7 +163,8 @@ public sealed partial class RadarOverlayViewModel : OverlayViewModelBase
     public void Update(RadarFrame frame)
     {
         Frame = frame;
-        HasCars = Preview || frame.AnyCarClose;
+        // Shown while a car is on the disc (it looks closer in than the radar does).
+        HasCars = Preview || frame.Cars.Any(c => c.Distance < Controls.RadarControl.DisplayRange);
     }
 
     public override void Reset()
@@ -315,7 +313,14 @@ public sealed partial class TrackConditionsOverlayViewModel : OverlayViewModelBa
                 rainy ? Palette.Info : Palette.Raised,
                 rainy ? Palette.Info : Palette.TextHi));
         }
+
+        HasRainForecast = c.Forecast.Any(f => f.TimeOffsetMinutes > 0 && f.RainPercentage >= RainWorthShowing);
     }
+
+    /// <summary>The forecast row shows only when some rain is coming: in the dry it is noise.</summary>
+    public const int RainWorthShowing = 10;
+
+    [ObservableProperty] public partial bool HasRainForecast { get; set; }
 
     public void Update(StrategySnapshot s)
     {
@@ -374,6 +379,7 @@ public sealed partial class TrackConditionsOverlayViewModel : OverlayViewModelBa
         StatusBrush = Palette.TextLo;
         HasStatus = false;
         Forecast.Clear();
+        HasRainForecast = false;
         _popupTimer.Stop();
         ShowDamage = _damagePageChosen;
         Damage = null;

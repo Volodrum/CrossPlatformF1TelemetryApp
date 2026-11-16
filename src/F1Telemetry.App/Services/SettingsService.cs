@@ -94,11 +94,15 @@ public sealed class AppSettings
     /// <summary>What the sector box's gap chips compare against.</summary>
     public SectorReference SectorBoxReference { get; set; } = SectorReference.SessionBest;
 
+    /// <summary>Darken the edge of the screen on the side a car is alongside (with the radar overlay).</summary>
+    public bool RadarSideShade { get; set; } = true;
+
     /// <summary>
-    /// How the proximity radar is drawn. Null in settings saved before the spotter bars existed: those get the bars,
-    /// with the overlay kept centred where the disc was (see <see cref="OverlayManager.Initialize"/>).
+    /// Only read: "Spotter" in settings saved by 0.6.0, whose radar position was moved for the spotter bars and is put
+    /// back once (see <see cref="OverlayManager.Initialize"/>). Never written again.
     /// </summary>
-    public RadarStyle? RadarStyle { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? RadarStyle { get; set; }
 
     /// <summary>Race gap column of the timing tower.</summary>
     public TowerGapMode TowerGap { get; set; } = TowerGapMode.GapToMe;

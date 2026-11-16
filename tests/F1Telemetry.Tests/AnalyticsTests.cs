@@ -189,33 +189,21 @@ public class AnalyticsTests
     }
 
     [Fact]
-    public void Spotter_calls_the_sides_and_the_car_behind_but_not_the_car_ahead()
+    public void Side_shade_darkens_the_side_a_car_is_alongside_and_deepens_as_it_closes()
     {
         static RadarBlip Car(float x, float z) => new(1, x, z, 0, MathF.Sqrt(x * x + z * z), RadarSeverity.Far);
+        static SideShade Shade(params RadarBlip[] cars) => SideShadeCalculator.Compute(new RadarFrame(cars, false, false, RadarCalculator.Range));
 
-        // Alongside on the right: the cars overlap, so it is an alert.
-        Assert.Equal(new SpotterMark(SpotterZone.Right, 0.6f, 2.7f, true), Spotter.Mark(Car(2.7f, 0.6f)));
-
-        // Pulling out on the left, still a car length back: called, not yet an alert.
-        var left = Spotter.Mark(Car(-2.6f, -7.6f))!.Value;
-        Assert.Equal((SpotterZone.Left, false), (left.Zone, left.Alert));
-        Assert.Equal(-7.6f, left.Offset, 3);
-
-        // Overlapping but a lane away: beside, no alert.
-        Assert.False(Spotter.Mark(Car(5.5f, 1f))!.Value.Alert);
-
-        // In line behind: the rear strip, an alert once it is on the gearbox.
-        Assert.Equal(new SpotterMark(SpotterZone.Behind, 0.4f, 10.5f, false), Spotter.Mark(Car(0.4f, -10.5f)));
-        Assert.True(Spotter.Mark(Car(-0.2f, -6f))!.Value.Alert);
-
-        // In line ahead (it is on screen), far behind, or far to the side: no call.
-        Assert.Null(Spotter.Mark(Car(0.5f, 9f)));
-        Assert.Null(Spotter.Mark(Car(2f, -14f)));
-        Assert.Null(Spotter.Mark(Car(8f, 0f)));
-
-        var frame = new RadarFrame([Car(2.7f, 0.6f), Car(0.5f, 9f), Car(0.4f, -10.5f)], false, true, RadarCalculator.Range);
-        Assert.Equal([SpotterZone.Right, SpotterZone.Behind], Spotter.Marks(frame).Select(m => m.Zone));
-        Assert.Empty(Spotter.Marks(null));
+        Assert.Equal(new SideShade(0, 1), Shade(Car(2.0f, 0.5f)));              // wheel to wheel on the right
+        Assert.Equal(1, Shade(Car(-2.0f, -1f)).Left);                          // and on the left
+        var wider = Shade(Car(3.6f, 0)).Right;
+        Assert.InRange(wider, 0.2f, 0.8f);                                      // a lane away: lighter
+        Assert.True(Shade(Car(3.6f, 6.5f)).Right < wider);                     // not yet overlapping: lighter still
+        Assert.Equal(SideShade.None, Shade(Car(0.4f, 3f)));                    // in line ahead: no shade
+        Assert.Equal(SideShade.None, Shade(Car(2.0f, -9f)));                   // dropped clear behind
+        Assert.Equal(SideShade.None, Shade(Car(6f, 0)));                       // another line of the track
+        Assert.Equal(new SideShade(1, 1), Shade(Car(2.0f, 0), Car(-2.1f, 1))); // sandwiched
+        Assert.False(SideShadeCalculator.Compute(null).Any);
     }
 
     [Fact]

@@ -4,6 +4,5 @@
              xmlns:controls="using:F1Telemetry.App.Controls"
              x:Class="F1Telemetry.App.Views.Overlays.RadarOverlayView"
              x:DataType="vm:RadarOverlayViewModel">
-  <!-- The control sizes itself to its style: wide and hollow for the spotter bars, square for the disc. -->
-  <controls:RadarControl Frame="{Binding Frame}" RadarStyle="{Binding Style}" Opacity="{Binding Opacity}" />
+  <controls:RadarControl Frame="{Binding Frame}" Opacity="{Binding Opacity}" />
 </UserControl>

@@ -99,10 +99,13 @@ public sealed partial class LiveViewModel : ObservableObject
     [ObservableProperty] public partial ChartModel? CurrentLapChart { get; set; }
 
     /// <summary>
-    /// What to drive in the session on now to feed the race plans at this track (the first open item of the data guide
-    /// for this kind of session); empty when the session has no kind (time trial) or no track yet.
+    /// The run to do in the session on now to feed the race plans at this track, in a few words (the first open item of
+    /// the data guide for this kind of session); empty when there is none.
     /// </summary>
     [ObservableProperty] public partial string Guide { get; set; } = "";
+
+    /// <summary>The same in full, for the chip's tooltip.</summary>
+    [ObservableProperty] public partial string GuideTip { get; set; } = "";
 
     [ObservableProperty] public partial bool HasGuide { get; set; }
 
@@ -118,20 +121,17 @@ public sealed partial class LiveViewModel : ObservableObject
         }
 
         _guideFor = key;
-        var text = "";
+        var (text, tip) = ("", "");
         if (session.TrackId >= 0 && DataGuide.SessionOf(session.SessionType) is { } kind)
         {
             try
             {
                 await _runtime.Store.FlushAsync();
                 var knowledge = await _runtime.Analysis.BuildTrackKnowledgeAsync(session.Format, session.TrackId, null);
-                text = knowledge.Guide.NextIn(kind) switch
+                if (knowledge.Guide.NextIn(kind) is { } next)
                 {
-                    { } next => $"FOR THE RACE PLANS · {next.Title.ToUpperInvariant()}: {next.Do}",
-                    null when kind == GuideSession.Practice => "FOR THE RACE PLANS · Every figure they use is measured here. More clean laps still steady them.",
-                    null when kind == GuideSession.Qualifying => "FOR THE RACE PLANS · Keep recording: the tyre sets (used, and how worn) carry into the plan's START ON.",
-                    _ => "FOR THE RACE PLANS · Record to the flag: this race's stops and laps add to what is known here.",
-                };
+                    (text, tip) = (next.Short.ToUpperInvariant(), $"For the race plans: {next.Do}");
+                }
             }
             catch (Exception)
             {
@@ -142,6 +142,7 @@ public sealed partial class LiveViewModel : ObservableObject
         if (_guideFor == key)
         {
             Guide = text;
+            GuideTip = tip;
             HasGuide = text.Length > 0;
         }
     }

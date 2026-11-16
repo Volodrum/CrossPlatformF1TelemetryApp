@@ -39,17 +39,40 @@ public sealed record StintPaceFit(int StintNumber, string Compound, int Laps, do
 /// </summary>
 public static class PaceModel
 {
-    /// <summary>Laps this much slower than the stint's median are mistakes, traffic or damage, not pace.</summary>
+    /// <summary>Laps this much slower than the stint's median are mistakes, traffic or damage, not pace (short stints).</summary>
     public const double OutlierSeconds = 3;
+
+    /// <summary>
+    /// A lap this much slower than the stint's trend line is traffic, a mistake or damage. Tighter than
+    /// <see cref="OutlierSeconds"/> because the line follows the tyres wearing, so a lap late in a stint isn't mistaken
+    /// for a slow one.
+    /// </summary>
+    public const double SlowOutlierSeconds = 1.5;
+
+    /// <summary>
+    /// A lap this much faster than the trend line is a cut corner, a tow or a lap stitched by a flashback: not pace.
+    /// </summary>
+    public const double FastOutlierSeconds = 1.0;
+
+    /// <summary>Laps run on a set past the cliff wear lose time on purpose: they are allowed this far above the line.</summary>
+    public const double CliffOutlierSeconds = 4;
 
     /// <summary>Fitted fuel effects outside this range are noise, and fall back to the default.</summary>
     public const double MaxPlausibleFuelEffect = 0.1;
 
+    /// <summary>A measured fuel effect is used only when the data pins it down to within this, s/kg (one standard error).</summary>
+    public const double MaxFuelEffectError = 0.008;
+
     /// <summary>
     /// The laps of one stint that represent pace: regular laps with a time and fuel data, without a race's standing-start
     /// lap 1 and without outliers.
+    /// <para>From 4 laps the outliers are judged against the stint's trend (a Theil–Sen line through lap time against
+    /// tyre age, which a few bad laps can't tilt), on both sides: much slower is traffic or a mistake, much faster a cut
+    /// corner or a flashback. The band widens with the stint's own scatter. Laps on a set past
+    /// <paramref name="cliffWearPercent"/> stay out of the line and may run further above it.</para>
     /// </summary>
-    public static List<PaceLap> CleanLaps(int stintNumber, IReadOnlyList<LapRecord> stintLaps, IReadOnlyDictionary<int, LapAggregate> aggregates, int sessionType)
+    public static List<PaceLap> CleanLaps(int stintNumber, IReadOnlyList<LapRecord> stintLaps, IReadOnlyDictionary<int, LapAggregate> aggregates, int sessionType,
+        double cliffWearPercent = 60)
     {
         if (stintLaps.Count == 0)
         {
@@ -79,7 +102,52 @@ public static class PaceModel
         }
 
         var median = Median(laps.Select(l => l.LapSeconds));
-        return laps.Where(l => l.LapSeconds <= median + OutlierSeconds).ToList();
+        laps = laps.Where(l => l.LapSeconds <= median + OutlierSeconds).ToList();
+        if (laps.Count < 4)
+        {
+            return laps;
+        }
+
+        var straight = laps.Where(l => l.WearPercent < cliffWearPercent).ToList();
+        if (straight.Count < 3)
+        {
+            straight = laps;
+        }
+
+        var (intercept, slope) = TheilSen(straight.Select(l => ((double)l.TyreAge, l.LapSeconds)).ToList());
+        double Residual(PaceLap l) => l.LapSeconds - (intercept + slope * l.TyreAge);
+        var residuals = straight.Select(Residual).ToList();
+        var centre = Median(residuals);
+        var scatter = 1.4826 * Median(residuals.Select(r => Math.Abs(r - centre)));
+        var slow = Math.Max(SlowOutlierSeconds, 4 * scatter);
+        var fast = Math.Max(FastOutlierSeconds, 4 * scatter);
+        return laps.Where(l =>
+        {
+            var r = Residual(l) - centre;
+            return r >= -fast && r <= (l.WearPercent >= cliffWearPercent ? Math.Max(CliffOutlierSeconds, slow) : slow);
+        }).ToList();
+    }
+
+    /// <summary>
+    /// Theil–Sen line: the slope is the median of the slopes between every pair of points, the intercept the median of
+    /// what is left. Up to about three in ten points can be anything without moving it far.
+    /// </summary>
+    public static (double Intercept, double Slope) TheilSen(IReadOnlyList<(double X, double Y)> points)
+    {
+        var slopes = new List<double>(points.Count * (points.Count - 1) / 2);
+        for (var i = 0; i < points.Count; i++)
+        {
+            for (var j = i + 1; j < points.Count; j++)
+            {
+                if (points[j].X != points[i].X)
+                {
+                    slopes.Add((points[j].Y - points[i].Y) / (points[j].X - points[i].X));
+                }
+            }
+        }
+
+        var slope = slopes.Count > 0 ? Median(slopes) : 0;
+        return (Median(points.Select(p => p.Y - slope * p.X)), slope);
     }
 
     public static StintPaceFit? FitStint(int stintNumber, string compound, IReadOnlyList<PaceLap> laps, double fuelEffect)
@@ -140,7 +208,25 @@ public static class PaceModel
             }
         }
 
-        if (Solve(ata, atb) is not { } x || x[^1] is < 0 or > MaxPlausibleFuelEffect)
+        if (Solve((double[,])ata.Clone(), (double[])atb.Clone()) is not { } x || x[^1] is < 0 or > MaxPlausibleFuelEffect)
+        {
+            return null;
+        }
+
+        // How well the laps pin it down: its standard error, from the scatter left over and how far apart the fuel loads
+        // were. Two stints at nearly the same load, or noisy laps, give a figure that is mostly noise.
+        var rss = 0.0;
+        foreach (var lap in used)
+        {
+            var c = repeated.IndexOf(lap.Compound);
+            var predicted = x[c] + x[repeated.Count + c] * lap.TyreAge + x[^1] * lap.FuelKg;
+            rss += (lap.LapSeconds - predicted) * (lap.LapSeconds - predicted);
+        }
+
+        var unit = new double[unknowns];
+        unit[^1] = 1;
+        if (Solve((double[,])ata.Clone(), unit) is not { } column || column[^1] <= 0
+            || Math.Sqrt(rss / (used.Count - unknowns) * column[^1]) > MaxFuelEffectError)
         {
             return null;
         }

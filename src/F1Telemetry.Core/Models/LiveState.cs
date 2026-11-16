@@ -39,19 +39,6 @@ public sealed record DeltaUpdate(int SectorNumber, int LapDeltaMs, DeltaColor La
 /// <summary>Timing board for the lap-timing overlay (current lap first).</summary>
 public sealed record LapTimingSnapshot(IReadOnlyList<LapRecord> RecentLaps, LapRecord? SessionBest);
 
-/// <summary>How the proximity radar overlay is drawn.</summary>
-public enum RadarStyle
-{
-    /// <summary>
-    /// Bars at the sides (and a strip for the car behind) with nothing between them, so the road stays visible: a side
-    /// lights up when a car is there. Read out of the corner of the eye.
-    /// </summary>
-    Spotter,
-
-    /// <summary>The top-down disc with every nearby car on it.</summary>
-    Disc,
-}
-
 public enum RadarSeverity
 {
     Far,
