@@ -1,7 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Threading;
-using F1Telemetry.App.Controls;
 using F1Telemetry.App.Platform;
 using F1Telemetry.App.ViewModels;
 using F1Telemetry.App.Views.Overlays;
@@ -44,6 +43,7 @@ public sealed class OverlayManager
     private readonly DispatcherTimer _keepClearTimer;
     private bool _editMode;
     private bool _globallyVisible = true;
+    private SideShadeWindow[] _shades = [];
 
     public OverlayManager(SettingsService settings, LiveDataHub hub, TelemetryRuntime runtime, ErsPlanService ersPlan)
     {
@@ -89,8 +89,6 @@ public sealed class OverlayManager
         [OverlayKind.ErsPlan] = new(300, 112),
     };
 
-    /// <summary>Design size of an overlay as it is set up now: the radar's depends on its style.</summary>
-    public Size SizeOf(OverlayKind kind) => kind == OverlayKind.Radar ? RadarControl.DesignSize(Radar.Style) : Sizes[kind];
 
     public event Action? StateChanged;
 
@@ -173,14 +171,16 @@ public sealed class OverlayManager
 
         Create(OverlayKind.LapTiming, new LapTimingOverlayView { DataContext = LapTiming });
         Create(OverlayKind.Delta, new DeltaOverlayView { DataContext = Delta });
-        // Settings from before the spotter bars have no radar style: they get the bars, kept where the disc was centred.
-        var radarFromDisc = _settings.Current.RadarStyle is null && _settings.Current.Overlay(OverlayKind.Radar).X is not null;
-        Radar.Style = _settings.Current.RadarStyle ??= RadarStyle.Spotter;
-        Create(OverlayKind.Radar, new RadarOverlayView { DataContext = Radar });
-        if (radarFromDisc)
+        // The radar is a square that fills whatever it gets, so give it its design size (the window scales it).
+        Create(OverlayKind.Radar, new RadarOverlayView { DataContext = Radar, Width = Sizes[OverlayKind.Radar].Width, Height = Sizes[OverlayKind.Radar].Height });
+        if (_settings.Current.RadarStyle == "Spotter")
         {
-            Recentre(OverlayKind.Radar, RadarControl.DesignSize(RadarStyle.Disc), RadarControl.DesignSize(Radar.Style));
+            // 0.6.0 moved a saved radar so the spotter bars (560 × 216) stayed centred on the disc: centre the disc again.
+            Recentre(OverlayKind.Radar, new Size(560, 216), Sizes[OverlayKind.Radar]);
         }
+
+        _settings.Current.RadarStyle = null;
+        _shades = [new SideShadeWindow(left: true), new SideShadeWindow(left: false)];
 
         Create(OverlayKind.TrackConditions, new TrackConditionsOverlayView { DataContext = TrackConditions });
         Create(OverlayKind.Inputs, new InputTraceOverlayView { DataContext = Inputs });
@@ -243,6 +243,7 @@ public sealed class OverlayManager
         if (_hub.Radar is { } radar)
         {
             Radar.Update(radar);
+            Shade(SideShadeCalculator.Compute(radar));
         }
 
         if (_hub.Conditions is { } conditions)
@@ -316,20 +317,6 @@ public sealed class OverlayManager
         }
     }
 
-    /// <summary>Switches the radar between the spotter bars and the disc, keeping its centre where it was.</summary>
-    public void SetRadarStyle(RadarStyle style)
-    {
-        var previous = Radar.Style;
-        if (previous == style)
-        {
-            return;
-        }
-
-        _settings.Current.RadarStyle = style;
-        Radar.Style = style;
-        Recentre(OverlayKind.Radar, RadarControl.DesignSize(previous), RadarControl.DesignSize(style));
-    }
-
     /// <summary>Moves an overlay whose design size changed so that its centre stays put.</summary>
     private void Recentre(OverlayKind kind, Size from, Size to)
     {
@@ -354,6 +341,48 @@ public sealed class OverlayManager
         Inputs.WindowSeconds = seconds;
     }
 
+    /// <summary>Darkens the screen's edges for a car alongside (when the radar is up and the shade is on).</summary>
+    private void Shade(SideShade shade)
+    {
+        var on = _settings.Current.RadarSideShade && _shades.Length == 2 && _shades[0].IsVisible;
+        if (_shades.Length == 2)
+        {
+            _shades[0].Amount = on ? shade.Left : 0;
+            _shades[1].Amount = on ? shade.Right : 0;
+        }
+    }
+
+    /// <summary>The side shade follows the radar: shown with it, on the screen it is on, when switched on.</summary>
+    private void RefreshShades()
+    {
+        if (_shades.Length == 0 || !_windows.TryGetValue(OverlayKind.Radar, out var radar))
+        {
+            return;
+        }
+
+        var show = radar.IsVisible && _settings.Current.RadarSideShade;
+        var screen = radar.Screens.ScreenFromWindow(radar) ?? radar.Screens.Primary;
+        foreach (var shade in _shades)
+        {
+            if (show && screen is not null)
+            {
+                shade.PlaceOn(screen.Bounds, screen.Scaling);
+                if (!shade.IsVisible)
+                {
+                    shade.Show();
+                }
+            }
+            else if (shade.IsVisible)
+            {
+                shade.Amount = 0;
+                shade.Hide();
+            }
+        }
+
+        // The preview shows it at work for the preview's car alongside on the right.
+        Shade(_editMode ? new SideShade(0, 0.8f) : _hub.Radar is { } frame ? SideShadeCalculator.Compute(frame) : SideShade.None);
+    }
+
     public void Refresh()
     {
         foreach (var (kind, window) in _windows)
@@ -370,6 +399,8 @@ public sealed class OverlayManager
                 window.Hide();
             }
         }
+
+        RefreshShades();
     }
 
     public PixelPoint GetPosition(OverlayKind kind) => _windows.TryGetValue(kind, out var w) ? w.Position : default;
@@ -381,7 +412,7 @@ public sealed class OverlayManager
             return;
         }
 
-        var position = PresetPosition(window, SizeOf(kind), preset);
+        var position = PresetPosition(window, Sizes[kind], preset);
         window.Position = position;
         Store(kind, position);
     }
@@ -396,6 +427,11 @@ public sealed class OverlayManager
         foreach (var window in _windows.Values)
         {
             window.Close();
+        }
+
+        foreach (var shade in _shades)
+        {
+            shade.Close();
         }
     }
 
@@ -452,7 +488,7 @@ public sealed class OverlayManager
         saved.Scale = Math.Clamp(saved.Scale, OverlaySettings.MinScale, OverlaySettings.MaxScale);
         saved.Opacity = Math.Clamp(saved.Opacity, OverlaySettings.MinOpacity, 1);
         var window = new OverlayWindow(kind, view, saved.Scale, saved.Opacity);
-        window.Position = saved is { X: { } x, Y: { } y } ? new PixelPoint(x, y) : PresetPosition(window, SizeOf(kind), DefaultPreset(kind));
+        window.Position = saved is { X: { } x, Y: { } y } ? new PixelPoint(x, y) : PresetPosition(window, Sizes[kind], DefaultPreset(kind));
         window.PositionChanged += (_, e) =>
         {
             if (_editMode)
@@ -466,6 +502,11 @@ public sealed class OverlayManager
 
     private void Store(OverlayKind kind, PixelPoint position)
     {
+        if (kind == OverlayKind.Radar)
+        {
+            RefreshShades(); // the radar may have moved to another screen
+        }
+
         var overlay = _settings.Current.Overlay(kind);
         overlay.X = position.X;
         overlay.Y = position.Y;

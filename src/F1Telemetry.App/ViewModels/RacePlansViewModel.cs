@@ -51,14 +51,26 @@ public sealed record PlanSegmentViewModel(string Compound, double Width, string 
 public sealed record PlanStopViewModel(PlannedStop Stop)
 {
     public string Pit => $"PIT L{Stop.InLap}";
-    public string Window => Stop.WindowFirst == Stop.WindowLast ? "no window" : $"window L{Stop.WindowFirst}–{Stop.WindowLast}";
+
+    /// <summary>"  (L4–7)": the in-laps that cost at most the window more; empty when there is no choice.</summary>
+    public string Window => Stop.WindowFirst == Stop.WindowLast ? "" : $"  (L{Stop.WindowFirst}–{Stop.WindowLast})";
+
+    /// <summary>The window, the undercut and the safety-car windows in full, for the tooltip.</summary>
+    public string Tip => string.Join(" ", new[]
+    {
+        Stop.WindowFirst == Stop.WindowLast ? "No pit window: one lap either side costs more than 1 s." : $"Pit window L{Stop.WindowFirst}–{Stop.WindowLast}: within 1 s of the best in-lap.",
+        Stop.UndercutSeconds >= 0
+            ? string.Create(CultureInfo.InvariantCulture, $"Undercut: pitting a lap before a car on the same plan gains {Stop.UndercutSeconds:0.00} s.")
+            : string.Create(CultureInfo.InvariantCulture, $"Overcut: staying out a lap longer than a car on the same plan gains {-Stop.UndercutSeconds:0.00} s."),
+        Stop.SafetyCar is null && Stop.VirtualSafetyCar is null ? "" : SafetyCarTip,
+    }.Where(t => t.Length > 0));
     public string Undercut => Stop.UndercutSeconds >= 0 ? $"undercut +{Stop.UndercutSeconds:0.00} s" : $"overcut +{-Stop.UndercutSeconds:0.00} s";
     public IBrush UndercutBrush => Stop.UndercutSeconds >= 0 ? Palette.Faster : Palette.Slower;
 
     /// <summary>Laps on which a safety car (SC) or virtual safety car (VSC) makes pitting under it pay.</summary>
     public string SafetyCar => string.Join(" · ", new[] { LapRange("SC", Stop.SafetyCar), LapRange("VSC", Stop.VirtualSafetyCar) }.Where(w => w.Length > 0)) is { Length: > 0 } text
-        ? text
-        : "no SC window";
+        ? $"  ·  {text}"
+        : "";
 
     public string SafetyCarTip =>
         "If a safety car (SC) or virtual safety car (VSC) comes out on one of these laps, pit under it: the stop costs less, "
@@ -132,7 +144,7 @@ public sealed record GuideRowViewModel(GuideItem Item)
 }
 
 /// <summary>What to do in one kind of session: the open items measured there, then what always applies.</summary>
-public sealed record PlaybookViewModel(string Session, string Goal, IReadOnlyList<string> Steps);
+public sealed record PlaybookViewModel(string Session, IReadOnlyList<string> Steps);
 
 /// <summary>A choice of the set the race starts on.</summary>
 /// <param name="Set">The set; null lets the plan pick a new one.</param>
@@ -183,6 +195,9 @@ public sealed partial class RacePlansViewModel(TelemetryRuntime runtime, Setting
     public ObservableCollection<PlaybookViewModel> Playbooks { get; } = [];
     [ObservableProperty] public partial int RaceLaps { get; set; } = 20;
     [ObservableProperty] public partial string Basis { get; set; } = "";
+
+    /// <summary>The figures behind the plans in one line; <see cref="Basis"/> (its tooltip) says where each comes from.</summary>
+    [ObservableProperty] public partial string BasisShort { get; set; } = "";
     [ObservableProperty] public partial string Problem { get; set; } = "";
     [ObservableProperty] public partial bool HasLibrary { get; set; }
     [ObservableProperty] public partial bool HasPlans { get; set; }
@@ -332,6 +347,8 @@ public sealed partial class RacePlansViewModel(TelemetryRuntime runtime, Setting
                 + $"under {Neutralised("SC", library.SafetyCarPitLossSeconds, library.SafetyCarPitLossStops, defaults.SafetyCarPitLossFactor)}, "
                 + $"{Neutralised("VSC", library.VirtualSafetyCarPitLossSeconds, library.VirtualSafetyCarPitLossStops, defaults.VirtualSafetyCarPitLossFactor)} · "
                 + $"fuel {library.FuelPerLap:0.00} kg/lap at {library.FuelEffect.SecondsPerKg:0.000} s/kg ({library.FuelEffect.Basis}) · paces in this session's conditions");
+            BasisShort = string.Create(CultureInfo.InvariantCulture,
+                $"PIT {library.PitLossSeconds:0.0} s · SC {StrategyPlanner.SafetyCarPitLoss(library, defaults):0.0} s · VSC {StrategyPlanner.VirtualSafetyCarPitLoss(library, defaults):0.0} s · FUEL {library.FuelPerLap:0.00} kg/lap");
 
             if (firstLoad)
             {
@@ -369,20 +386,14 @@ public sealed partial class RacePlansViewModel(TelemetryRuntime runtime, Setting
             ? $"Next: {next.Title.ToLowerInvariant()} ({next.Session.ToString().ToLowerInvariant()}). {next.Do}"
             : "Everything the plans use is measured here. More clean laps still steady the figures.";
 
+        // A few words per step: the open runs for that session first, then what always applies.
         IReadOnlyList<string> Open(GuideSession session, params string[] always) =>
-            [.. guide.Items.Where(i => i.Session == session && !i.Optional && i.State != GuideState.Done).Select(i => i.Do), .. always];
+            [.. guide.Items.Where(i => i.Session == session && !i.Optional && i.State != GuideState.Done).Select(i => i.Short), .. always];
 
         Playbooks.Clear();
-        Playbooks.Add(new PlaybookViewModel("PRACTICE", "Where the plans are built: tyres and fuel.", Open(GuideSession.Practice,
-            "Record the whole session: laps on any compound add to its pace here.",
-            "Laps more than 3 s off a stint's median are dropped as traffic or a mistake, so a tidy run counts for more than a fast one.")));
-        Playbooks.Add(new PlaybookViewModel("QUALIFYING", "The start set and a reference lap.", Open(GuideSession.Qualifying,
-            "Keep recording through qualifying: the game's tyre sets (which are used, and how worn) carry into the race plan's START ON.",
-            "A clean push lap gives the ERS plan a qualifying lap to work from, and the lap compare a reference.")));
-        Playbooks.Add(new PlaybookViewModel("RACE", "The stop itself, and the check on the plan.", Open(GuideSession.Race,
-            "Record from the grid to the flag: the stops, the safety-car laps and the final lap are all measured.",
-            "If a safety car comes out inside a stop's SC window on the plan, pitting under it is the faster race.",
-            "Afterwards, COMPARE the race with an earlier one at the track to see where the time went.")));
+        Playbooks.Add(new PlaybookViewModel("PRACTICE", Open(GuideSession.Practice, "Record the whole session", "Tidy laps beat fast ones")));
+        Playbooks.Add(new PlaybookViewModel("QUALIFYING", Open(GuideSession.Qualifying, "Record it: tyre sets carry into the race plan")));
+        Playbooks.Add(new PlaybookViewModel("RACE", Open(GuideSession.Race, "Record to the flag", "Safety car in the SC window: box")));
     }
 
     /// <summary>

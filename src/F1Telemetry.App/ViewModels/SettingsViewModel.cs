@@ -32,7 +32,7 @@ public sealed partial class OverlaySettingsViewModel : ObservableObject
         GapMode = settings.Current.TowerGap;
         DamagePopup = settings.Current.DamagePopup;
         DamagePopupSeconds = Math.Clamp(settings.Current.DamagePopupSeconds, 1, 60);
-        RadarStyle = settings.Current.RadarStyle ?? RadarStyle.Spotter;
+        SideShade = settings.Current.RadarSideShade;
         overlays.StateChanged += UpdatePosition;
         UpdatePosition();
     }
@@ -140,26 +140,21 @@ public sealed partial class OverlaySettingsViewModel : ObservableObject
     [RelayCommand]
     private void SetGapMode(TowerGapMode mode) => GapMode = mode;
 
-    /// <summary>Only the radar has a style.</summary>
-    public bool HasRadarStyle => Kind == OverlayKind.Radar;
+    /// <summary>Only the radar has the side shade.</summary>
+    public bool HasSideShade => Kind == OverlayKind.Radar;
 
-    [ObservableProperty] public partial RadarStyle RadarStyle { get; set; }
-    public bool IsSpotter => RadarStyle == RadarStyle.Spotter;
-    public bool IsDisc => RadarStyle == RadarStyle.Disc;
+    /// <summary>Darken the screen's edge on the side a car is alongside.</summary>
+    [ObservableProperty] public partial bool SideShade { get; set; }
 
-    partial void OnRadarStyleChanged(RadarStyle value)
+    partial void OnSideShadeChanged(bool value)
     {
-        OnPropertyChanged(nameof(IsSpotter));
-        OnPropertyChanged(nameof(IsDisc));
-        if (HasRadarStyle && _settings.Current.RadarStyle != value)
+        if (HasSideShade && _settings.Current.RadarSideShade != value)
         {
-            _overlays.SetRadarStyle(value);
+            _settings.Current.RadarSideShade = value;
             _settings.Save();
+            _overlays.Refresh();
         }
     }
-
-    [RelayCommand]
-    private void SetRadarStyle(RadarStyle style) => RadarStyle = style;
 
     /// <summary>Only the conditions &amp; strategy overlay has the damage page.</summary>
     public bool HasDamagePage => Kind == OverlayKind.TrackConditions;
@@ -243,7 +238,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         [
             new(OverlayKind.LapTiming, "Lap timing", "Recent laps with sector times, colours and delta to best.", settings, overlays),
             new(OverlayKind.Delta, "Lap / sector delta", "Pops up at each sector split with the delta to your best lap.", settings, overlays),
-            new(OverlayKind.Radar, "Proximity radar", "Bars at the sides that light up when a car is beside you, read out of the corner of your eye; the road between them stays clear. Nothing shows when nobody is close.", settings, overlays),
+            new(OverlayKind.Radar, "Proximity radar", "Cars within 25 m from above; hidden when nobody is close. Amber = near, red = alongside.", settings, overlays),
             new(OverlayKind.TrackConditions, "Conditions & strategy", "Weather forecast, safety car, tyre life and fuel range. Second page (hotkey): car damage from above.", settings, overlays),
             new(OverlayKind.Inputs, "Input trace", "Throttle and brake history on a 0–100 % scale, updated every frame.", settings, overlays),
             new(OverlayKind.SectorBox, "Sector box", "TV-style qualifying box: sector colours, lap time, and each sector's time and gap to the reference lap.", settings, overlays),

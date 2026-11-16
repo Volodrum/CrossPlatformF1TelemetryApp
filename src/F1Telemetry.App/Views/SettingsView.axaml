@@ -14,9 +14,11 @@
         <!-- Controls: one row per action, one column per input method -->
         <Border Classes="panel" Padding="18">
           <StackPanel Spacing="12">
-            <TextBlock Classes="label strong" Text="CONTROLS" FontSize="14" />
-            <TextBlock Classes="body" TextWrapping="Wrap"
-                       Text="Every input works while the game has focus. Bind an action to a key, a controller button, or both." />
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <TextBlock Classes="label strong" Text="CONTROLS" FontSize="14" VerticalAlignment="Center" />
+              <controls:HelpTip Width="18" Height="18"
+                                Text="Every input works while the game has focus; bind an action to a key, a controller button, or both. KEYBOARD: global hotkeys (macOS: grant the Accessibility permission; not available on Wayland). CONTROLLER: read straight from the pad (DualSense, DualShock, Xbox, Switch Pro…). Press SET…, then a button, or hold one button and press another for a combo. The game still sees the press, so pick one it doesn't use. WHEEL: in the game's controls settings, bind a wheel button to the UDP Action chosen here. The press arrives with the telemetry, so any wheel works, on every OS." />
+            </StackPanel>
             <Grid ColumnDefinitions="220,Auto,Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto" RowSpacing="10" ColumnSpacing="24">
               <TextBlock Classes="label" Text="ACTION" />
               <TextBlock Grid.Column="1" Classes="label" Text="KEYBOARD" />
@@ -90,20 +92,7 @@
             <TextBlock Text="{Binding PadCaptureHint}" Foreground="{StaticResource DangerBrush}" FontWeight="SemiBold"
                        IsVisible="{Binding PadCaptureHint, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
 
-            <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="12" RowSpacing="6">
-              <TextBlock Classes="label strong" Text="KEYBOARD" />
-              <TextBlock Grid.Column="1" Classes="body" FontSize="13" TextWrapping="Wrap"
-                         Text="Global hotkeys. macOS: grant the Accessibility permission. Not available on Wayland." />
-              <TextBlock Grid.Row="1" Classes="label strong" Text="CONTROLLER" />
-              <StackPanel Grid.Row="1" Grid.Column="1" Spacing="2">
-                <TextBlock Classes="body" FontSize="13" TextWrapping="Wrap"
-                           Text="Read straight from the pad (DualSense, DualShock, Xbox, Switch Pro…). Press SET…, then a button, or hold one button and press another for a combo. The game still sees the press, so pick one it doesn't use." />
-                <TextBlock Classes="mono" Text="{Binding ControllerStatus}" FontSize="13" Foreground="{StaticResource TextLoBrush}" TextWrapping="Wrap" />
-              </StackPanel>
-              <TextBlock Grid.Row="2" Classes="label strong" Text="WHEEL" />
-              <TextBlock Grid.Row="2" Grid.Column="1" Classes="body" FontSize="13" TextWrapping="Wrap"
-                         Text="In the game's controls settings, bind a wheel button to the UDP Action chosen above. The press arrives with the telemetry, so any wheel works, on every OS." />
-            </Grid>
+            <TextBlock Classes="mono" Text="{Binding ControllerStatus}" FontSize="13" Foreground="{StaticResource TextLoBrush}" TextWrapping="Wrap" />
           </StackPanel>
         </Border>
 

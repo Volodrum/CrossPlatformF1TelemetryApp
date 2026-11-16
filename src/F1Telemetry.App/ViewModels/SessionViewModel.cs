@@ -81,6 +81,9 @@ public sealed record StintViewModel(StintAnalysis Stint, IReadOnlyList<LapBar> B
     public string Pace => HasPace ? $"{Stint.FuelCorrectedDegradationPerLap:+0.000;−0.000}" : "—";
     public IBrush PaceBrush => !HasPace ? Palette.TextLo : Stint.FuelCorrectedDegradationPerLap > 0 ? Palette.Slower : Palette.Faster;
     public string PaceNote => HasPace ? $"{Stint.TotalStintTimeLoss:+0.00;−0.00} s over {Stint.PaceLapCount} clean laps, with the fuel burn taken out" : "Needs 2+ clean laps for the pace regression";
+    /// <summary>Everything behind the degradation figure, for its tooltip.</summary>
+    public string PaceTip => HasPace ? $"{PaceNote}. {RawPaceNote}" : PaceNote;
+
     public string RawPaceNote => HasPace
         ? $"Raw lap times {Stint.PaceDegradationPerLap:+0.000;−0.000} s/lap. Fuel effect {FuelEffect.SecondsPerKg:0.000} s/kg, {FuelEffect.Basis}."
         : "";

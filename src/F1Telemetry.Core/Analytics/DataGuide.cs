@@ -33,7 +33,8 @@ public enum GuideSession
 /// <param name="Why">What the plans do without it.</param>
 /// <param name="Session">Where it is best measured.</param>
 /// <param name="Optional">Can't be set up on purpose (a stop under a safety car): never the next thing to do, and not counted.</param>
-public sealed record GuideItem(string Title, GuideState State, string Have, string Do, string Why, GuideSession Session, bool Optional = false);
+/// <param name="Short">The run to do in a few words, for tight places ("Soft · 6-lap run").</param>
+public sealed record GuideItem(string Title, GuideState State, string Have, string Do, string Why, GuideSession Session, bool Optional = false, string Short = "");
 
 /// <summary>
 /// What the race plans know at a track and what to drive next to know more: the checklist behind the strategy tab's
@@ -102,7 +103,8 @@ public static class DataGuideBuilder
                 state == GuideState.Missing
                     ? $"With fewer than {minLaps} clean laps the {name} is left out of every plan."
                     : $"A run of {SteadyRunLaps}+ laps is what shows how fast the {name} loses time as it ages; shorter runs give a rough slope.",
-                GuideSession.Practice));
+                GuideSession.Practice,
+                Short: laps < minLaps ? $"{compound} · {minLaps}+ clean laps" : $"{compound} · {SteadyRunLaps}-lap run"));
         }
 
         // Compounds are compared through sessions that share one.
@@ -115,7 +117,8 @@ public static class DataGuideBuilder
                 unlinked.Count == 0 ? "every compound is tied to this session" : $"{string.Join(" and ", unlinked)} only run on another day",
                 unlinked.Count == 0 ? "" : $"Run the {string.Join(" and the ", unlinked)} in a session that also has a compound from this one (two compounds in one practice).",
                 "Track temperature and rubber change between sessions. Two compounds in one session let the day's conditions be taken out of the gap between them.",
-                GuideSession.Practice));
+                GuideSession.Practice,
+                Short: "Two compounds · one session"));
         }
 
         var measuredFuel = library.FuelEffect.Source == FuelEffectSource.Measured;
@@ -125,7 +128,8 @@ public static class DataGuideBuilder
             string.Create(CultureInfo.InvariantCulture, $"{library.FuelEffect.SecondsPerKg:0.000} s/kg, {(measuredFuel ? library.FuelEffect.Basis : "typical F1 value")}"),
             measuredFuel ? "" : "In one session run the same compound in two stints at different fuel loads, 3+ clean laps each (a long run on race fuel, then the same compound again on what is left).",
             "Within one stint the tyres wear as the fuel burns off, so the two can't be told apart. The same compound at two fuel loads separates them; until then a typical figure is used.",
-            GuideSession.Practice));
+            GuideSession.Practice,
+            Short: "Same tyre · two fuel loads"));
 
         var dryModels = library.Compounds.Where(c => c.IsDry && c.Laps >= minLaps).ToList();
         if (dryModels.Count > 0)
@@ -140,7 +144,8 @@ public static class DataGuideBuilder
                     $"Keep a set of the {string.Join(" or ", assumed)} on until its most worn tyre is past {options.TyreCliffWearPercent:0} % and run 3+ clean laps there."),
                 string.Create(CultureInfo.InvariantCulture,
                     $"Past {options.TyreCliffWearPercent:0} % wear a set loses time faster. Until laps are run there each one is assumed to cost {options.DefaultTyreCliffSecondsPerLap:0.0} s more, which decides how far a plan stretches a stint."),
-                GuideSession.Practice));
+                GuideSession.Practice,
+                Short: string.Create(CultureInfo.InvariantCulture, $"Run a set past {options.TyreCliffWearPercent:0} % wear")));
         }
 
         items.Add(new GuideItem(
@@ -149,7 +154,8 @@ public static class DataGuideBuilder
             string.Create(CultureInfo.InvariantCulture, $"{library.PitLossSeconds:0.0} s, {(library.PitLossStops > 0 ? $"median of {library.PitLossStops} recorded {Plural(library.PitLossStops, "stop")}" : "default")}"),
             library.PitLossStops > 0 ? "" : "Record a race here with a pit stop under green (a short race is enough).",
             "What a stop costs decides between one stop and two. It is measured from a race's in-lap and out-lap against clean laps; until then a default is used.",
-            GuideSession.Race));
+            GuideSession.Race,
+            Short: "Race with a pit stop"));
 
         var neutralised = library.SafetyCarPitLossStops + library.VirtualSafetyCarPitLossStops;
         items.Add(new GuideItem(
@@ -159,7 +165,8 @@ public static class DataGuideBuilder
             neutralised > 0 ? "" : "Nothing to set up: pit under a safety car or VSC when the plan's SC window says so, and the stop is measured.",
             "The laps on which a safety car makes an early stop pay depend on what the stop costs under it.",
             GuideSession.Race,
-            Optional: true));
+            Optional: true,
+            Short: "Pit under a safety car"));
 
         return new DataGuide(items);
     }

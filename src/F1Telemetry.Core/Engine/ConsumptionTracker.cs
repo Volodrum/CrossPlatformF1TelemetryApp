@@ -105,8 +105,9 @@ public sealed class ConsumptionTracker(StrategyOptions options)
         _wearAtLapStart = wearNow ?? _wearAtLapStart;
     }
 
+    /// <summary>Median of the clean laps: a lap with a flashback or an off can't throw the range out.</summary>
     public double? AverageFuelPerLap(string compound) =>
-        _fuelPerLap.TryGetValue(compound, out var list) && list.Count > 0 ? list.Average() : null;
+        _fuelPerLap.TryGetValue(compound, out var list) && list.Count > 0 ? Analytics.PaceModel.Median(list) : null;
 
     public WheelValues? AverageWearPerLap(string compound)
     {
@@ -115,7 +116,8 @@ public sealed class ConsumptionTracker(StrategyOptions options)
             return null;
         }
 
-        return new WheelValues(list.Average(w => w.Fl), list.Average(w => w.Fr), list.Average(w => w.Rl), list.Average(w => w.Rr));
+        return new WheelValues(Analytics.PaceModel.Median(list.Select(w => w.Fl)), Analytics.PaceModel.Median(list.Select(w => w.Fr)),
+            Analytics.PaceModel.Median(list.Select(w => w.Rl)), Analytics.PaceModel.Median(list.Select(w => w.Rr)));
     }
 
     /// <summary>Laps until the most-worn tyre (by projected rate) hits the wear limit.</summary>

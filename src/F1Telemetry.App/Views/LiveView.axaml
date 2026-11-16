@@ -52,11 +52,14 @@
       <Border Classes="panel" Padding="0" ClipToBounds="True">
         <Panel>
           <controls:TrackMapControl Outline="{Binding Outline}" ActiveLap="{Binding CurrentLapSamples}" />
-          <StackPanel Margin="16,14" HorizontalAlignment="Left" VerticalAlignment="Top" Spacing="2" IsHitTestVisible="False">
+          <StackPanel Margin="16,14" HorizontalAlignment="Left" VerticalAlignment="Top" Spacing="2">
             <TextBlock Classes="h2" Text="{Binding Session}" FontSize="18" />
             <!-- What to drive in this session to feed the race plans at this track (Session → Strategy → Data guide) -->
-            <Border Background="#E6101216" CornerRadius="6" Padding="8,6" Margin="-8,4,0,0" MaxWidth="330" HorizontalAlignment="Left" IsVisible="{Binding HasGuide}">
-              <TextBlock Classes="body" FontSize="13" Text="{Binding Guide}" />
+            <Border Classes="pill" BorderBrush="{StaticResource InfoBrush}" BorderThickness="2" Background="{StaticResource InfoTintBrush}" Padding="8,3"
+                    Margin="0,6,0,0" HorizontalAlignment="Left" IsVisible="{Binding HasGuide}" IsHitTestVisible="True" ToolTip.Tip="{Binding GuideTip}">
+              <TextBlock FontFamily="{StaticResource DisplayFont}" FontSize="12" FontWeight="Bold" LetterSpacing="1.2" Foreground="{StaticResource InfoBrush}">
+                <Run Text="NEXT RUN · " /><Run Text="{Binding Guide}" />
+              </TextBlock>
             </Border>
           </StackPanel>
           <StackPanel Margin="16,14" HorizontalAlignment="Right" VerticalAlignment="Bottom" Spacing="8" IsHitTestVisible="False">

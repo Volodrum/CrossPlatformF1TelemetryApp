@@ -92,6 +92,15 @@ public sealed record CompoundLibrary(
 /// </summary>
 public static class CompoundLibraryBuilder
 {
+    /// <summary>
+    /// A measured degradation above this, s/lap, is noise (a few laps spread by traffic), not tyres: the compound takes
+    /// the others' mean instead, as when it couldn't be measured.
+    /// </summary>
+    public const double MaxPlausibleDegradation = 1.0;
+
+    /// <summary>A cliff slope is never taken above this, s/lap past the cliff.</summary>
+    public const double MaxCliffSecondsPerLap = 2.0;
+
     /// <param name="sessions">Every analysed recording at the track, in one game format.</param>
     /// <param name="anchorRecordingId">The session whose conditions the paces are expressed in (the one on screen).</param>
     public static CompoundLibrary Build(IReadOnlyList<RaceInput> sessions, long? anchorRecordingId, StrategyOptions? options = null)
@@ -130,7 +139,7 @@ public static class CompoundLibraryBuilder
         var degradation = new Dictionary<string, double>();
         foreach (var compound in compounds)
         {
-            if (PooledSlope(straight.Where(l => l.Compound == compound)) is { } slope)
+            if (PooledSlope(straight.Where(l => l.Compound == compound)) is { } slope && slope <= MaxPlausibleDegradation)
             {
                 degradation[compound] = Math.Max(0, slope);
             }
@@ -280,7 +289,7 @@ public static class CompoundLibraryBuilder
             count++;
         }
 
-        return count >= 3 && sxx > 0 ? Math.Max(0, sxy / sxx) : null;
+        return count >= 3 && sxx > 0 ? Math.Clamp(sxy / sxx, 0, MaxCliffSecondsPerLap) : null;
     }
 
     /// <summary>Sessions and compounds reachable from the anchor session through shared compounds.</summary>

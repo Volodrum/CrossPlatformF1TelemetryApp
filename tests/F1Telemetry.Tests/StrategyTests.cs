@@ -111,6 +111,43 @@ public sealed class StrategyTests : IAsyncLifetime
     }
 
     [Fact]
+    public void Traffic_cut_corners_and_a_flashback_lap_dont_bend_the_pace_fit()
+    {
+        var (laps, aggregates) = Race([("Medium", 16, 80.0, 0.10)], fuelEffect: 0.03);
+        laps[3] = laps[3] with { LapTimeMs = laps[3].LapTimeMs + 2_000 };   // stuck behind a slower car: under the old 3 s limit
+        laps[7] = laps[7] with { LapTimeMs = laps[7].LapTimeMs - 2_500 };   // corner cut / flashback-stitched lap
+        laps[14] = laps[14] with { LapTimeMs = laps[14].LapTimeMs + 1_800 }; // a lock-up late in the stint
+        var stint = StintAnalyzer.Analyze(laps, aggregates, default, 15)!.Stints[0];
+
+        Assert.Equal(16 - 1 - 3, stint.PaceLapCount); // lap 1 and the three bad laps
+        Assert.Equal(0.100, stint.FuelCorrectedDegradationPerLap, 3);
+    }
+
+    [Fact]
+    public void Wear_and_fuel_rates_ignore_a_lap_with_a_bad_reading()
+    {
+        var (laps, aggregates) = Race([("Medium", 8, 80.0, 0.10)], fuelEffect: 0.03);
+        aggregates[4] = aggregates[4] with { MinFuel = aggregates[4].MaxFuel - 6, MaxWearFl = 9 }; // a flashback mid-lap
+        var stint = StintAnalyzer.Analyze(laps, aggregates, default, 15)!.Stints[0];
+
+        Assert.Equal(1.6, stint.AverageFuelPerLap, 6);
+        Assert.Equal(1.0, stint.AverageWearPerLap.Fl, 6);
+    }
+
+    [Fact]
+    public void A_fuel_effect_the_laps_cant_pin_down_falls_back_to_the_default()
+    {
+        // The same compound twice, but with lap-to-lap scatter of a few tenths: the fit's error is too large to trust.
+        var (laps, aggregates) = Race([("Medium", 6, 80.0, 0.10), ("Hard", 6, 80.6, 0.05), ("Medium", 6, 80.0, 0.10)], fuelEffect: 0.035);
+        var random = new Random(3);
+        laps = laps.Select(l => l with { LapTimeMs = (uint)(l.LapTimeMs + random.Next(-600, 600)) }).ToList();
+        var analysis = StintAnalyzer.Analyze(laps, aggregates, default, 15, new StrategyOptions { FuelEffectSecondsPerKg = 0.03 })!;
+
+        Assert.Equal(FuelEffectSource.Default, analysis.FuelEffect.Source);
+        Assert.Equal(0.03, analysis.FuelEffect.SecondsPerKg);
+    }
+
+    [Fact]
     public void Pit_stop_loss_is_the_in_and_out_lap_against_the_laps_around_them()
     {
         var (laps, _) = Race([("Medium", 10, 80.0, 0), ("Hard", 10, 80.0, 0)], fuelEffect: 0, pitLoss: 21);

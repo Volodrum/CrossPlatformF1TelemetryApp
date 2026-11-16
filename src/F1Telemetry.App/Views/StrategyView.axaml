@@ -57,11 +57,10 @@
               <Border Classes="panel" Padding="18">
                 <StackPanel Spacing="14">
                   <TextBlock Classes="label strong" Text="TYRE LIFE" FontSize="14" />
-                  <StackPanel Orientation="Horizontal" Spacing="10">
+                  <StackPanel Orientation="Horizontal" Spacing="10" Background="Transparent" ToolTip.Tip="{Binding LifespanNote}">
                     <TextBlock Classes="data-xl" Text="{Binding Lifespan}" />
                     <TextBlock Classes="unit" Text="LAPS · FRESH SET" FontSize="17" VerticalAlignment="Bottom" Margin="0,0,0,8" />
                   </StackPanel>
-                  <TextBlock Classes="body" Text="{Binding LifespanNote}" />
                   <ItemsControl ItemsSource="{Binding Wheels}">
                     <ItemsControl.ItemsPanel>
                       <ItemsPanelTemplate>
@@ -95,12 +94,10 @@
               <Border Grid.Column="1" Classes="panel" Padding="18">
                 <StackPanel Spacing="14">
                   <TextBlock Classes="label strong" Text="TYRE DEGRADATION" FontSize="14" />
-                  <StackPanel Orientation="Horizontal" Spacing="10">
+                  <StackPanel Orientation="Horizontal" Spacing="10" Background="Transparent" ToolTip.Tip="{Binding PaceTip}">
                     <TextBlock Classes="data-xl" Text="{Binding Pace}" Foreground="{Binding PaceBrush}" />
                     <TextBlock Classes="unit" Text="S / LAP" FontSize="17" VerticalAlignment="Bottom" Margin="0,0,0,8" />
                   </StackPanel>
-                  <TextBlock Classes="body" Text="{Binding PaceNote}" TextWrapping="Wrap" />
-                  <TextBlock Classes="muted" Text="{Binding RawPaceNote}" FontSize="13" TextWrapping="Wrap" IsVisible="{Binding HasPace}" />
                   <ItemsControl ItemsSource="{Binding Bars}" Height="130">
                     <ItemsControl.ItemsPanel>
                       <ItemsPanelTemplate>
@@ -133,11 +130,10 @@
               <Border Grid.Column="2" Classes="panel" Padding="18">
                 <StackPanel Spacing="14">
                   <TextBlock Classes="label strong" Text="FUEL" FontSize="14" />
-                  <StackPanel Orientation="Horizontal" Spacing="10">
+                  <StackPanel Orientation="Horizontal" Spacing="10" Background="Transparent" ToolTip.Tip="{Binding FuelNote}">
                     <TextBlock Classes="data-xl" Text="{Binding Fuel}" />
                     <TextBlock Classes="unit" Text="KG / LAP" FontSize="17" VerticalAlignment="Bottom" Margin="0,0,0,8" />
                   </StackPanel>
-                  <TextBlock Classes="body" Text="{Binding FuelNote}" />
                 </StackPanel>
               </Border>
             </Grid>
@@ -195,9 +191,9 @@
       <!-- How much of what the plans use was measured here: one line, with the way to the guide -->
       <Border Classes="raised" Padding="14,10" IsVisible="{Binding Plans.HasGuide}">
         <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="16">
-          <TextBlock Classes="label strong" Text="{Binding Plans.GuideScore}" VerticalAlignment="Center" />
-          <TextBlock Grid.Column="1" Classes="body" FontSize="14" Text="{Binding Plans.GuideNext}" VerticalAlignment="Center"
-                     TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Plans.GuideNext}" />
+          <TextBlock Classes="label strong" Text="{Binding Plans.GuideScore}" VerticalAlignment="Center" Background="Transparent" ToolTip.Tip="{Binding Plans.GuideNext}" />
+          <ProgressBar Grid.Column="1" Classes="bar" Minimum="0" Maximum="1" Value="{Binding Plans.GuideProgress}" Foreground="{StaticResource FasterBrush}"
+                       MaxWidth="240" HorizontalAlignment="Left" VerticalAlignment="Center" />
           <Button Grid.Column="2" Theme="{StaticResource SecondaryButton}" Content="DATA GUIDE" Command="{Binding SetStrategyPageCommand}"
                   CommandParameter="{x:Static vm:StrategyPage.Guide}" VerticalAlignment="Center" />
         </Grid>
@@ -213,7 +209,8 @@
                 <controls:HelpTip Width="18" Height="18"
                                   Text="Every recording at this track in this game format feeds the library: each clean lap with the fuel weight taken out, fitted as compound pace + tyre age × degradation + the session's own offset, so practice and race laps compare. Tyre life is the laps until the most worn tyre reaches the wear limit (Settings). Past 60 % wear a set loses time faster (the cliff): CLIFF is the tyre age where that starts and what each lap past it adds, measured from laps run past it (grey: the default). Plans use two different dry compounds and keep every set within its life; the stint lengths are the fastest split. A used set runs like a new one as many laps old as its wear is worth (U on the bar). SC / VSC: the laps on which a safety car or virtual safety car makes pitting under it, instead of at the planned lap, the faster race. A stop's window is the in-laps that cost at most 1 s more, the other stops staying put. Undercut: what pitting a lap before a car on the same plan gains on its lap on old tyres (overcut: what staying out gains). The out-lap's cold tyres are part of the pit-stop loss." />
               </StackPanel>
-              <TextBlock Classes="muted" FontSize="13" Text="{Binding Basis}" TextWrapping="Wrap" IsVisible="{Binding HasLibrary}" />
+              <TextBlock Classes="mono" FontSize="13" Foreground="{StaticResource TextMidBrush}" Text="{Binding BasisShort}" IsVisible="{Binding HasLibrary}"
+                         Background="Transparent" ToolTip.Tip="{Binding Basis}" />
             </StackPanel>
             <StackPanel Grid.Column="1" Spacing="10" VerticalAlignment="Top">
               <StackPanel Orientation="Horizontal" Spacing="12" HorizontalAlignment="Right">
@@ -267,7 +264,10 @@
                       <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
                         <TextBlock Classes="h2" FontSize="15" Text="{Binding Name}" />
                         <TextBlock Classes="muted" FontSize="12" Text="{Binding Data}" />
-                        <TextBlock Classes="muted" FontSize="12" Text="{Binding Note}" Foreground="{StaticResource SlowerBrush}" TextWrapping="Wrap" IsVisible="{Binding HasNote}" />
+                        <Border Classes="pill" BorderBrush="{StaticResource SlowerBrush}" BorderThickness="1" HorizontalAlignment="Left" IsVisible="{Binding HasNote}"
+                                ToolTip.Tip="{Binding Note}">
+                          <TextBlock Text="ESTIMATED" FontFamily="{StaticResource DisplayFont}" FontSize="11" FontWeight="Bold" LetterSpacing="1.1" Foreground="{StaticResource SlowerBrush}" />
+                        </Border>
                       </StackPanel>
                       <TextBlock Grid.Column="2" Classes="data-m" FontSize="20" Text="{Binding Pace}" Foreground="{Binding PaceBrush}" HorizontalAlignment="Right" VerticalAlignment="Center" />
                       <TextBlock Grid.Column="3" Classes="data-m" FontSize="20" Text="{Binding Degradation}" HorizontalAlignment="Right" VerticalAlignment="Center" />
@@ -323,14 +323,10 @@
                         </ItemsControl.ItemsPanel>
                         <ItemsControl.ItemTemplate>
                           <DataTemplate x:DataType="vm:PlanStopViewModel">
-                            <TextBlock FontSize="13" ToolTip.Tip="{Binding SafetyCarTip}">
+                            <TextBlock FontSize="13" Background="Transparent" ToolTip.Tip="{Binding Tip}">
                               <Run Text="{Binding Pit}" FontWeight="Bold" Foreground="{StaticResource TextHiBrush}" />
-                              <Run Text=" · " Foreground="{StaticResource TextLoBrush}" />
                               <Run Text="{Binding Window}" Foreground="{StaticResource TextMidBrush}" />
-                              <Run Text=" · " Foreground="{StaticResource TextLoBrush}" />
-                              <Run Text="{Binding Undercut}" Foreground="{Binding UndercutBrush}" />
-                              <Run Text=" · " Foreground="{StaticResource TextLoBrush}" />
-                              <Run Text="{Binding SafetyCar}" Foreground="{StaticResource TextMidBrush}" />
+                              <Run Text="{Binding SafetyCar}" Foreground="{StaticResource SlowerBrush}" />
                             </TextBlock>
                           </DataTemplate>
                         </ItemsControl.ItemTemplate>
@@ -363,14 +359,13 @@
             <ProgressBar Grid.Column="1" Classes="bar" Minimum="0" Maximum="1" Value="{Binding GuideProgress}" Foreground="{StaticResource FasterBrush}"
                          MaxWidth="420" HorizontalAlignment="Left" MinWidth="240" VerticalAlignment="Center" />
           </Grid>
-          <TextBlock Classes="body" Foreground="{StaticResource TextHiBrush}" Text="{Binding GuideNext}" />
         </StackPanel>
       </Border>
 
       <Border Classes="panel" Padding="18" IsVisible="{Binding HasGuide}">
         <StackPanel Spacing="4">
           <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,0,0,8">
-            <TextBlock Classes="label strong" Text="WHAT THE RACE PLANS REST ON · MOST IMPORTANT FIRST" VerticalAlignment="Center" />
+            <TextBlock Classes="label strong" Text="WHAT THE RACE PLANS REST ON" VerticalAlignment="Center" />
             <controls:HelpTip Width="18" Height="18"
                               Text="MEASURED: taken from laps recorded at this track. THIN: recorded, but more of it steadies the figure. TO DO: nothing recorded, so the plans use a default or leave the compound out. OPTIONAL: can't be set up on purpose, and isn't counted. Every recording at this track in this game format counts, whatever the session." />
           </StackPanel>
@@ -378,20 +373,20 @@
             <ItemsControl.ItemTemplate>
               <DataTemplate x:DataType="vm:GuideRowViewModel">
                 <Border BorderBrush="{StaticResource DividerBrush}" BorderThickness="0,1,0,0" Padding="0,12">
-                  <Grid ColumnDefinitions="130,290,*,110" ColumnSpacing="16">
+                  <Grid ColumnDefinitions="130,320,*,110" ColumnSpacing="16">
                     <Border Height="28" CornerRadius="5" BorderThickness="2" Padding="10,0" HorizontalAlignment="Left" VerticalAlignment="Top"
                             Background="{Binding StateBackground}" BorderBrush="{Binding StateBorder}">
                       <TextBlock Text="{Binding State}" FontFamily="{StaticResource DisplayFont}" FontSize="13" FontWeight="Bold" LetterSpacing="1.2"
                                  Foreground="{Binding StateForeground}" VerticalAlignment="Center" />
                     </Border>
                     <StackPanel Grid.Column="1" Spacing="3">
-                      <TextBlock Classes="h2" FontSize="15" Text="{Binding Title}" TextWrapping="Wrap" />
+                      <StackPanel Orientation="Horizontal" Spacing="8">
+                        <TextBlock Classes="h2" FontSize="15" Text="{Binding Title}" VerticalAlignment="Center" />
+                        <controls:HelpTip Text="{Binding Why}" Width="16" Height="16" />
+                      </StackPanel>
                       <TextBlock Classes="mono" FontSize="13" Foreground="{StaticResource TextMidBrush}" Text="{Binding Have}" TextWrapping="Wrap" />
                     </StackPanel>
-                    <StackPanel Grid.Column="2" Spacing="4">
-                      <TextBlock Classes="body" Foreground="{StaticResource TextHiBrush}" Text="{Binding Do}" IsVisible="{Binding HasDo}" />
-                      <TextBlock Classes="muted" FontSize="13" Text="{Binding Why}" TextWrapping="Wrap" />
-                    </StackPanel>
+                    <TextBlock Grid.Column="2" Classes="body" FontSize="14" Foreground="{StaticResource TextHiBrush}" Text="{Binding Do}" IsVisible="{Binding HasDo}" />
                     <TextBlock Grid.Column="3" Classes="label" Text="{Binding Session}" HorizontalAlignment="Right" />
                   </Grid>
                 </Border>
@@ -412,10 +407,7 @@
           <DataTemplate x:DataType="vm:PlaybookViewModel">
             <Border Classes="panel" Padding="18" Margin="0,0,12,0">
               <StackPanel Spacing="10">
-                <StackPanel Spacing="2">
-                  <TextBlock Classes="label strong" FontSize="14" Text="{Binding Session}" />
-                  <TextBlock Classes="h2" Text="{Binding Goal}" TextWrapping="Wrap" />
-                </StackPanel>
+                <TextBlock Classes="label strong" FontSize="14" Text="{Binding Session}" />
                 <ItemsControl ItemsSource="{Binding Steps}">
                   <ItemsControl.ItemTemplate>
                     <DataTemplate x:DataType="x:String">
