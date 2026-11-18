@@ -27,16 +27,14 @@ public sealed class InputTraceControl : Control
     public static readonly StyledProperty<bool> PreviewProperty =
         AvaloniaProperty.Register<InputTraceControl, bool>(nameof(Preview));
 
-    private const double ScaleGutter = 46;
-    private const double BarWidth = 14;
-    private const double BarGap = 6;
+    private const double BarWidth = 18;
+    private const double BarGap = 8;
     private const double BarsWidth = BarGap * 3 + BarWidth * 2;
     private const double IdleAfterSeconds = 0.5;
 
     private static readonly IBrush PlotBackground = new SolidColorBrush(Color.Parse("#0B0C0F"));
     private static readonly IPen GridPen = new Pen(new SolidColorBrush(Color.Parse("#22262E")), 1);
     private static readonly IPen SecondPen = new Pen(new SolidColorBrush(Color.Parse("#1A1D23")), 1);
-    private static readonly IBrush LabelBrush = new SolidColorBrush(Color.Parse("#8D97A6"));
     private static readonly IBrush TrackBrush = new SolidColorBrush(Color.Parse("#22262E"));
     private static readonly Color Throttle = Color.Parse("#2EE88F");
     private static readonly Color Brake = Color.Parse("#FF5A4F");
@@ -50,7 +48,6 @@ public sealed class InputTraceControl : Control
     private readonly double[] _time = new double[InputHistory.BufferSize];
     private readonly float[] _throttle = new float[InputHistory.BufferSize];
     private readonly float[] _brake = new float[InputHistory.BufferSize];
-    private readonly FormattedText?[] _labels = new FormattedText?[5];
     private DispatcherTimer? _wakeTimer;
     private bool _frameRequested;
     private DateTime _frameRequestedAt;
@@ -124,25 +121,20 @@ public sealed class InputTraceControl : Control
     {
         var width = Bounds.Width;
         var height = Bounds.Height;
-        if (width <= ScaleGutter + BarsWidth + 10 || height <= 20)
+        if (width <= BarsWidth + 10 || height <= 20)
         {
             return;
         }
 
         var window = Math.Clamp(WindowSeconds, 1, InputHistory.MaxWindowSeconds);
-        const double top = 8;
-        var bottom = height - 8;
-        var plot = new Rect(ScaleGutter, top, width - ScaleGutter - BarsWidth, bottom - top);
+        var plot = new Rect(0, 0, width - BarsWidth + BarGap, height);
         context.FillRectangle(PlotBackground, plot, 6);
 
-        // Scale: 0 / 25 / 50 / 75 / 100 %.
-        for (var k = 0; k <= 4; k++)
+        // Quarter lines (25 / 50 / 75 %), unlabelled: the trace is read by its shape, not its numbers.
+        for (var k = 1; k <= 3; k++)
         {
             var y = plot.Bottom - plot.Height * k / 4;
             context.DrawLine(GridPen, new Point(plot.Left, y), new Point(plot.Right, y));
-            var label = _labels[k] ??= new FormattedText($"{k * 25}%", CultureInfo.InvariantCulture, FlowDirection.LeftToRight,
-                new Typeface(this.FindResource("DataFont") as FontFamily ?? FontFamily.Default, FontStyle.Normal, FontWeight.Bold), 12, LabelBrush);
-            context.DrawText(label, new Point(ScaleGutter - 6 - label.Width, y - label.Height / 2));
         }
 
         // One faint line per second of history.

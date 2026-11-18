@@ -69,8 +69,8 @@
           </StackPanel>
 
           <StackPanel Grid.Column="3" VerticalAlignment="Center" Spacing="2">
-            <TextBlock Classes="h2" Text="{Binding Live.Session}" TextTrimming="CharacterEllipsis" />
-            <TextBlock Classes="mono" Text="{Binding Live.IngestStatus}" FontSize="13" Foreground="{StaticResource TextLoBrush}" TextTrimming="CharacterEllipsis" />
+            <TextBlock Classes="h2" Text="{Binding Connection.Session}" TextTrimming="CharacterEllipsis" />
+            <TextBlock Classes="mono" Text="{Binding Connection.IngestStatus}" FontSize="13" Foreground="{StaticResource TextLoBrush}" TextTrimming="CharacterEllipsis" />
           </StackPanel>
 
           <StackPanel Grid.Column="4" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
@@ -83,7 +83,7 @@
               </TextBlock>
             </Button>
             <Border Height="32" CornerRadius="16" Padding="12,0" Background="{StaticResource FasterTintBrush}"
-                    IsVisible="{Binding Live.IsReceiving}" VerticalAlignment="Center">
+                    IsVisible="{Binding Connection.IsReceiving}" VerticalAlignment="Center">
               <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
                 <Ellipse Width="10" Height="10" Fill="{StaticResource FasterBrush}" />
                 <TextBlock Text="LIVE" FontFamily="{StaticResource DisplayFont}" FontSize="13" FontWeight="Bold" LetterSpacing="1.3" Foreground="{StaticResource FasterBrush}" />
@@ -98,12 +98,12 @@
     </Border>
 
     <!-- Mode mismatch warning -->
-    <Border DockPanel.Dock="Top" Background="{StaticResource WarningTintBrush}" Padding="20,10" IsVisible="{Binding Live.HasModeWarning}">
+    <Border DockPanel.Dock="Top" Background="{StaticResource WarningTintBrush}" Padding="20,10" IsVisible="{Binding Connection.HasModeWarning}">
       <StackPanel Orientation="Horizontal" Spacing="12">
         <Border Classes="pill" Background="{StaticResource SlowerBrush}">
           <TextBlock Text="MODE" FontFamily="{StaticResource DisplayFont}" FontSize="13" FontWeight="Bold" LetterSpacing="1.3" Foreground="{StaticResource OnColorBrush}" />
         </Border>
-        <TextBlock Text="{Binding Live.ModeWarning}" Foreground="{StaticResource SlowerBrush}" FontWeight="SemiBold" VerticalAlignment="Center" />
+        <TextBlock Text="{Binding Connection.ModeWarning}" Foreground="{StaticResource SlowerBrush}" FontWeight="SemiBold" VerticalAlignment="Center" />
       </StackPanel>
     </Border>
 
@@ -112,7 +112,7 @@
       <TextBlock Text="{Binding StatusMessage}" Foreground="{StaticResource TextMidBrush}" FontSize="13" />
     </Border>
 
-    <!-- Navigation rail, top to bottom: the game everything is about; drive (live); review (session, compare);
+    <!-- Navigation rail, top to bottom: the game everything is about; review (session, compare);
          prepare (setups, overlays); and the app's settings at the foot. Picking a section also leaves the settings page. -->
     <Border DockPanel.Dock="Left" Width="96" Background="{StaticResource ChromeBrush}" BorderBrush="{StaticResource DividerBrush}" BorderThickness="0,0,2,0">
       <DockPanel Margin="0,10,0,8">
@@ -169,16 +169,6 @@
         </Button>
 
       <StackPanel Spacing="4">
-        <Button Theme="{StaticResource RailButton}" Classes.selected="{Binding IsLiveActive}"
-                Command="{Binding NavigateCommand}" CommandParameter="{x:Static vm:MainSection.Live}"
-                ToolTip.Tip="Live dashboard: what the car is doing now" AutomationProperties.Name="Live">
-          <StackPanel Spacing="6">
-            <PathIcon Width="24" Height="24" HorizontalAlignment="Center"
-                      Data="M12,16A3,3 0 0,1 9,13C9,11.88 9.61,10.9 10.5,10.39L20.21,4.77L14.68,14.35C14.18,15.33 13.17,16 12,16M12,3C13.81,3 15.5,3.5 16.97,4.32L14.87,5.53C14,5.19 13,5 12,5A8,8 0 0,0 4,13C4,15.21 4.89,17.21 6.34,18.65H6.35C6.74,19.04 6.74,19.67 6.35,20.06C5.96,20.45 5.32,20.45 4.93,20.07V20.07C3.12,18.26 2,15.76 2,13A10,10 0 0,1 12,3M22,13C22,15.76 20.88,18.26 19.07,20.07V20.07C18.68,20.45 18.05,20.45 17.66,20.06C17.27,19.67 17.27,19.04 17.66,18.65V18.65C19.11,17.2 20,15.21 20,13C20,12 19.81,11 19.46,10.1L20.67,8C21.5,9.5 22,11.18 22,13Z" />
-            <TextBlock Text="LIVE" HorizontalAlignment="Center" />
-          </StackPanel>
-        </Button>
-        <Border Classes="divider" Margin="18,4" />
         <Button Theme="{StaticResource RailButton}" Classes.selected="{Binding IsSessionActive}"
                 Command="{Binding NavigateCommand}" CommandParameter="{x:Static vm:MainSection.Session}"
                 ToolTip.Tip="One recorded session: laps, strategy and energy" AutomationProperties.Name="Session">
@@ -284,10 +274,6 @@
       </DockPanel>
 
       <!-- Each view sets its own DataContext, so its visibility sits on a wrapper bound to this window's view model. -->
-      <Panel Margin="20,12,20,16" IsVisible="{Binding IsLiveActive}">
-        <views:LiveView DataContext="{Binding Live}" />
-      </Panel>
-
       <!-- Session: the recording picked in the sidebar, in three views. The laps view drills into one lap. -->
       <TabControl Classes="sections" SelectedIndex="{Binding SessionTabIndex}" Margin="20,12,20,16" IsVisible="{Binding IsSessionActive}">
         <TabItem Header="LAPS">
