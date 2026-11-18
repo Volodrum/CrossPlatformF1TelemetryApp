@@ -51,7 +51,6 @@ public sealed partial class ModeOptionViewModel(GameMode mode, Func<GameFormat, 
 /// </summary>
 public enum MainTab
 {
-    Live,
     Laps,
     LapDetail,
     Strategy,
@@ -65,7 +64,6 @@ public enum MainTab
 /// <summary>The navigation rail: what the user is doing. Only <see cref="Session"/> follows the recordings sidebar.</summary>
 public enum MainSection
 {
-    Live,
     Session,
     Compare,
     Setups,
@@ -95,7 +93,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
         OverlayManager overlays,
         HotkeyService hotkeys,
         GamepadService gamepads,
-        LiveViewModel live,
+        ConnectionViewModel connection,
         SessionViewModel session,
         LapDetailViewModel lapDetail,
         CompareViewModel compare,
@@ -108,7 +106,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
         _runtime = runtime;
         _overlays = overlays;
         _log = log;
-        Live = live;
+        Connection = connection;
         Session = session;
         LapDetail = lapDetail;
         LapCompare = new LapDetailViewModel(runtime) { IsWorkspace = true };
@@ -166,7 +164,8 @@ public sealed partial class MainWindowViewModel : ObservableObject
         };
     }
 
-    public LiveViewModel Live { get; }
+    /// <summary>The telemetry feed as the toolbar shows it: session, packet rate, the LIVE badge and a wrong-mode warning.</summary>
+    public ConnectionViewModel Connection { get; }
     public SessionViewModel Session { get; }
     public LapDetailViewModel LapDetail { get; }
 
@@ -262,7 +261,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
 
         if ((!HasSetups && SelectedTab == MainTab.Setups) || (!HasEnergy && SelectedTab == MainTab.Energy))
         {
-            SelectedTab = MainTab.Live;
+            SelectedTab = MainTab.Laps;
         }
 
         OnPropertyChanged(nameof(Game));
@@ -325,7 +324,6 @@ public sealed partial class MainWindowViewModel : ObservableObject
 
     public MainSection Section => SelectedTab switch
     {
-        MainTab.Live => MainSection.Live,
         MainTab.Compare or MainTab.CompareLaps => MainSection.Compare,
         MainTab.Setups => MainSection.Setups,
         MainTab.Overlays => MainSection.Overlays,
@@ -333,7 +331,6 @@ public sealed partial class MainWindowViewModel : ObservableObject
     };
 
     // What is on screen: one section, or the settings page in place of all of them. Also the rail's highlight.
-    public bool IsLiveActive => !IsSettingsOpen && Section == MainSection.Live;
     public bool IsSessionActive => !IsSettingsOpen && Section == MainSection.Session;
     public bool IsCompareActive => !IsSettingsOpen && Section == MainSection.Compare;
     public bool IsSetupsActive => !IsSettingsOpen && Section == MainSection.Setups;
@@ -382,7 +379,6 @@ public sealed partial class MainWindowViewModel : ObservableObject
         IsSettingsOpen = false;
         SelectedTab = section switch
         {
-            MainSection.Live => MainTab.Live,
             MainSection.Compare => _lastCompareTab,
             MainSection.Setups => MainTab.Setups,
             MainSection.Overlays => MainTab.Overlays,
@@ -454,7 +450,6 @@ public sealed partial class MainWindowViewModel : ObservableObject
 
     private void RaiseActiveChanged()
     {
-        OnPropertyChanged(nameof(IsLiveActive));
         OnPropertyChanged(nameof(IsSessionActive));
         OnPropertyChanged(nameof(IsCompareActive));
         OnPropertyChanged(nameof(IsSetupsActive));

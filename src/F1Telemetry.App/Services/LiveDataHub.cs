@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using Avalonia.Threading;
 using F1Telemetry.Core.Engine;
 using F1Telemetry.Core.Models;
@@ -17,7 +16,6 @@ public sealed class LiveDataHub : IDisposable
 {
     private readonly TelemetryRuntime _runtime;
     private readonly DispatcherTimer _timer;
-    private readonly ConcurrentQueue<TelemetrySample> _samples = new();
     private volatile bool _dirty;
 
     public LiveDataHub(TelemetryRuntime runtime)
@@ -37,11 +35,6 @@ public sealed class LiveDataHub : IDisposable
         engine.SampleCaptured += s =>
         {
             LastSample = s;
-            _samples.Enqueue(s);
-            while (_samples.Count > 20_000 && _samples.TryDequeue(out _))
-            {
-            }
-
             _dirty = true;
         };
         engine.LapTimingUpdated += t => Post(() =>
@@ -102,18 +95,6 @@ public sealed class LiveDataHub : IDisposable
     public event Action<int>? LapCompleted;
     public event Action<SessionInfo>? SessionChanged;
     public event Action<RecordingState>? RecordingChanged;
-
-    /// <summary>Takes all samples captured since the last call (UI thread consumer).</summary>
-    public List<TelemetrySample> DrainSamples()
-    {
-        var list = new List<TelemetrySample>(_samples.Count);
-        while (_samples.TryDequeue(out var sample))
-        {
-            list.Add(sample);
-        }
-
-        return list;
-    }
 
     private static void Post(Action action) => Dispatcher.UIThread.Post(action);
 

@@ -399,10 +399,6 @@ public sealed partial class InputTraceOverlayViewModel(InputHistory history) : O
     [ObservableProperty] public partial double WindowSeconds { get; set; } = 6;
     [ObservableProperty] public partial bool Preview { get; set; }
 
-    public string Header => $"INPUTS · LAST {WindowSeconds:0} S";
-
-    partial void OnWindowSecondsChanged(double value) => OnPropertyChanged(nameof(Header));
-
     public override void LoadPreview() => Preview = true;
 
     public override void Reset() => Preview = false;

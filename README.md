@@ -36,7 +36,7 @@ It is a rewrite of the Electron + React + DuckDB app on **.NET 10 + Avalonia 12*
  RecordingCoordinator ── ITelemetryStore       LiveDataHub (→ UI thread, ≤ 20 Hz)
  (auto-split, formation-lap and                 │
   flashback handling, lap upserts)              ├─ HUD overlays (8 windows)
-          │                                     └─ Live dashboard
+          │                                     └─ Toolbar status (session, rate)
           ▼
  DuckDbTelemetryStore (single writer queue, batched appender)
           │
@@ -76,7 +76,7 @@ The layout differences between the two formats are handled in `FormatLayout`:
 
 Both formats also record ICE and MGU-K power (`engine_power_ice`, `engine_power_mguk`, in W) with the battery, and the player's **car setup** (packet 5) in `recording_setups`: the setup in use when a recording starts, then one row per change, such as a new front wing at a stop. Fuel load alone doesn't count as a change. The player's **tyre sets** (packet 12: the 13 dry and 7 wet sets of the weekend, each with its wear and whether it can still be used) go to `recording_tyre_sets` the same way, a snapshot when a recording starts and one per change; the lap deltas alone don't count.
 
-Packets whose length doesn't match their format are rejected and counted, never misread. The Live view shows the count.
+Packets whose length doesn't match their format are rejected and counted, never misread. The toolbar's status line shows the count.
 
 ## Download
 
@@ -131,7 +131,7 @@ The game only sends telemetry when you switch it on. In F1 25 (or with the 2026 
 | **UDP Format** | `2025` for F1 25, `2026` for the 2026 Season Pack | Must match the **F1 25 / F1 26** switch in the app's toolbar, see [Telemetry modes](#telemetry-modes-f1-25-and-f1-26). |
 | **Your Telemetry** | Restricted or Public | Your own car is always sent in full. *Public* only lets other players' apps in an online lobby see your fuel, ERS and damage. |
 
-Then, in the app, pick **Game (UDP)** in the Source dropdown (or switch on *Listen for the game on startup* in Settings) and drive onto the track. The Live view fills in as soon as packets arrive.
+Then, in the app, pick **Game (UDP)** in the Source dropdown (or switch on *Listen for the game on startup* in Settings) and drive onto the track. The toolbar shows the session and a green LIVE badge as soon as packets arrive.
 
 If nothing shows up:
 
@@ -194,6 +194,20 @@ dotnet test
 dotnet run --project tools/F1Telemetry.Screenshots -- docs/screenshots
 ```
 
+`--overlays` renders only the HUD boards. `--frames` renders one loop of the data guide's animations as a PNG sequence; ffmpeg turns it into the README's GIF:
+
+```bash
+dotnet run --project tools/F1Telemetry.Screenshots -- frames --frames
+```
+
+```bash
+ffmpeg -framerate 12 -i frames/frame-%03d.png -vf palettegen frames/palette.png
+```
+
+```bash
+ffmpeg -framerate 12 -i frames/frame-%03d.png -i frames/palette.png -lavfi paletteuse=dither=none -loop 0 docs/screenshots/23-guide-animations.gif
+```
+
 ### Packaging
 
 Windows single-file exe (no .NET install needed). Output goes to `publish/win-x64/`: `F1Telemetry.exe` plus the `fonts/`, `track_maps/` and `tracks/` folders, which must stay next to it.
@@ -216,16 +230,16 @@ The UI implements the "F1 Telemetry Design Template": a dark, high-contrast race
 - **Tokens:** `src/F1Telemetry.App/Theme/Tokens.axaml` holds colours, fonts and radii. `ViewModels/Palette.cs` mirrors the status colours for code. On the panel background, live values reach 17.3:1 contrast, secondary text 11.4:1, labels 6.3:1 and every status colour at least 6:1.
 - **Type:** JetBrains Mono for every number, Chakra Petch for labels and headings, IBM Plex Sans for body text. All three are embedded (`Assets/Fonts`, SIL OFL). Numbers are 18 px or larger, and each overlay has one headline number of 56 px or larger.
 - **Status is never colour alone:** filled purple = session best, filled green = faster, amber outline = slower, filled red = warning. Deltas carry ▲/▼ and compounds carry a letter (`CompoundBadge`). The shared `Chip` model and template (`App.axaml`) render the same way on overlays, the laps table and lap detail.
-- **Navigation:** a rail on the left, top to bottom in the order you use it. At the top, the **GAME** the app is set up for (see *Games* below). Then drive: **LIVE** (the car now). Review: **SESSION** (one recording) and **COMPARE** (**RACES**: race vs race; **LAPS**: any lap against any lap on the same track). Prepare: **SETUPS** (the library) and **OVERLAYS** (the HUD over the game). **SETTINGS** (**CONTROLS**, **TELEMETRY & STRATEGY**, **DATA** and **UPDATES**) sits at the foot of the rail. Only SESSION follows the recordings sidebar, and only SESSION shows it. It has three tabs: **LAPS** (click a lap to open its telemetry in place; ← ALL LAPS goes back), **STRATEGY** (pages **THIS SESSION**, **RACE PLANS** and **DATA GUIDE**) and **ENERGY** (pages SESSION, ERS PLAN and CAR MODEL). Starting a recording never changes the page.
+- **Navigation:** a rail on the left, top to bottom in the order you use it. At the top, the **GAME** the app is set up for (see *Games* below). Then review: **SESSION** (one recording) and **COMPARE** (**RACES**: race vs race; **LAPS**: any lap against any lap on the same track). Prepare: **SETUPS** (the library) and **OVERLAYS** (the HUD over the game). **SETTINGS** (**CONTROLS**, **TELEMETRY & STRATEGY**, **DATA** and **UPDATES**) sits at the foot of the rail. Only SESSION follows the recordings sidebar, and only SESSION shows it. It has three tabs: **LAPS** (click a lap to open its telemetry in place; ← ALL LAPS goes back), **STRATEGY** (pages **THIS SESSION**, **RACE PLANS** and **DATA GUIDE**) and **ENERGY** (pages SESSION, ERS PLAN and CAR MODEL). Starting a recording never changes the page.
 - **Games:** everything that differs between games hangs off one entry in `GameCatalog` (`Core/Games`): its name, its telemetry modes (for F1 the toolbar's F1 25 / F1 26 switch) and the features its telemetry carries (`GameFeatures`: tyre compounds, ERS, setups, a timing feed, damage, a forecast). Pages and tabs built on a feature show only for games that have it, and the recordings sidebar lists the current game's recordings. F1 25 is supported; Le Mans Ultimate and Assetto Corsa Competizione are listed in the rail's game picker as planned. Adding one means its catalog entry, a packet source and an engine for its telemetry (`TelemetryRuntime.Game` is where they plug in), not changes to each page.
 - **Pages:** every page opens with the same header: a context line, the title, and the page's own switches on the right. Explanations sit behind an ⓘ next to the context line (tooltip) instead of taking page space. Every comparison picks its two sides in the same A / B bar (`CompareBar`), with each side's tag in its trace colour.
 - **Controls:** `Theme/Controls.axaml` defines the primary and secondary buttons, the navigation rail, the segmented mode toggle, section and segment tabs, card lists and text roles (`label`, `h1`, `data-xl`…`data-s`). Strokes are 2 px or thicker and targets 44 px or larger.
 - **ERS deploy modes:** one blue ramp, lighter for more power (None `#3A404C`, Medium `#1F6FB2`, Hotlap `#4DB5FF`, Overtake `#B5E2FF`), always with the mode letter N/M/H/O. It is kept apart from the status colours, so a mode never reads as good or bad.
 - **Charts and map:** panel background, JetBrains Mono ticks, 3 px traces and a dashed grey best-lap reference. The map draws the tarmac at its true width (at least 6 px) between 1 px track limits, with a thin 2.5 px green/amber/red input ribbon, a thin grey comparison lap and a small car marker. Zoom (up to 60×) moves the points apart but keeps every line's on-screen width, so the lines of different laps separate instead of growing fatter.
 
-| Live | Lap detail | Strategy |
+| Laps | Lap detail | Strategy |
 |---|---|---|
-| ![Live](docs/screenshots/01-live.png) | ![Lap detail](docs/screenshots/03-lap-detail.png) | ![Strategy](docs/screenshots/11-strategy-two-stops.png) |
+| ![Laps](docs/screenshots/02-laps.png) | ![Lap detail](docs/screenshots/03-lap-detail.png) | ![Strategy](docs/screenshots/11-strategy-two-stops.png) |
 
 | Race vs race | Gap and pace charts |
 |---|---|
@@ -288,7 +302,9 @@ A chart under the list plots the three best plans' predicted lap times with thei
 - the **pit-stop loss**: a race with a green stop, else 22 s;
 - a stop under a **safety car** (optional: it can't be set up, and isn't counted).
 
-Each row shows its state, what is recorded and the run to do; why it matters is behind its ⓘ. A score ("3 OF 7 MEASURED AT MONZA") heads the page and the RACE PLANS page. Under the list, three cards say in a few words what to do in **practice**, **qualifying** and the **race**. The LIVE page shows the next run for the kind of session being driven as a small chip on the map ("NEXT RUN · SOFT · 6-LAP RUN", details in its tooltip), and checks again after each recorded lap.
+The page shows rather than tells. Each item is a card with a little animation of the run that measures it (`GuideIllustration`): a car lapping a little circuit while six equal lap tiles light up (a long run at one pace), a soft stint and a medium stint in one dashed session frame, the same tyre twice with a fuel tank draining from full and then from low, a wear bar crossing the dashed 60 % line as the lap-time line above bends up, a stop against a car that stays out with the time lost shown as a red gap, and the same stop under a safety car, rejoining ahead. The **NEXT RUN** card at the top is large and moves all the time, with the one sentence worth reading; the other cards, grouped **IN PRACTICE** and **IN THE RACE**, hold a still frame and move only under the pointer, so the page doesn't pull the eye. Each card has its state (MEASURED, THIN, TO DO, OPTIONAL), a progress bar ("4 / 6 LAPS") and, in its tooltip, what is recorded, what to do and why it matters; measured cards fade back. A score ("3 OF 7 MEASURED AT MONZA") heads the page and the RACE PLANS page.
+
+![Data guide animations](docs/screenshots/23-guide-animations.gif)
 
 **Speed.** A finished recording never changes, so its laps and analysis are read once and kept (`SessionAnalysisService`); a live one is read afresh. The library reads every recording at the track, so after the first build it takes about 1–2 ms instead of 55–105 ms for six races, and a race comparison about 6 ms instead of 26. Loading a recording also builds its plans once, not once per input it fills in.
 
@@ -359,7 +375,7 @@ The **ERS plan** overlay (bottom right by default) puts the Energy tab's lap pla
 
 ![ERS plan overlay](docs/screenshots/16-ers-plan-overlay.png)
 
-The **input trace** plots throttle and brake over the last few seconds (1–30 s, 6 by default) on a 0–100 % scale, with live pedal bars. It is built for latency. The engine raises an allocation-free `InputsCaptured` event for every car-telemetry packet on the ingest thread, straight into a lock-guarded ring buffer (`InputHistory`). The overlay control reads that buffer and redraws on every display frame (`RequestAnimationFrame`), bypassing bindings and the 20 Hz UI tick. Samples sit on the game clock and are mapped to the local clock through the lowest observed arrival latency, so a 60 Hz feed scrolls smoothly on a high-refresh display. When packets stop, the trace freezes and the frame loop idles.
+The **input trace** plots throttle (green) and brake (red) over the last few seconds (1–30 s, 6 by default), with a live bar for each pedal and no text at all: faint lines mark each quarter of pedal travel and each second. It is built for latency. The engine raises an allocation-free `InputsCaptured` event for every car-telemetry packet on the ingest thread, straight into a lock-guarded ring buffer (`InputHistory`). The overlay control reads that buffer and redraws on every display frame (`RequestAnimationFrame`), bypassing bindings and the 20 Hz UI tick. Samples sit on the game clock and are mapped to the local clock through the lowest observed arrival latency, so a 60 Hz feed scrolls smoothly on a high-refresh display. When packets stop, the trace freezes and the frame loop idles.
 
 The **OVERLAYS** page has one line per overlay: SHOW (Always, Session, Never), SIZE, OPACITY (click a value to put it back to 100 %) and a PLACE menu of preset positions; what each overlay does is behind its ⓘ, and an overlay's own option sits on a second line. Switch on **PREVIEW** at the top to show every overlay with sample data. Overlays can then be **dragged into place**, snapped to a preset, **resized** (50–250 %) and faded (**opacity** 20–100 %), per overlay. While dragged, an overlay is **magnetic to the screen's centre lines**: its centre snaps onto the vertical and horizontal centre (within 16 px) and a blue guide shows while snapped. Overlays can't leave the screen: a drag stops at the screen's edges, and an overlay that would stick out after a resize, or after a saved position from another monitor layout, is pushed back inside (`ScreenClamp`). The overlay moves itself with its own pointer drag on every OS rather than the native move loop, which differs between machines and is hooked by window tools such as Windhawk's Slick Window Arrangement. Each position is computed afresh from the cursor (on Windows read with `GetCursorPos`), so a snapped overlay sits exactly on the centre line and lets go as soon as the cursor moves past the snap distance (`CentreSnap`). The preview bar never scrolls and always stays usable: an overlay dragged over it gets a see-through, click-through hole (outlined in red) where it covers the bar. On Windows the hole answers `WM_NCHITTEST` with `HTTRANSPARENT`, which hands the click to the main window underneath (same UI thread); on X11 it is cut out of the input shape. macOS can only ignore the mouse for a whole window, so there an overlay dropped on the bar is moved just below it instead. Leaving the Overlays page ends the preview and clears the sample data, so the delta pop-up stays hidden until your first real sector split. The **Toggle overlays** hotkey (default <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>O</kbd>) or the **OVERLAYS** switch in the toolbar hides or shows all of them.
 

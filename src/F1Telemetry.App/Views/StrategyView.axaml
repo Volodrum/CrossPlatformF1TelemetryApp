@@ -347,82 +347,91 @@
     </StackPanel>
   </ScrollViewer>
 
-  <!-- Data guide: every figure the plans use, measured here or assumed, and the run that measures it -->
+  <!-- Data guide: what the plans rest on at this track, shown rather than written. Each item is a card with a little
+       animation of the run that measures it; the next one is large and moving, the rest move under the pointer. The
+       words (what is recorded, what to do, why) are in each card's tooltip. -->
   <ScrollViewer IsVisible="{Binding IsGuidePage}">
     <StackPanel Spacing="16" Margin="0,0,8,0" DataContext="{Binding Plans}" x:DataType="vm:RacePlansViewModel">
+      <StackPanel.Resources>
+        <DataTemplate x:Key="GuideCard" x:DataType="vm:GuideRowViewModel">
+          <Border Classes="panel" Padding="14" Margin="0,0,12,12" Width="290" Background="{StaticResource PanelBrush}" ToolTip.Tip="{Binding Tip}">
+            <StackPanel Spacing="10">
+              <controls:GuideIllustration Kind="{Binding Kind}" Compound="{Binding Compound}" Opacity="{Binding PictureOpacity}"
+                                          IsAnimating="{Binding $parent[Border].IsPointerOver}" />
+              <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                <TextBlock Classes="h2" FontSize="15" Text="{Binding Title}" VerticalAlignment="Center" TextWrapping="Wrap" />
+                <Border Grid.Column="1" Height="24" CornerRadius="5" BorderThickness="2" Padding="8,0" VerticalAlignment="Center"
+                        Background="{Binding StateBackground}" BorderBrush="{Binding StateBorder}">
+                  <TextBlock Text="{Binding State}" FontFamily="{StaticResource DisplayFont}" FontSize="11" FontWeight="Bold" LetterSpacing="1.1"
+                             Foreground="{Binding StateForeground}" VerticalAlignment="Center" />
+                </Border>
+              </Grid>
+              <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                <ProgressBar Classes="bar" Height="8" MinHeight="8" MinWidth="0" CornerRadius="4" Minimum="0" Maximum="1" Value="{Binding Progress}"
+                             Foreground="{Binding ProgressBrush}" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="1" Classes="mono" FontSize="12" Foreground="{StaticResource TextMidBrush}" Text="{Binding Count}"
+                           IsVisible="{Binding HasCount}" VerticalAlignment="Center" />
+              </Grid>
+            </StackPanel>
+          </Border>
+        </DataTemplate>
+      </StackPanel.Resources>
+
       <TextBlock Classes="body" Text="Select a recording to see what the plans know at its track." IsVisible="{Binding !HasGuide}" />
 
-      <Border Classes="panel" Padding="18" IsVisible="{Binding HasGuide}">
-        <StackPanel Spacing="10">
-          <Grid ColumnDefinitions="Auto,*" ColumnSpacing="16">
-            <TextBlock Classes="label strong" FontSize="14" Text="{Binding GuideScore}" VerticalAlignment="Center" />
-            <ProgressBar Grid.Column="1" Classes="bar" Minimum="0" Maximum="1" Value="{Binding GuideProgress}" Foreground="{StaticResource FasterBrush}"
-                         MaxWidth="420" HorizontalAlignment="Left" MinWidth="240" VerticalAlignment="Center" />
-          </Grid>
-        </StackPanel>
-      </Border>
+      <Grid ColumnDefinitions="Auto,*" ColumnSpacing="16" IsVisible="{Binding HasGuide}">
+        <TextBlock Classes="label strong" FontSize="14" Text="{Binding GuideScore}" VerticalAlignment="Center" />
+        <ProgressBar Grid.Column="1" Classes="bar" Minimum="0" Maximum="1" Value="{Binding GuideProgress}" Foreground="{StaticResource FasterBrush}"
+                     MaxWidth="420" HorizontalAlignment="Left" MinWidth="240" VerticalAlignment="Center" />
+      </Grid>
 
-      <Border Classes="panel" Padding="18" IsVisible="{Binding HasGuide}">
-        <StackPanel Spacing="4">
-          <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,0,0,8">
-            <TextBlock Classes="label strong" Text="WHAT THE RACE PLANS REST ON" VerticalAlignment="Center" />
-            <controls:HelpTip Width="18" Height="18"
-                              Text="MEASURED: taken from laps recorded at this track. THIN: recorded, but more of it steadies the figure. TO DO: nothing recorded, so the plans use a default or leave the compound out. OPTIONAL: can't be set up on purpose, and isn't counted. Every recording at this track in this game format counts, whatever the session." />
+      <!-- The next run: large, always moving, with the one sentence worth reading -->
+      <Border Classes="panel" Padding="20" BorderBrush="{StaticResource InfoBrush}" DataContext="{Binding NextGuide}" x:DataType="vm:GuideRowViewModel"
+              IsVisible="{Binding $parent[StackPanel].((vm:RacePlansViewModel)DataContext).NextGuide, Converter={x:Static ObjectConverters.IsNotNull}}">
+        <Grid ColumnDefinitions="400,*" ColumnSpacing="28">
+          <controls:GuideIllustration Kind="{Binding Kind}" Compound="{Binding Compound}" IsAnimating="True" VerticalAlignment="Center" />
+          <StackPanel Grid.Column="1" Spacing="12" VerticalAlignment="Center">
+            <StackPanel Orientation="Horizontal" Spacing="10">
+              <TextBlock Classes="label strong" Text="NEXT RUN" Foreground="{StaticResource InfoBrush}" VerticalAlignment="Center" />
+              <Border Classes="pill" BorderBrush="{StaticResource LineStrongBrush}" BorderThickness="1" VerticalAlignment="Center">
+                <TextBlock Text="{Binding Session}" FontFamily="{StaticResource DisplayFont}" FontSize="11" FontWeight="Bold" LetterSpacing="1.1"
+                           Foreground="{StaticResource TextMidBrush}" />
+              </Border>
+            </StackPanel>
+            <TextBlock Classes="h1" FontSize="26" Text="{Binding Title}" TextWrapping="Wrap" />
+            <TextBlock Classes="body" Foreground="{StaticResource TextHiBrush}" Text="{Binding Do}" TextWrapping="Wrap" />
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12" MaxWidth="420" HorizontalAlignment="Left">
+              <ProgressBar Classes="bar" Height="10" MinHeight="10" CornerRadius="5" Minimum="0" Maximum="1" Value="{Binding Progress}"
+                           Foreground="{Binding ProgressBrush}" MinWidth="260" VerticalAlignment="Center" />
+              <TextBlock Grid.Column="1" Classes="mono" FontSize="13" Foreground="{StaticResource TextMidBrush}" Text="{Binding Count}"
+                         IsVisible="{Binding HasCount}" VerticalAlignment="Center" />
+            </Grid>
           </StackPanel>
-          <ItemsControl ItemsSource="{Binding Guide}">
-            <ItemsControl.ItemTemplate>
-              <DataTemplate x:DataType="vm:GuideRowViewModel">
-                <Border BorderBrush="{StaticResource DividerBrush}" BorderThickness="0,1,0,0" Padding="0,12">
-                  <Grid ColumnDefinitions="130,320,*,110" ColumnSpacing="16">
-                    <Border Height="28" CornerRadius="5" BorderThickness="2" Padding="10,0" HorizontalAlignment="Left" VerticalAlignment="Top"
-                            Background="{Binding StateBackground}" BorderBrush="{Binding StateBorder}">
-                      <TextBlock Text="{Binding State}" FontFamily="{StaticResource DisplayFont}" FontSize="13" FontWeight="Bold" LetterSpacing="1.2"
-                                 Foreground="{Binding StateForeground}" VerticalAlignment="Center" />
-                    </Border>
-                    <StackPanel Grid.Column="1" Spacing="3">
-                      <StackPanel Orientation="Horizontal" Spacing="8">
-                        <TextBlock Classes="h2" FontSize="15" Text="{Binding Title}" VerticalAlignment="Center" />
-                        <controls:HelpTip Text="{Binding Why}" Width="16" Height="16" />
-                      </StackPanel>
-                      <TextBlock Classes="mono" FontSize="13" Foreground="{StaticResource TextMidBrush}" Text="{Binding Have}" TextWrapping="Wrap" />
-                    </StackPanel>
-                    <TextBlock Grid.Column="2" Classes="body" FontSize="14" Foreground="{StaticResource TextHiBrush}" Text="{Binding Do}" IsVisible="{Binding HasDo}" />
-                    <TextBlock Grid.Column="3" Classes="label" Text="{Binding Session}" HorizontalAlignment="Right" />
-                  </Grid>
-                </Border>
-              </DataTemplate>
-            </ItemsControl.ItemTemplate>
-          </ItemsControl>
-        </StackPanel>
+        </Grid>
       </Border>
 
-      <!-- The same, turned round: what to do in the session you are about to drive -->
-      <ItemsControl ItemsSource="{Binding Playbooks}" IsVisible="{Binding HasGuide}">
-        <ItemsControl.ItemsPanel>
-          <ItemsPanelTemplate>
-            <UniformGrid Columns="3" />
-          </ItemsPanelTemplate>
-        </ItemsControl.ItemsPanel>
-        <ItemsControl.ItemTemplate>
-          <DataTemplate x:DataType="vm:PlaybookViewModel">
-            <Border Classes="panel" Padding="18" Margin="0,0,12,0">
-              <StackPanel Spacing="10">
-                <TextBlock Classes="label strong" FontSize="14" Text="{Binding Session}" />
-                <ItemsControl ItemsSource="{Binding Steps}">
-                  <ItemsControl.ItemTemplate>
-                    <DataTemplate x:DataType="x:String">
-                      <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10" Margin="0,0,0,8">
-                        <Border Width="6" Height="6" CornerRadius="3" Background="{StaticResource BrandBrush}" VerticalAlignment="Top" Margin="0,8,0,0" />
-                        <TextBlock Grid.Column="1" Classes="body" FontSize="14" Text="{Binding}" />
-                      </Grid>
-                    </DataTemplate>
-                  </ItemsControl.ItemTemplate>
-                </ItemsControl>
-              </StackPanel>
-            </Border>
-          </DataTemplate>
-        </ItemsControl.ItemTemplate>
-      </ItemsControl>
+      <!-- Everything measured: one line instead of the large card -->
+      <TextBlock Classes="body" Text="{Binding GuideNext}"
+                 IsVisible="{Binding NextGuide, Converter={x:Static ObjectConverters.IsNull}}" />
+
+      <StackPanel Spacing="8" IsVisible="{Binding HasGuide}">
+        <TextBlock Classes="label strong" Text="IN PRACTICE" />
+        <ItemsControl ItemsSource="{Binding PracticeGuide}" ItemTemplate="{StaticResource GuideCard}">
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate>
+              <WrapPanel />
+            </ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
+        </ItemsControl>
+        <TextBlock Classes="label strong" Text="IN THE RACE" />
+        <ItemsControl ItemsSource="{Binding RaceGuide}" ItemTemplate="{StaticResource GuideCard}">
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate>
+              <WrapPanel />
+            </ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
+        </ItemsControl>
+      </StackPanel>
     </StackPanel>
   </ScrollViewer>
     </Panel>

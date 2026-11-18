@@ -83,7 +83,7 @@ public sealed class OverlayManager
         [OverlayKind.Delta] = new(280, 172),
         [OverlayKind.Radar] = new(240, 240),
         [OverlayKind.TrackConditions] = new(360, 340),
-        [OverlayKind.Inputs] = new(552, 220),
+        [OverlayKind.Inputs] = new(552, 174),
         [OverlayKind.SectorBox] = new(400, 116),
         [OverlayKind.TimingTower] = new(420, 290),
         [OverlayKind.ErsPlan] = new(300, 112),

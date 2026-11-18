@@ -96,7 +96,7 @@ public partial class App : Application
         services.AddSingleton<HotkeyService>();
         services.AddSingleton<GamepadService>();
 
-        services.AddSingleton<LiveViewModel>();
+        services.AddSingleton<ConnectionViewModel>();
         services.AddSingleton<SessionViewModel>();
         services.AddSingleton<LapDetailViewModel>();
         services.AddSingleton<CompareViewModel>();

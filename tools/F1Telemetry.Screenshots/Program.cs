@@ -5,6 +5,7 @@ using Avalonia.Media;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using F1Telemetry.App;
+using F1Telemetry.App.Controls;
 using F1Telemetry.App.Services;
 using F1Telemetry.App.ViewModels;
 using F1Telemetry.App.Views;
@@ -50,6 +51,61 @@ void Capture(Window window, string name)
     var path = Path.Combine(output, name + ".png");
     frame?.Save(path);
     Console.WriteLine(frame is null ? $"FAILED {name}" : $"saved {path}");
+}
+
+// --frames: the data guide's six animations side by side, as a numbered PNG sequence of one loop (12 frames a second),
+// to be put together into a GIF or video (ffmpeg -framerate 12 -i frame-%03d.png …).
+if (args.Contains("--frames"))
+{
+    var kinds = new (F1Telemetry.Core.Analytics.GuideKind Kind, string? Compound, string Title)[]
+    {
+        (F1Telemetry.Core.Analytics.GuideKind.LongRun, "Soft", "LONG RUN"), (F1Telemetry.Core.Analytics.GuideKind.TwoCompounds, null, "TWO COMPOUNDS, ONE SESSION"),
+        (F1Telemetry.Core.Analytics.GuideKind.FuelLoads, null, "SAME TYRE, TWO FUEL LOADS"), (F1Telemetry.Core.Analytics.GuideKind.Cliff, null, "TYRE CLIFF"),
+        (F1Telemetry.Core.Analytics.GuideKind.PitStop, null, "PIT STOP LOSS"), (F1Telemetry.Core.Analytics.GuideKind.SafetyCar, null, "STOP UNDER A SAFETY CAR"),
+    };
+    var pictures = new List<GuideIllustration>();
+    var grid = new Avalonia.Controls.Primitives.UniformGrid { Columns = 3, Margin = new Thickness(16) };
+    foreach (var (kind, compound, title) in kinds)
+    {
+        var picture = new GuideIllustration { Kind = kind, Compound = compound, Phase = 0, Width = 360 };
+        pictures.Add(picture);
+        grid.Children.Add(new Border
+        {
+            Background = new SolidColorBrush(Color.Parse("#101216")),
+            BorderBrush = new SolidColorBrush(Color.Parse("#22262E")),
+            BorderThickness = new Thickness(2),
+            CornerRadius = new CornerRadius(10),
+            Padding = new Thickness(14),
+            Margin = new Thickness(8),
+            Child = new StackPanel
+            {
+                Spacing = 10,
+                Children =
+                {
+                    new TextBlock { Text = title, Foreground = new SolidColorBrush(Color.Parse("#C3CAD5")), FontWeight = FontWeight.Bold, FontSize = 13, LetterSpacing = 1.5 },
+                    picture,
+                },
+            },
+        });
+    }
+
+    var frameWindow = new Window { Width = 1240, Height = 470, Background = new SolidColorBrush(Color.Parse("#07080A")), Content = grid };
+    frameWindow.Show();
+    Pump(minMs: 300);
+    const int frames = 54; // one 4.5 s loop at 12 frames a second
+    for (var f = 0; f < frames; f++)
+    {
+        foreach (var picture in pictures)
+        {
+            picture.Phase = (double)f / frames;
+        }
+
+        Pump(minMs: 20);
+        frameWindow.CaptureRenderedFrame()?.Save(Path.Combine(output, $"frame-{f:000}.png"));
+    }
+
+    Console.WriteLine($"saved {frames} frames to {output}");
+    return;
 }
 
 var services = App.ConfigureServices();
@@ -120,9 +176,6 @@ var window = new MainWindow { DataContext = vm, Width = 1440, Height = 900 };
 window.Show();
 Pump(vm.InitializeAsync(), 600);
 
-vm.SelectedTab = MainTab.Live;
-Capture(window, "01-live");
-
 vm.SelectedRecording = vm.Recordings.FirstOrDefault();
 Pump(vm.Session.RefreshAsync(), 300);
 vm.SelectedTab = MainTab.Laps;
@@ -184,6 +237,13 @@ vm.Session.StrategyPage = StrategyPage.Plans;
 Capture(window, "18-race-plans");
 vm.Session.StrategyPage = StrategyPage.Guide;
 Capture(window, "20-data-guide");
+if (window.GetVisualDescendants().OfType<StrategyView>().FirstOrDefault()?.GetVisualDescendants().OfType<ScrollViewer>()
+        .FirstOrDefault(s => s.IsEffectivelyVisible) is { } guideScroll)
+{
+    guideScroll.Offset = guideScroll.Offset.WithY(10_000); // the race group and the measured cards
+    Capture(window, "20b-data-guide-cards");
+    guideScroll.Offset = default;
+}
 vm.Session.StrategyPage = StrategyPage.Session;
 
 // The game picker at the top of the rail.
@@ -216,7 +276,7 @@ foreach (var row in vm.Setups.Rows.Take(2))
 vm.Setups.Rows[0].Favourite = true;
 Capture(window, "14-setups");
 
-vm.SelectedTab = MainTab.Live;
+vm.SelectedTab = MainTab.Laps;
 }
 
 // Overlays in preview state, on the worst-case bright background used in the design's overlay board.
@@ -309,6 +369,34 @@ var damageBoard = new Window
 };
 damageBoard.Show();
 Capture(damageBoard, "22-damage-page");
+
+// The data guide's animations, each at four moments of its loop (left to right), so the motion can be checked here.
+var film = new StackPanel { Spacing = 10, Margin = new Thickness(20) };
+foreach (var (kind, compound) in new[]
+         {
+             (F1Telemetry.Core.Analytics.GuideKind.LongRun, "Soft"), (F1Telemetry.Core.Analytics.GuideKind.TwoCompounds, (string?)null),
+             (F1Telemetry.Core.Analytics.GuideKind.FuelLoads, null), (F1Telemetry.Core.Analytics.GuideKind.Cliff, null),
+             (F1Telemetry.Core.Analytics.GuideKind.PitStop, null), (F1Telemetry.Core.Analytics.GuideKind.SafetyCar, null),
+         })
+{
+    var row = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 10 };
+    foreach (var phase in new[] { 0.15, 0.4, 0.62, 0.9 })
+    {
+        row.Children.Add(new Border
+        {
+            Background = new SolidColorBrush(Color.Parse("#101216")),
+            CornerRadius = new CornerRadius(8),
+            Padding = new Thickness(8),
+            Child = new GuideIllustration { Kind = kind, Compound = compound, Phase = phase, Width = 240 },
+        });
+    }
+
+    film.Children.Add(row);
+}
+
+var filmBoard = new Window { Width = 1080, Height = 780, Background = new SolidColorBrush(Color.Parse("#07080A")), Content = film };
+filmBoard.Show();
+Capture(filmBoard, "23-guide-animations");
 
 // The ERS PLAN overlay in preview: Overtake wanted while the car runs Medium, so the switch is called out.
 overlays.ErsPlan.LoadPreview();

@@ -141,10 +141,25 @@ public sealed record GuideRowViewModel(GuideItem Item)
     };
 
     public string Session => Item.Session.ToString().ToUpperInvariant();
-}
 
-/// <summary>What to do in one kind of session: the open items measured there, then what always applies.</summary>
-public sealed record PlaybookViewModel(string Session, IReadOnlyList<string> Steps);
+    // The picture and the progress under it.
+    public GuideKind Kind => Item.Kind;
+    public string? Compound => Item.Compound;
+    public string Short => Item.Short.ToUpperInvariant();
+    public double Progress => Item.Progress;
+    public string Count => Item.Count;
+    public bool HasCount => Item.Count.Length > 0 && !IsDone;
+    public bool IsDone => Item.State == GuideState.Done;
+    public bool IsOpen => !IsDone;
+
+    /// <summary>A measured item steps back: its picture fades, so the open ones stand out.</summary>
+    public double PictureOpacity => IsDone ? 0.4 : 1;
+
+    public IBrush ProgressBrush => IsDone ? Palette.Faster : Item.State == GuideState.Partial ? Palette.Slower : Palette.Info;
+
+    /// <summary>Everything in words, for the card's tooltip: what is recorded, what to do, why it matters.</summary>
+    public string Tip => string.Join(Environment.NewLine + Environment.NewLine, new[] { $"Recorded: {Item.Have}.", Item.Do, Item.Why }.Where(t => t.Length > 0));
+}
 
 /// <summary>A choice of the set the race starts on.</summary>
 /// <param name="Set">The set; null lets the plan pick a new one.</param>
@@ -192,7 +207,13 @@ public sealed partial class RacePlansViewModel(TelemetryRuntime runtime, Setting
 
     public ObservableCollection<GuideRowViewModel> Guide { get; } = [];
 
-    public ObservableCollection<PlaybookViewModel> Playbooks { get; } = [];
+    /// <summary>The next run to do, shown large and moving; null when everything is measured.</summary>
+    [ObservableProperty] public partial GuideRowViewModel? NextGuide { get; set; }
+
+    /// <summary>The items best measured in practice, and those in a race: the guide's two groups of cards.</summary>
+    public ObservableCollection<GuideRowViewModel> PracticeGuide { get; } = [];
+
+    public ObservableCollection<GuideRowViewModel> RaceGuide { get; } = [];
     [ObservableProperty] public partial int RaceLaps { get; set; } = 20;
     [ObservableProperty] public partial string Basis { get; set; } = "";
 
@@ -289,7 +310,9 @@ public sealed partial class RacePlansViewModel(TelemetryRuntime runtime, Setting
         StartChoices.Clear();
         PlanChart = null;
         Guide.Clear();
-        Playbooks.Clear();
+        PracticeGuide.Clear();
+        RaceGuide.Clear();
+        NextGuide = null;
         GuideScore = GuideNext = "";
         GuideProgress = 0;
     }
@@ -370,7 +393,7 @@ public sealed partial class RacePlansViewModel(TelemetryRuntime runtime, Setting
         }
     }
 
-    /// <summary>The data guide: the checklist, its score, and what to do in each kind of session.</summary>
+    /// <summary>The data guide: the checklist, its score, the next run, and the cards by session.</summary>
     private void LoadGuide(DataGuide guide, string trackName)
     {
         Guide.Clear();
@@ -386,14 +409,13 @@ public sealed partial class RacePlansViewModel(TelemetryRuntime runtime, Setting
             ? $"Next: {next.Title.ToLowerInvariant()} ({next.Session.ToString().ToLowerInvariant()}). {next.Do}"
             : "Everything the plans use is measured here. More clean laps still steady the figures.";
 
-        // A few words per step: the open runs for that session first, then what always applies.
-        IReadOnlyList<string> Open(GuideSession session, params string[] always) =>
-            [.. guide.Items.Where(i => i.Session == session && !i.Optional && i.State != GuideState.Done).Select(i => i.Short), .. always];
-
-        Playbooks.Clear();
-        Playbooks.Add(new PlaybookViewModel("PRACTICE", Open(GuideSession.Practice, "Record the whole session", "Tidy laps beat fast ones")));
-        Playbooks.Add(new PlaybookViewModel("QUALIFYING", Open(GuideSession.Qualifying, "Record it: tyre sets carry into the race plan")));
-        Playbooks.Add(new PlaybookViewModel("RACE", Open(GuideSession.Race, "Record to the flag", "Safety car in the SC window: box")));
+        NextGuide = Guide.FirstOrDefault(row => row.Item == guide.Next);
+        PracticeGuide.Clear();
+        RaceGuide.Clear();
+        foreach (var row in Guide)
+        {
+            (row.Item.Session == GuideSession.Race ? RaceGuide : PracticeGuide).Add(row);
+        }
     }
 
     /// <summary>
