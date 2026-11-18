@@ -46,7 +46,8 @@ public sealed record SessionData(
     byte NumRedFlagPeriods,
     float Sector2LapDistanceStart,
     float Sector3LapDistanceStart,
-    SessionAeroInfo? Aero);
+    SessionAeroInfo? Aero,
+    byte SessionLength = 0);
 
 public sealed record SessionPacket(PacketHeader Header, SessionData Data) : Packet(Header)
 {
@@ -90,7 +91,8 @@ public sealed record SessionPacket(PacketHeader Header, SessionData Data) : Pack
         var pitRejoin = r.U8();
         r.Skip(11); // 7 assists + racing line (2) + game mode + rule set
         r.Skip(4);  // time of day
-        r.Skip(5);  // session length + unit settings
+        var sessionLength = r.U8();
+        r.Skip(4);  // unit settings
         var numSc = r.U8();
         var numVsc = r.U8();
         var numRed = r.U8();
@@ -113,7 +115,7 @@ public sealed record SessionPacket(PacketHeader Header, SessionData Data) : Pack
         return new SessionPacket(header, new SessionData(
             weather, trackTemp, airTemp, totalLaps, trackLength, sessionType, trackId, formula, timeLeft, duration,
             pitSpeedLimit, paused, safetyCar, network, forecast, forecastAccuracy, aiDifficulty, pitIdeal, pitLatest,
-            pitRejoin, numSc, numVsc, numRed, s2Start, s3Start, aero));
+            pitRejoin, numSc, numVsc, numRed, s2Start, s3Start, aero, sessionLength));
     }
 
     private static TrackZone[] ReadZones(ref SpanReader r, int capacity)

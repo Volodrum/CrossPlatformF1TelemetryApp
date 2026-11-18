@@ -1,4 +1,5 @@
 using F1Telemetry.Core.Energy;
+using F1Telemetry.Core.Hub;
 using F1Telemetry.Core.Models;
 using F1Telemetry.Protocol;
 using F1Telemetry.Core.Setups;
@@ -24,7 +25,7 @@ public interface ITelemetryStore : IAsyncDisposable
     void EndRecording(long recordingId);
 
     void UpdateRecording(long recordingId, string? sessionUid = null, int? trackId = null, string? trackName = null, int? sessionType = null,
-        DateTimeOffset? startTime = null, DateTimeOffset? endTime = null, GameFormat? format = null);
+        DateTimeOffset? startTime = null, DateTimeOffset? endTime = null, GameFormat? format = null, int? sessionLength = null);
 
     void AppendSample(TelemetrySample sample);
 
@@ -97,4 +98,19 @@ public interface ITelemetryStore : IAsyncDisposable
     Task<SetupImportResult> ImportSetupsAsync(IReadOnlyList<NewSetup> setups, CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<PositionPoint>> GetPositionHistoryAsync(long recordingId, int maxPoints = 500, CancellationToken cancellationToken = default);
+
+    /// <summary>Sessions saved to the track hub, oldest first; only those at one track and game format when both are given.</summary>
+    Task<IReadOnlyList<HubSession>> GetHubSessionsAsync(GameFormat? format = null, int? trackId = null, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Saves sessions to the track hub, each replacing what was saved before from the same recording (same recording and
+    /// game session). Their <see cref="HubSession.Id"/> is ignored; the ids given are returned in order.
+    /// </summary>
+    Task<IReadOnlyList<long>> SaveHubSessionsAsync(IReadOnlyList<HubSession> sessions, CancellationToken cancellationToken = default);
+
+    /// <summary>Takes sessions out of the track hub. Their recordings, where there still are any, are left alone.</summary>
+    Task RemoveHubSessionsAsync(IReadOnlyList<long> hubIds, CancellationToken cancellationToken = default);
+
+    /// <summary>Sets the race length a hub session counts for (see <see cref="Protocol.Lookups.RaceLengths"/>).</summary>
+    Task SetHubRaceLengthAsync(long hubId, int raceLength, CancellationToken cancellationToken = default);
 }

@@ -103,6 +103,7 @@ public partial class App : Application
         services.AddSingleton<EnergyPlanViewModel>();
         services.AddSingleton<EnergyViewModel>();
         services.AddSingleton<SetupsViewModel>();
+        services.AddSingleton<HubViewModel>();
         services.AddSingleton<UpdatesViewModel>();
         services.AddSingleton<SettingsViewModel>();
         services.AddSingleton<MainWindowViewModel>();

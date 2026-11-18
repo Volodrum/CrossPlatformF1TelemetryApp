@@ -5,6 +5,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using F1Telemetry.App.Services;
 using F1Telemetry.Core.Analytics;
 using F1Telemetry.Core.Engine;
+using F1Telemetry.Core.Hub;
 using F1Telemetry.Core.Models;
 using F1Telemetry.Protocol;
 using F1Telemetry.Protocol.Lookups;
@@ -36,6 +37,7 @@ public sealed record CompoundRowViewModel(CompoundModel Model, double FastestBas
     {
         Model.DegradationMeasured ? "" : "Degradation assumed: no stint had two clean laps to measure it.",
         Model.Linked ? "" : "Pace as recorded: never run in a session linked to this one, so the conditions aren't corrected.",
+        Model.FromOtherLengths ? "Wear, degradation and cliff from other race lengths: never run at the length planned for." : "",
         Model.IsDry ? "" : "Wet compound: left out of the dry plans.",
     }.Where(n => n.Length > 0));
 
@@ -169,9 +171,16 @@ public sealed record StartChoice(string Label, PlannerSet? Set, bool ManualWear 
     public override string ToString() => Label;
 }
 
+/// <summary>A race length to plan for; 0: every length pooled.</summary>
+public sealed record RaceLengthOption(int Length, string Label)
+{
+    public override string ToString() => Label;
+}
+
 /// <summary>
-/// The strategy optimiser on the strategy tab: the compound library of the session's track (every recording there in
-/// the same game format) and the 1-, 2- and 3-stop plans it gives for a race distance.
+/// The strategy optimiser on the strategy tab and in the hub: the compound library of a track (the hub's sessions and
+/// every recording there not saved to it, in the same game format) and the 1-, 2- and 3-stop plans it gives for a race
+/// distance and length.
 /// </summary>
 public sealed partial class RacePlansViewModel(TelemetryRuntime runtime, SettingsService settings) : ObservableObject
 {
@@ -331,14 +340,61 @@ public sealed partial class RacePlansViewModel(TelemetryRuntime runtime, Setting
         }
 
         var firstLoad = _loadedFor?.Id != recording.Id;
-        var version = ++_version;
         _loadedFor = (recording.Id, live);
         _loadedAt = DateTime.UtcNow;
+        _target = new PlanTarget(recording.Format, recording.TrackId, recording.TrackName, recording, sessionLaps);
+        await BuildAsync(firstLoad);
+    }
+
+    /// <summary>
+    /// Builds the library of a track on its own, with no session on screen (the hub): paces in the conditions of the
+    /// session with the most laps, the sets typed in.
+    /// </summary>
+    public async Task LoadTrackAsync(GameFormat format, int trackId, string trackName)
+    {
+        _loadedFor = null;
+        _target = new PlanTarget(format, trackId, trackName, null, 0);
+        await BuildAsync(firstLoad: true);
+    }
+
+    /// <summary>What the plans are for: a recording's track (the strategy tab), or a track on its own (the hub).</summary>
+    private sealed record PlanTarget(GameFormat Format, int TrackId, string TrackName, RecordingInfo? Recording, int SessionLaps);
+
+    private PlanTarget? _target;
+
+    /// <summary>The race lengths to plan for: every length pooled, then each length a session at the track was run at.</summary>
+    public ObservableCollection<RaceLengthOption> RaceLengthOptions { get; } = [];
+
+    [ObservableProperty] public partial RaceLengthOption? SelectedRaceLength { get; set; }
+
+    public bool HasRaceLengths => RaceLengthOptions.Count > 1;
+
+    partial void OnSelectedRaceLengthChanged(RaceLengthOption? value)
+    {
+        if (!_replanHeld && value is not null && _target is not null)
+        {
+            _ = BuildAsync(firstLoad: false, lengthChanged: true);
+        }
+    }
+
+    private async Task BuildAsync(bool firstLoad, bool lengthChanged = false)
+    {
+        if (_target is not { } target)
+        {
+            return;
+        }
+
+        var version = ++_version;
+        var recording = target.Recording;
         try
         {
-            var knowledge = await runtime.Analysis.BuildTrackKnowledgeAsync(recording.Format, recording.TrackId, recording.Id);
+            var sessions = await runtime.Analysis.LoadTrackSessionsAsync(target.Format, target.TrackId);
+            var length = firstLoad
+                ? DefaultLength(sessions, recording)
+                : SelectedRaceLength?.Length ?? 0;
+            var knowledge = await runtime.Analysis.BuildTrackKnowledgeAsync(target.Format, target.TrackId, recording?.Id, length);
             var library = knowledge.Library;
-            var snapshots = await runtime.Store.GetTyreSetsAsync(recording.Id);
+            var snapshots = recording is null ? [] : await runtime.Store.GetTyreSetsAsync(recording.Id);
             if (version != _version)
             {
                 return;
@@ -347,12 +403,15 @@ public sealed partial class RacePlansViewModel(TelemetryRuntime runtime, Setting
             // Every input below would build the plans again as it is set: hold that until they are all in.
             _replanHeld = true;
             _library = library;
-            _gameSets = RaceTyreSets.ForPlanning(snapshots, recording.SessionType);
-            _gameSetsFromRace = SessionTypes.IsRace(recording.SessionType);
+            _gameSets = recording is null ? null : RaceTyreSets.ForPlanning(snapshots, recording.SessionType);
+            _gameSetsFromRace = recording is not null && SessionTypes.IsRace(recording.SessionType);
             LoadGameSets(firstLoad);
-            LoadGuide(knowledge.Guide, recording.TrackName);
-            Context = ($"RACE PLANS · {recording.TrackName} · {Core.Games.GameCatalog.FormatName(recording.Format)} · "
-                       + $"FROM {library.Sessions} {(library.Sessions == 1 ? "SESSION" : "SESSIONS")} AT THIS TRACK").ToUpperInvariant();
+            LoadGuide(knowledge.Guide, target.TrackName);
+            LoadRaceLengths(library, length);
+            var saved = sessions.Count(s => s.IsSaved);
+            Context = ($"RACE PLANS · {target.TrackName} · {Core.Games.GameCatalog.FormatName(target.Format)} · "
+                       + $"FROM {library.Sessions} {(library.Sessions == 1 ? "SESSION" : "SESSIONS")} AT THIS TRACK"
+                       + (saved > 0 ? $" ({saved} IN THE HUB)" : "")).ToUpperInvariant();
             var fastest = library.Compounds.Where(c => c.IsDry).Select(c => c.BaseLapSeconds).DefaultIfEmpty(0).Min();
             Compounds.Clear();
             foreach (var compound in library.Compounds)
@@ -369,14 +428,16 @@ public sealed partial class RacePlansViewModel(TelemetryRuntime runtime, Setting
                 $"Pit stop {library.PitLossSeconds:0.0} s ({(library.PitLossStops > 0 ? $"median of {library.PitLossStops} recorded {(library.PitLossStops == 1 ? "stop" : "stops")}" : "default: no race with a stop recorded here")}) · "
                 + $"under {Neutralised("SC", library.SafetyCarPitLossSeconds, library.SafetyCarPitLossStops, defaults.SafetyCarPitLossFactor)}, "
                 + $"{Neutralised("VSC", library.VirtualSafetyCarPitLossSeconds, library.VirtualSafetyCarPitLossStops, defaults.VirtualSafetyCarPitLossFactor)} · "
-                + $"fuel {library.FuelPerLap:0.00} kg/lap at {library.FuelEffect.SecondsPerKg:0.000} s/kg ({library.FuelEffect.Basis}) · paces in this session's conditions");
+                + $"fuel {library.FuelPerLap:0.00} kg/lap at {library.FuelEffect.SecondsPerKg:0.000} s/kg ({library.FuelEffect.Basis}) · ")
+                + (recording is null ? "paces in the conditions of the session with the most laps" : "paces in this session's conditions")
+                + (library.RaceLength != 0 ? $" · wear, degradation, cliff and fuel for {RaceLengths.Name(library.RaceLength).ToLowerInvariant()} races where measured" : "");
             BasisShort = string.Create(CultureInfo.InvariantCulture,
                 $"PIT {library.PitLossSeconds:0.0} s · SC {StrategyPlanner.SafetyCarPitLoss(library, defaults):0.0} s · VSC {StrategyPlanner.VirtualSafetyCarPitLoss(library, defaults):0.0} s · FUEL {library.FuelPerLap:0.00} kg/lap");
 
-            if (firstLoad)
+            if (firstLoad || (lengthChanged && library.RaceLaps is not null))
             {
-                // Suggest the longest race recorded here, else this session's length.
-                RaceLaps = Math.Max(6, library.RaceLaps ?? sessionLaps);
+                // Suggest the longest race recorded here (at this race length), else this session's length.
+                RaceLaps = Math.Max(6, library.RaceLaps ?? (target.SessionLaps > 0 ? target.SessionLaps : RaceLaps));
             }
 
             _replanHeld = false;
@@ -416,6 +477,34 @@ public sealed partial class RacePlansViewModel(TelemetryRuntime runtime, Setting
         {
             (row.Item.Session == GuideSession.Race ? RaceGuide : PracticeGuide).Add(row);
         }
+    }
+
+    /// <summary>
+    /// The race length to plan for at first: the session's own (a race's, or its weekend race's), else the length most
+    /// sessions at the track were run at, else every length pooled.
+    /// </summary>
+    private static int DefaultLength(IReadOnlyList<TrackSession> sessions, RecordingInfo? recording)
+    {
+        if (recording is not null && sessions.FirstOrDefault(s => s.Recording?.Id == recording.Id) is { } own && RaceLengths.IsKnown(own.RaceLength))
+        {
+            return own.RaceLength;
+        }
+
+        return sessions.Where(s => RaceLengths.IsKnown(s.RaceLength)).GroupBy(s => s.RaceLength)
+            .OrderByDescending(g => g.Count()).ThenByDescending(g => g.Key).Select(g => g.Key).FirstOrDefault();
+    }
+
+    private void LoadRaceLengths(CompoundLibrary library, int length)
+    {
+        RaceLengthOptions.Clear();
+        RaceLengthOptions.Add(new RaceLengthOption(0, "ANY LENGTH"));
+        foreach (var known in library.Lengths.Append(length).Where(RaceLengths.IsKnown).Distinct().Order())
+        {
+            RaceLengthOptions.Add(new RaceLengthOption(known, RaceLengths.Name(known).ToUpperInvariant()));
+        }
+
+        SelectedRaceLength = RaceLengthOptions.FirstOrDefault(o => o.Length == library.RaceLength) ?? RaceLengthOptions[0];
+        OnPropertyChanged(nameof(HasRaceLengths));
     }
 
     /// <summary>

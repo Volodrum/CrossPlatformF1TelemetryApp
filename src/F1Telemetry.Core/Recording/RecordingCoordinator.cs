@@ -135,7 +135,8 @@ public sealed class RecordingCoordinator : IDisposable
             TrackId: session?.TrackId ?? -1,
             TrackName: session?.TrackName ?? "Unknown",
             SessionType: session?.SessionType ?? 0,
-            Format: session?.Format ?? Protocol.GameFormat.F1_25));
+            Format: session?.Format ?? Protocol.GameFormat.F1_25,
+            SessionLength: session?.SessionLength ?? 0));
 
         _recordingId = id;
         _description = description;
@@ -202,7 +203,7 @@ public sealed class RecordingCoordinator : IDisposable
                 return;
             }
 
-            _store.UpdateRecording(id, sessionType: info.SessionType);
+            _store.UpdateRecording(id, sessionType: info.SessionType, sessionLength: info.SessionLength > 0 ? info.SessionLength : null);
             if (!_trackTagged && info.TrackId >= 0)
             {
                 _store.UpdateRecording(id, trackId: info.TrackId, trackName: info.TrackName);

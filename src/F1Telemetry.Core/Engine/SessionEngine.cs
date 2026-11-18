@@ -283,6 +283,7 @@ public sealed class SessionEngine
             SessionTypeName = SessionTypes.Name(data.SessionType),
             FormulaName = Formulas.Name(data.Formula),
             TotalLaps = data.TotalLaps,
+            SessionLength = data.SessionLength,
             PlayerCarIndex = packet.Header.PlayerCarIndex,
         };
 

@@ -168,7 +168,7 @@ public sealed class EndToEndTests : IAsyncLifetime
         Assert.Same(kept, await analysis.LoadRaceAsync(recording, TestContext.Current.CancellationToken));
         Assert.Same(laps, await analysis.GetClassifiedLapsAsync(recording, TestContext.Current.CancellationToken));
         Assert.Same(kept.Analysis, await analysis.AnalyzeAsync(recording, ct: TestContext.Current.CancellationToken));
-        var knowledge = await analysis.BuildTrackKnowledgeAsync(format, recording.TrackId, recording.Id, TestContext.Current.CancellationToken);
+        var knowledge = await analysis.BuildTrackKnowledgeAsync(format, recording.TrackId, recording.Id, ct: TestContext.Current.CancellationToken);
         Assert.Equal(1, knowledge.Library.Sessions);
         Assert.Contains(knowledge.Guide.Items, i => i.Title == "Pit stop loss" && i.State == GuideState.Done);
         analysis.Forget(recording.Id);

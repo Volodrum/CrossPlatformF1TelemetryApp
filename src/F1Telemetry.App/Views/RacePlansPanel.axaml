@@ -1,0 +1,158 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:F1Telemetry.App.ViewModels"
+             xmlns:controls="using:F1Telemetry.App.Controls"
+             x:Class="F1Telemetry.App.Views.RacePlansPanel"
+             x:DataType="vm:RacePlansViewModel">
+  <!-- The strategy optimiser: the track's compound library and the race plans it gives (strategy tab and hub) -->
+  <Border Classes="panel" Padding="18">
+    <StackPanel Spacing="16">
+      <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
+        <StackPanel Spacing="4">
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <TextBlock Classes="label strong" Text="{Binding Context}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+            <controls:HelpTip Width="18" Height="18"
+                              Text="Every session at this track in this game format feeds the library (those saved to the hub as saved, every other recording as it is): each clean lap with the fuel weight taken out, fitted as compound pace + tyre age × degradation + the session's own offset, so practice and race laps compare. Tyre life is the laps until the most worn tyre reaches the wear limit (Settings). Past 60 % wear a set loses time faster (the cliff): CLIFF is the tyre age where that starts and what each lap past it adds, measured from laps run past it (grey: the default). Plans use two different dry compounds and keep every set within its life; the stint lengths are the fastest split. A used set runs like a new one as many laps old as its wear is worth (U on the bar). SC / VSC: the laps on which a safety car or virtual safety car makes pitting under it, instead of at the planned lap, the faster race. A stop's window is the in-laps that cost at most 1 s more, the other stops staying put. Undercut: what pitting a lap before a car on the same plan gains on its lap on old tyres (overcut: what staying out gains). The out-lap's cold tyres are part of the pit-stop loss." />
+          </StackPanel>
+          <TextBlock Classes="mono" FontSize="13" Foreground="{StaticResource TextMidBrush}" Text="{Binding BasisShort}" IsVisible="{Binding HasLibrary}"
+                     Background="Transparent" ToolTip.Tip="{Binding Basis}" />
+        </StackPanel>
+        <StackPanel Grid.Column="1" Spacing="10" VerticalAlignment="Top">
+          <StackPanel Orientation="Horizontal" Spacing="12" HorizontalAlignment="Right">
+            <!-- The game scales tyre wear and fuel to the race length: plan with the figures of one length -->
+            <StackPanel Orientation="Horizontal" Spacing="12" IsVisible="{Binding HasRaceLengths}"
+                        ToolTip.Tip="The game scales tyre wear and fuel burn to the race length. Wear, degradation, cliff and fuel come from the sessions run at the length picked (a practice counts for its weekend's race); a compound never run at it takes them from the other lengths. Pace and pit losses are shared. ANY LENGTH pools every session.">
+              <TextBlock Classes="label strong" Text="RACE LENGTH" VerticalAlignment="Center" />
+              <ComboBox ItemsSource="{Binding RaceLengthOptions}" SelectedItem="{Binding SelectedRaceLength}" MinWidth="160" VerticalAlignment="Center" />
+            </StackPanel>
+            <TextBlock Classes="label strong" Text="RACE LAPS" VerticalAlignment="Center" />
+            <NumericUpDown Value="{Binding RaceLaps}" Minimum="6" Maximum="100" Increment="1" FormatString="0" Width="140" />
+          </StackPanel>
+          <!-- The sets the game listed for this session (packet 12), or the counts typed in -->
+          <StackPanel Orientation="Horizontal" Spacing="12" HorizontalAlignment="Right" IsVisible="{Binding HasGameSets}"
+                      ToolTip.Tip="The tyre sets the game sent for this session: in a race as it started, otherwise what was left at the end. Every set still available, new and used, is used; a used set runs like a new one as many laps old as its wear is worth. Switch off to type the new sets in.">
+            <TextBlock Classes="mono" FontSize="13" Text="{Binding GameSets}" VerticalAlignment="Center" IsVisible="{Binding UsesGameSets}" MaxWidth="420" TextTrimming="CharacterEllipsis" />
+            <ToggleSwitch IsChecked="{Binding SetsFromGame}" OnContent="SETS FROM GAME" OffContent="SETS FROM GAME" VerticalAlignment="Center" />
+          </StackPanel>
+          <!-- New sets the race can use: a plan never runs a compound more times than this -->
+          <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right" IsVisible="{Binding UsesCounts}"
+                      ToolTip.Tip="New sets of each compound you have for the race. A plan runs each set once. Default: the F1 weekend allocation (8 soft, 3 medium, 2 hard); lower it to what is left after practice and qualifying.">
+            <TextBlock Classes="label strong" Text="SETS" VerticalAlignment="Center" Margin="0,0,4,0" />
+            <controls:CompoundBadge Compound="Soft" Width="26" Height="26" VerticalAlignment="Center" />
+            <NumericUpDown Value="{Binding SoftSets}" Minimum="0" Maximum="13" Increment="1" FormatString="0" Width="110" />
+            <controls:CompoundBadge Compound="Medium" Width="26" Height="26" VerticalAlignment="Center" Margin="6,0,0,0" />
+            <NumericUpDown Value="{Binding MediumSets}" Minimum="0" Maximum="13" Increment="1" FormatString="0" Width="110" />
+            <controls:CompoundBadge Compound="Hard" Width="26" Height="26" VerticalAlignment="Center" Margin="6,0,0,0" />
+            <NumericUpDown Value="{Binding HardSets}" Minimum="0" Maximum="13" Increment="1" FormatString="0" Width="110" />
+          </StackPanel>
+          <!-- The set the race starts on: the plan's pick, the set fitted in the game, or a used qualifying set -->
+          <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right"
+                      ToolTip.Tip="The set the first stint runs on. A used set (from qualifying, say) runs like a new one as many laps old as its wear is worth, with that much less life. In a race with the game's sets, the set fitted at the start.">
+            <TextBlock Classes="label strong" Text="START ON" VerticalAlignment="Center" Margin="0,0,4,0" />
+            <ComboBox ItemsSource="{Binding StartChoices}" SelectedItem="{Binding SelectedStart}" MinWidth="260" VerticalAlignment="Center" />
+            <NumericUpDown Value="{Binding StartWear}" Minimum="0" Maximum="100" Increment="1" FormatString="0 '%'" Width="120"
+                           IsVisible="{Binding StartWearVisible}" />
+          </StackPanel>
+        </StackPanel>
+      </Grid>
+
+      <!-- Compound library -->
+      <StackPanel Spacing="6" IsVisible="{Binding HasLibrary}">
+        <Grid ColumnDefinitions="44,*,120,130,110,90,130" ColumnSpacing="12">
+          <TextBlock Grid.Column="1" Classes="label" Text="COMPOUND" />
+          <TextBlock Grid.Column="2" Classes="label" Text="PACE · S" HorizontalAlignment="Right" />
+          <TextBlock Grid.Column="3" Classes="label" Text="DEG · S/LAP" HorizontalAlignment="Right" />
+          <TextBlock Grid.Column="4" Classes="label" Text="WEAR · %/LAP" HorizontalAlignment="Right" />
+          <TextBlock Grid.Column="5" Classes="label" Text="LIFE · LAPS" HorizontalAlignment="Right" />
+          <TextBlock Grid.Column="6" Classes="label" Text="CLIFF · S/LAP" HorizontalAlignment="Right" />
+        </Grid>
+        <ItemsControl ItemsSource="{Binding Compounds}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:CompoundRowViewModel">
+              <Border BorderBrush="{StaticResource DividerBrush}" BorderThickness="0,1,0,0" Padding="0,8">
+                <Grid ColumnDefinitions="44,*,120,130,110,90,130" ColumnSpacing="12">
+                  <controls:CompoundBadge Compound="{Binding Compound}" Width="32" Height="32" VerticalAlignment="Center" />
+                  <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                    <TextBlock Classes="h2" FontSize="15" Text="{Binding Name}" />
+                    <TextBlock Classes="muted" FontSize="12" Text="{Binding Data}" />
+                    <Border Classes="pill" BorderBrush="{StaticResource SlowerBrush}" BorderThickness="1" HorizontalAlignment="Left" IsVisible="{Binding HasNote}"
+                            ToolTip.Tip="{Binding Note}">
+                      <TextBlock Text="ESTIMATED" FontFamily="{StaticResource DisplayFont}" FontSize="11" FontWeight="Bold" LetterSpacing="1.1" Foreground="{StaticResource SlowerBrush}" />
+                    </Border>
+                  </StackPanel>
+                  <TextBlock Grid.Column="2" Classes="data-m" FontSize="20" Text="{Binding Pace}" Foreground="{Binding PaceBrush}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                  <TextBlock Grid.Column="3" Classes="data-m" FontSize="20" Text="{Binding Degradation}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                  <TextBlock Grid.Column="4" Classes="data-m" FontSize="20" Text="{Binding Wear}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                  <TextBlock Grid.Column="5" Classes="data-m" FontSize="20" Text="{Binding Life}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                  <TextBlock Grid.Column="6" Classes="data-m" FontSize="18" Text="{Binding Cliff}" Foreground="{Binding CliffBrush}" ToolTip.Tip="{Binding CliffTip}"
+                             HorizontalAlignment="Right" VerticalAlignment="Center" />
+                </Grid>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </StackPanel>
+
+      <TextBlock Classes="body" Text="{Binding Problem}" Foreground="{StaticResource SlowerBrush}" TextWrapping="Wrap"
+                 IsVisible="{Binding Problem, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+
+      <!-- Ranked plans -->
+      <StackPanel Spacing="6" IsVisible="{Binding HasPlans}">
+        <TextBlock Classes="label strong" Text="RANKED PLANS · STINT LENGTHS IN LAPS" />
+        <ItemsControl ItemsSource="{Binding Plans}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:PlanRowViewModel">
+              <Border BorderBrush="{StaticResource DividerBrush}" BorderThickness="0,1,0,0" Padding="0,10">
+                <Grid ColumnDefinitions="44,80,440,130,90,*" RowDefinitions="Auto,Auto" ColumnSpacing="12" RowSpacing="6">
+                  <TextBlock Classes="data-m" FontSize="20" Text="{Binding RankText}" Foreground="{Binding RankBrush}" VerticalAlignment="Center" />
+                  <TextBlock Grid.Column="1" Classes="label strong" Text="{Binding StopsText}" VerticalAlignment="Center" />
+                  <ItemsControl Grid.Column="2" ItemsSource="{Binding Segments}" VerticalAlignment="Center">
+                    <ItemsControl.ItemsPanel>
+                      <ItemsPanelTemplate>
+                        <StackPanel Orientation="Horizontal" Spacing="4" />
+                      </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate x:DataType="vm:PlanSegmentViewModel">
+                        <Border Width="{Binding Width}" Height="32" CornerRadius="4" BorderThickness="2" BorderBrush="{Binding Brush}"
+                                Background="{StaticResource RaisedBrush}" ToolTip.Tip="{Binding Tip}">
+                          <StackPanel Orientation="Horizontal" Spacing="6" Margin="4,0" VerticalAlignment="Center" ClipToBounds="True">
+                            <controls:CompoundBadge Compound="{Binding Compound}" Width="20" Height="20" />
+                            <TextBlock Classes="mono" FontSize="13" Text="{Binding Laps}" VerticalAlignment="Center" />
+                          </StackPanel>
+                        </Border>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                  <TextBlock Grid.Column="3" Classes="data-m" FontSize="20" Text="{Binding Time}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                  <TextBlock Grid.Column="4" Classes="mono" FontSize="15" Text="{Binding Gap}" Foreground="{Binding GapBrush}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                  <ItemsControl Grid.Row="1" Grid.Column="2" Grid.ColumnSpan="4" ItemsSource="{Binding Stops}">
+                    <ItemsControl.ItemsPanel>
+                      <ItemsPanelTemplate>
+                        <WrapPanel ItemSpacing="20" />
+                      </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate x:DataType="vm:PlanStopViewModel">
+                        <TextBlock FontSize="13" Background="Transparent" ToolTip.Tip="{Binding Tip}">
+                          <Run Text="{Binding Pit}" FontWeight="Bold" Foreground="{StaticResource TextHiBrush}" />
+                          <Run Text="{Binding Window}" Foreground="{StaticResource TextMidBrush}" />
+                          <Run Text="{Binding SafetyCar}" Foreground="{StaticResource SlowerBrush}" />
+                        </TextBlock>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                </Grid>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </StackPanel>
+
+      <Border Classes="panel" Padding="0" Height="420" Background="{StaticResource RaisedBrush}"
+              IsVisible="{Binding PlanChart, Converter={x:Static ObjectConverters.IsNotNull}}">
+        <controls:TelemetryPlot Model="{Binding PlanChart}" />
+      </Border>
+    </StackPanel>
+  </Border>
+</UserControl>

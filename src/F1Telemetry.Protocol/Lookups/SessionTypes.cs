@@ -22,6 +22,37 @@ public static class SessionTypes
     public static bool IsQualifying(int sessionType) => sessionType is >= 5 and <= 14;
 }
 
+/// <summary>
+/// The game's session length setting (session packet <c>m_sessionLength</c>). In a race it is the race distance, which
+/// the game scales tyre wear and fuel burn to.
+/// </summary>
+public static class RaceLengths
+{
+    public const int Unknown = 0;
+    public const int VeryShort = 2;
+    public const int Short = 3;
+    public const int Medium = 4;
+    public const int MediumLong = 5;
+    public const int Long = 6;
+    public const int Full = 7;
+
+    /// <summary>Every length the game offers, shortest first.</summary>
+    public static IReadOnlyList<int> All { get; } = [VeryShort, Short, Medium, MediumLong, Long, Full];
+
+    public static bool IsKnown(int length) => length is >= VeryShort and <= Full;
+
+    public static string Name(int length) => length switch
+    {
+        VeryShort => "Very short",
+        Short => "Short",
+        Medium => "Medium",
+        MediumLong => "Medium long",
+        Long => "Long",
+        Full => "Full",
+        _ => "Any length",
+    };
+}
+
 public static class SafetyCarStatus
 {
     public const byte None = 0;

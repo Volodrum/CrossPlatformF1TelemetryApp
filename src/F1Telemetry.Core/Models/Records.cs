@@ -74,7 +74,11 @@ public sealed record RecordingInfo(
     int SessionType,
     GameFormat Format,
     DateTimeOffset StartTime,
-    DateTimeOffset? EndTime);
+    DateTimeOffset? EndTime)
+{
+    /// <summary>The game's session length setting (see <see cref="Protocol.Lookups.RaceLengths"/>); 0 when not recorded.</summary>
+    public int SessionLength { get; init; }
+}
 
 /// <summary>Weather (see <see cref="Protocol.Lookups.WeatherTypes"/>) and temperatures in °C.</summary>
 public readonly record struct SessionConditions(byte Weather, sbyte TrackTemperature, sbyte AirTemperature);
@@ -111,7 +115,8 @@ public sealed record NewRecording(
     int TrackId,
     string TrackName,
     int SessionType,
-    GameFormat Format);
+    GameFormat Format,
+    int SessionLength = 0);
 
 /// <summary>Per-lap min/max of fuel and wear, used to derive consumption rates after the fact.</summary>
 public sealed record LapAggregate(

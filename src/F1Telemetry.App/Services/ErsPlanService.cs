@@ -166,7 +166,7 @@ public sealed class ErsPlanService
 
             var store = _runtime.Store;
             await store.FlushAsync();
-            var model = await Task.Run(async () => ErsModelBuilder.Build(track.Format, track.TrackId, await store.GetModelSamplesAsync(track.Format, track.TrackId)));
+            var model = await _runtime.Hub.BuildErsModelAsync(track.Format, track.TrackId);
             if (version != _version)
             {
                 return;
@@ -257,6 +257,12 @@ public sealed class ErsPlanService
             {
                 return ((pooled, $"{(pool.Count == 1 ? "1 session" : $"{pool.Count} sessions")} picked on the energy tab ({pooled.RaceLaps} typical laps)", false), "");
             }
+        }
+
+        // Then the sessions saved to the track hub: what was kept of the track when its recordings were cleared out.
+        if ((await _runtime.Hub.PlanInputsAsync(track.Format, track.TrackId, model, s => s.IsSaved)).Inputs is { RaceLaps: >= MinLaps } saved)
+        {
+            return ((saved, $"the track hub ({saved.RaceLaps} typical laps)", false), "");
         }
 
         (PlanInputs Inputs, RecordingInfo Recording)? fewer = null;
