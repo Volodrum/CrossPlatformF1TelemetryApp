@@ -4,6 +4,7 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.VisualTree;
 using F1Telemetry.App.ViewModels;
+using F1Telemetry.Core.Localization;
 using ScottPlot;
 using ScottPlot.Avalonia;
 
@@ -30,7 +31,8 @@ public sealed class TelemetryPlot : ContentControl
     public static void SetSync(Control control, ChartSync? value) => control.SetValue(SyncProperty, value);
 
     private const string DataFont = "JetBrains Mono";
-    private const string LabelFont = "Chakra Petch";
+    // Chakra Petch has no Cyrillic, and Skia draws missing letters as boxes: other languages label charts in IBM Plex Sans.
+    private static string LabelFont => Loc.IsEnglish ? "Chakra Petch" : "IBM Plex Sans";
     private static readonly Color Bg0 = Color.FromHex("#07080A");
     private static readonly Color Panel = Color.FromHex("#101216");
     private static readonly Color Raised = Color.FromHex("#181B21");
@@ -200,7 +202,7 @@ public sealed class TelemetryPlot : ContentControl
             var value = model.YIsTime ? LapAxis.FormatTime(y)
                 : model.IntegerY ? model.YPrefix + y.ToString("0")
                 : Math.Abs(y) >= 100 ? y.ToString("0") : Math.Abs(y) >= 10 ? y.ToString("0.0") : y.ToString("0.00");
-            lines.Add($"{series.Name}  {value}");
+            lines.Add($"{Loc.T(series.Name)}  {value}");
         }
 
         return string.Join("\n", lines.Take(6));
@@ -260,11 +262,11 @@ public sealed class TelemetryPlot : ContentControl
             return;
         }
 
-        plot.Title(model.Title.ToUpperInvariant(), size: 14);
+        plot.Title(Loc.T(model.Title).ToUpperInvariant(), size: 14);
         plot.Axes.Title.Label.FontName = LabelFont;
         plot.Axes.Title.Label.Bold = true;
         plot.Axes.Title.Label.ForeColor = TextMid;
-        plot.Axes.Bottom.Label.Text = model.XLabel.ToUpperInvariant();
+        plot.Axes.Bottom.Label.Text = Loc.T(model.XLabel).ToUpperInvariant();
         plot.Axes.Bottom.Label.FontName = LabelFont;
         plot.Axes.Bottom.Label.FontSize = 13;
         plot.Axes.Bottom.Label.ForeColor = TextLo;
@@ -277,7 +279,7 @@ public sealed class TelemetryPlot : ContentControl
             }
 
             var scatter = plot.Add.Scatter(series.X, series.Y);
-            scatter.LegendText = series.InLegend ? series.Name : "";
+            scatter.LegendText = series.InLegend ? Loc.T(series.Name) : "";
             scatter.Color = series.IsReference ? TextLo : Color.FromHex(series.Color);
             // A line of one or two points would be invisible or easy to miss.
             scatter.MarkerSize = series.MarkerSize ?? (series.X.Length < 3 ? 7 : 0);
@@ -311,7 +313,7 @@ public sealed class TelemetryPlot : ContentControl
         foreach (var marker in model.Markers ?? [])
         {
             var line = plot.Add.VerticalLine(marker.X, 2, Color.FromHex(marker.Color), LinePattern.Dotted);
-            line.LegendText = marker.Label;
+            line.LegendText = Loc.T(marker.Label);
             line.ExcludeFromLegend = marker.Label.Length == 0;
         }
 
@@ -442,12 +444,7 @@ public sealed class TelemetryPlot : ContentControl
 
             if (row.Label.Length > 0)
             {
-                var badge = AddLabel(plot, row.Label, left, mid, LabelFont, 14, Panel);
-                badge.LabelAlignment = Alignment.MiddleLeft;
-                badge.LabelOffsetX = 4;
-                badge.LabelBackgroundColor = raceColor;
-                badge.LabelBorderRadius = 4;
-                badge.LabelPadding = 5;
+                plot.Add.Plottable(new BarChip(left, mid, 4, Loc.T(row.Label), 14, Panel, raceColor, null, centred: false));
             }
 
             for (var s = 0; s < row.Segments.Count; s++)
@@ -468,29 +465,20 @@ public sealed class TelemetryPlot : ContentControl
                     continue; // too short for its ring: the bar alone says it
                 }
 
-                var ring = AddLabel(plot, segment.Badge, segment.X0, mid, LabelFont, 11, edge);
-                ring.LabelAlignment = Alignment.MiddleLeft;
-                ring.LabelOffsetX = (float)startInset;
-                ring.LabelBackgroundColor = Bg0;
-                ring.LabelBorderColor = edge;
-                ring.LabelBorderWidth = 2;
-                ring.LabelBorderRadius = 10;
-                ring.LabelPadding = 4;
+                // A true circle (a padded text label comes out oval), like the compound badges on the pages.
+                plot.Add.Plottable(new CompoundRing(segment.X0, mid, (float)startInset, segment.Badge, edge));
 
                 var textWidth = segment.Text.Length * CharWidth;
                 var valueWidth = segment.Value.Length * CharWidth;
-                if (room >= 26 + textWidth)
+                const double RingRoom = CompoundRing.Diameter + 8;
+                if (room >= RingRoom + textWidth)
                 {
-                    var text = AddLabel(plot, segment.Text, segment.X0, mid, LabelFont, 12, TextHi);
-                    text.LabelAlignment = Alignment.MiddleLeft;
-                    text.LabelOffsetX = (float)(startInset + 26);
+                    plot.Add.Plottable(new BarText(segment.X0, mid, (float)(startInset + RingRoom), Loc.T(segment.Text), LabelFont, TextHi, alignRight: false));
                 }
 
-                if (room >= 26 + textWidth + 16 + valueWidth)
+                if (room >= RingRoom + textWidth + 16 + valueWidth)
                 {
-                    var value = AddLabel(plot, segment.Value, segment.X1, mid, DataFont, 12, TextMid);
-                    value.LabelAlignment = Alignment.MiddleRight;
-                    value.LabelOffsetX = (float)-endInset;
+                    plot.Add.Plottable(new BarText(segment.X1, mid, (float)-endInset, Loc.T(segment.Value), DataFont, TextMid, alignRight: true));
                 }
             }
 
@@ -504,13 +492,7 @@ public sealed class TelemetryPlot : ContentControl
                 line.LegendText = "";
                 plot.MoveToBack(line);
 
-                var chip = AddLabel(plot, "PIT", pit, mid, LabelFont, 11, TextHi);
-                chip.LabelAlignment = Alignment.MiddleCenter;
-                chip.LabelBackgroundColor = Bg0;
-                chip.LabelBorderColor = raceColor;
-                chip.LabelBorderWidth = 2;
-                chip.LabelBorderRadius = 4;
-                chip.LabelPadding = 4;
+                plot.Add.Plottable(new BarChip(pit, mid, 0, Loc.T("PIT"), 11, TextHi, Bg0, raceColor, centred: true));
             }
         }
 
@@ -519,7 +501,7 @@ public sealed class TelemetryPlot : ContentControl
 
     private static ScottPlot.Plottables.Text AddLabel(Plot plot, string text, double x, double y, string font, float size, Color color)
     {
-        var label = plot.Add.Text(text, x, y);
+        var label = plot.Add.Text(Loc.T(text), x, y);
         label.LabelFontName = font;
         label.LabelFontSize = size;
         label.LabelBold = true;
@@ -590,6 +572,106 @@ public sealed class TelemetryPlot : ContentControl
     }
 
     /// <summary>Another generator's ticks from <paramref name="min"/> up (a timeline under the data has no values).</summary>
+    /// <summary>
+    /// A compound ring on a timeline bar: a circle of fixed pixel size with the compound letter centred in it, drawn
+    /// <paramref name="offsetX"/> pixels right of a point on the data. Matches <see cref="CompoundBadge"/>.
+    /// </summary>
+    private sealed class CompoundRing(double x, double y, float offsetX, string letter, Color color) : IPlottable
+    {
+        public const float Diameter = 20;
+
+        public bool IsVisible { get; set; } = true;
+
+        public IAxes Axes { get; set; } = new Axes();
+
+        public IEnumerable<LegendItem> LegendItems => [];
+
+        public AxisLimits GetAxisLimits() => AxisLimits.NoLimits;
+
+        public void Render(RenderPack rp)
+        {
+            var anchor = Axes.GetPixel(new Coordinates(x, y));
+            var centre = new SkiaSharp.SKPoint(anchor.X + offsetX + Diameter / 2, anchor.Y);
+            const float Stroke = 2;
+            var radius = Diameter / 2 - Stroke / 2;
+            using var fill = new SkiaSharp.SKPaint { Color = Bg0.ToSKColor(), IsAntialias = true, Style = SkiaSharp.SKPaintStyle.Fill };
+            using var ring = new SkiaSharp.SKPaint { Color = color.ToSKColor(), IsAntialias = true, Style = SkiaSharp.SKPaintStyle.Stroke, StrokeWidth = Stroke };
+            rp.Canvas.DrawCircle(centre, radius, fill);
+            rp.Canvas.DrawCircle(centre, radius, ring);
+
+            // Centred on the letter's own ink, not the font's line box (which leaves a capital high).
+            using var font = new SkiaSharp.SKFont(Fonts.GetTypeface(LabelFont, true, false), 11);
+            font.MeasureText(letter, out var ink);
+            using var paint = new SkiaSharp.SKPaint { Color = color.ToSKColor(), IsAntialias = true };
+            rp.Canvas.DrawText(letter, centre.X - ink.MidX, centre.Y - ink.MidY, font, paint);
+        }
+    }
+
+    /// <summary>
+    /// A filled chip with a word in it on the timeline (a race's letter, a PIT stop), the word's capitals centred in the
+    /// chip and the chip centred on the bar: <paramref name="offsetX"/> pixels right of a point on the data, starting there
+    /// or (<paramref name="centred"/>) centred on it.
+    /// </summary>
+    private sealed class BarChip(double x, double y, float offsetX, string text, float size, Color textColor, Color fill, Color? border, bool centred) : IPlottable
+    {
+        private const float Padding = 5, Stroke = 2, Radius = 4;
+
+        public bool IsVisible { get; set; } = true;
+
+        public IAxes Axes { get; set; } = new Axes();
+
+        public IEnumerable<LegendItem> LegendItems => [];
+
+        public AxisLimits GetAxisLimits() => AxisLimits.NoLimits;
+
+        public void Render(RenderPack rp)
+        {
+            var anchor = Axes.GetPixel(new Coordinates(x, y));
+            using var font = new SkiaSharp.SKFont(Fonts.GetTypeface(LabelFont, true, false), size);
+            var capHeight = font.Metrics.CapHeight;
+            var width = font.MeasureText(text) + 2 * Padding;
+            var height = capHeight + 2 * Padding + 2;
+            var left = anchor.X + offsetX - (centred ? width / 2 : 0);
+            var box = new SkiaSharp.SKRect(left, anchor.Y - height / 2, left + width, anchor.Y + height / 2);
+            using var fillPaint = new SkiaSharp.SKPaint { Color = fill.ToSKColor(), IsAntialias = true };
+            rp.Canvas.DrawRoundRect(box, Radius, Radius, fillPaint);
+            if (border is { } edge)
+            {
+                using var borderPaint = new SkiaSharp.SKPaint { Color = edge.ToSKColor(), IsAntialias = true, Style = SkiaSharp.SKPaintStyle.Stroke, StrokeWidth = Stroke };
+                rp.Canvas.DrawRoundRect(box, Radius, Radius, borderPaint);
+            }
+
+            using var ink = new SkiaSharp.SKPaint { Color = textColor.ToSKColor(), IsAntialias = true };
+            rp.Canvas.DrawText(text, left + Padding, anchor.Y + capHeight / 2, font, ink);
+        }
+    }
+
+    /// <summary>
+    /// A stint's text or value on its timeline bar, 12 px bold, its capitals centred on the bar (ScottPlot's middle
+    /// alignment centres the font's line box, which leaves capitals about 3 px high): <paramref name="offsetX"/> pixels
+    /// from a point on the data, starting there or (<paramref name="alignRight"/>) ending there.
+    /// </summary>
+    private sealed class BarText(double x, double y, float offsetX, string text, string fontName, Color color, bool alignRight) : IPlottable
+    {
+        public bool IsVisible { get; set; } = true;
+
+        public IAxes Axes { get; set; } = new Axes();
+
+        public IEnumerable<LegendItem> LegendItems => [];
+
+        public AxisLimits GetAxisLimits() => AxisLimits.NoLimits;
+
+        public void Render(RenderPack rp)
+        {
+            var anchor = Axes.GetPixel(new Coordinates(x, y));
+            using var font = new SkiaSharp.SKFont(Fonts.GetTypeface(fontName, true, false), 12);
+            using var paint = new SkiaSharp.SKPaint { Color = color.ToSKColor(), IsAntialias = true };
+            var width = font.MeasureText(text);
+            var left = anchor.X + offsetX - (alignRight ? width : 0);
+            rp.Canvas.DrawText(text, left, anchor.Y + font.Metrics.CapHeight / 2, font, paint);
+        }
+    }
+
     private sealed class FromTickGenerator(ITickGenerator inner, double min) : ITickGenerator
     {
         public Tick[] Ticks => [.. inner.Ticks.Where(t => t.Position >= min - 1e-9)];
@@ -619,7 +701,9 @@ public sealed class TelemetryPlot : ContentControl
 
         Add(DataFont, "JetBrainsMono-Medium.ttf", bold: false);
         Add(DataFont, "JetBrainsMono-ExtraBold.ttf", bold: true);
-        Add(LabelFont, "ChakraPetch-SemiBold.ttf", bold: false);
-        Add(LabelFont, "ChakraPetch-Bold.ttf", bold: true);
+        Add("Chakra Petch", "ChakraPetch-SemiBold.ttf", bold: false);
+        Add("Chakra Petch", "ChakraPetch-Bold.ttf", bold: true);
+        Add("IBM Plex Sans", "IBMPlexSans-Medium.ttf", bold: false);
+        Add("IBM Plex Sans", "IBMPlexSans-SemiBold.ttf", bold: true);
     }
 }

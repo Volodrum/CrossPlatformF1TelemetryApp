@@ -8,6 +8,7 @@ using F1Telemetry.App.Infrastructure;
 using F1Telemetry.App.Services;
 using F1Telemetry.Core.Engine;
 using F1Telemetry.Core.Input;
+using F1Telemetry.Core.Localization;
 using F1Telemetry.Core.Models;
 
 namespace F1Telemetry.App.ViewModels;
@@ -223,6 +224,9 @@ public sealed partial class SettingsViewModel : ObservableObject
         _overlays = overlays;
         Updates = updates;
         var s = settings.Current;
+        // The language on screen; only a choice made here is saved (an unset setting keeps following the system).
+        Language = Loc.Languages.FirstOrDefault(l => l.Code == Loc.Language);
+        _languageShown = true;
         UdpPort = s.UdpPort;
         ListenOnStartup = s.ListenOnStartup;
         TyreWearLimit = s.TyreWearLimitPercent;
@@ -265,6 +269,29 @@ public sealed partial class SettingsViewModel : ObservableObject
     public UpdatesViewModel Updates { get; }
 
     public string DatabasePath => _paths.DatabasePath;
+
+    /// <summary>The languages the app can be shown in, each in its own name.</summary>
+    public IReadOnlyList<AppLanguage> Languages => Loc.Languages;
+
+    /// <summary>The app's language. Saved at once; the screens switch to it when the app next starts.</summary>
+    [ObservableProperty] public partial AppLanguage? Language { get; set; }
+
+    /// <summary>Shown after the language is changed: in both languages, since the screen is still in the old one.</summary>
+    [ObservableProperty] public partial string LanguageNote { get; set; } = "";
+
+    private readonly bool _languageShown;
+
+    partial void OnLanguageChanged(AppLanguage? value)
+    {
+        if (!_languageShown || value is null || _settings.Current.Language == value.Code)
+        {
+            return;
+        }
+
+        _settings.Current.Language = value.Code;
+        _settings.Save();
+        LanguageNote = value.Code == Loc.Language ? "" : "Restart the app to switch the language · Перезапустіть застосунок, щоб змінити мову";
+    }
 
     [ObservableProperty] public partial int UdpPort { get; set; }
     [ObservableProperty] public partial bool ListenOnStartup { get; set; }

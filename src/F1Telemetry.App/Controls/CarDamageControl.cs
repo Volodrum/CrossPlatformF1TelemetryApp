@@ -23,7 +23,7 @@ public sealed class CarDamageControl : Control
     private const double DesignHeight = 340;
 
     private static readonly Typeface DataFace = new(new FontFamily("avares://F1Telemetry/Assets/Fonts#JetBrains Mono"), FontStyle.Normal, FontWeight.ExtraBold);
-    private static readonly Typeface LabelFace = new(new FontFamily("avares://F1Telemetry/Assets/Fonts#Chakra Petch"), FontStyle.Normal, FontWeight.Bold);
+    private static readonly Typeface LabelFace = new(new FontFamily("avares://F1Telemetry/Assets/Fonts#Chakra Petch, avares://F1Telemetry/Assets/Fonts#IBM Plex Sans"), FontStyle.Normal, FontWeight.Bold);
     private static readonly IPen StructurePen = new Pen(Palette.LineStrong, 2);
     private static readonly IPen SuspensionPen = new Pen(Palette.LineStrong, 3, lineCap: PenLineCap.Round);
     private static readonly Dictionary<IBrush, (IBrush Fill, IPen Stroke)> Tints = [];
@@ -197,7 +197,7 @@ public sealed class CarDamageControl : Control
         Text(context, Percent(percent), DataFace, size, Palette.Damage(percent), centre, align: 0);
 
     private static void Label(DrawingContext context, string text, Point centre) =>
-        Text(context, text, LabelFace, 9.5, Palette.TextLo, centre, align: 0);
+        Text(context, F1Telemetry.Core.Localization.Loc.T(text), LabelFace, 9.5, Palette.TextLo, centre, align: 0);
 
     /// <param name="anchor">Vertical centre of the text; horizontally its centre (align 0), right edge (1) or left edge (-1).</param>
     private static void Text(DrawingContext context, string text, Typeface face, double size, IBrush brush, Point anchor, int align)

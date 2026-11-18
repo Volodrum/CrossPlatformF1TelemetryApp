@@ -1,4 +1,5 @@
 using Avalonia;
+using Avalonia.Media;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using F1Telemetry.App.Infrastructure;
@@ -14,7 +15,20 @@ public partial class App : Application
 {
     private ServiceProvider? _services;
 
-    public override void Initialize() => AvaloniaXamlLoader.Load(this);
+    /// <summary>
+    /// Letters a face doesn't have (Chakra Petch has no Cyrillic, for the Ukrainian screens) come from IBM Plex Sans,
+    /// which ships with the app, rather than whichever system font matches first.
+    /// </summary>
+    public static FontManagerOptions CyrillicFallback { get; } = new()
+    {
+        FontFallbacks = [new FontFallback { FontFamily = new FontFamily("avares://F1Telemetry/Assets/Fonts#IBM Plex Sans") }],
+    };
+
+    public override void Initialize()
+    {
+        UiTranslation.Install();
+        AvaloniaXamlLoader.Load(this);
+    }
 
     public override void OnFrameworkInitializationCompleted()
     {
@@ -23,6 +37,7 @@ public partial class App : Application
             _services = ConfigureServices();
             var settings = _services.GetRequiredService<SettingsService>();
             settings.Load();
+            Core.Localization.Loc.Use(Core.Localization.Loc.Resolve(settings.Current.Language));
 
             var runtime = _services.GetRequiredService<TelemetryRuntime>();
             var overlays = _services.GetRequiredService<OverlayManager>();

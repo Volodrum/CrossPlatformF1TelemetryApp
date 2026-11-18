@@ -1,0 +1,73 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:F1Telemetry.App.ViewModels"
+             xmlns:controls="using:F1Telemetry.App.Controls"
+             x:Class="F1Telemetry.App.Views.DataGuidePanel"
+             x:DataType="vm:DataGuideViewModel">
+  <!-- A data guide: the score, the next run large and moving, then a card per item by the session it is measured in.
+       The words (what is recorded, what to do, why) are in each card's tooltip. -->
+  <StackPanel Spacing="16">
+    <TextBlock Classes="body" Text="{Binding Empty}" IsVisible="{Binding !HasGuide}" />
+
+    <Grid ColumnDefinitions="Auto,*" ColumnSpacing="16" IsVisible="{Binding HasGuide}">
+      <TextBlock Classes="label strong" FontSize="14" Text="{Binding Score}" VerticalAlignment="Center" />
+      <ProgressBar Grid.Column="1" Classes="bar" Minimum="0" Maximum="1" Value="{Binding Progress}" Foreground="{StaticResource FasterBrush}"
+                   MaxWidth="420" HorizontalAlignment="Left" MinWidth="240" VerticalAlignment="Center" />
+    </Grid>
+
+    <!-- The next run: large, always moving, with the one sentence worth reading -->
+    <Border Classes="panel" Padding="20" BorderBrush="{StaticResource InfoBrush}" DataContext="{Binding Next}" x:DataType="vm:GuideRowViewModel"
+            IsVisible="{Binding $parent[StackPanel].((vm:DataGuideViewModel)DataContext).Next, Converter={x:Static ObjectConverters.IsNotNull}, FallbackValue=False}">
+      <Grid ColumnDefinitions="400,*" ColumnSpacing="28">
+        <controls:GuideIllustration Kind="{Binding Kind}" Compound="{Binding Compound}" Mode="{Binding Mode}" IsAnimating="True" VerticalAlignment="Center" />
+        <StackPanel Grid.Column="1" Spacing="12" VerticalAlignment="Center">
+          <StackPanel Orientation="Horizontal" Spacing="10">
+            <TextBlock Classes="label strong" Text="NEXT RUN" Foreground="{StaticResource InfoBrush}" VerticalAlignment="Center" />
+            <Border Classes="pill" BorderBrush="{StaticResource LineStrongBrush}" BorderThickness="1" VerticalAlignment="Center">
+              <TextBlock Text="{Binding Session}" FontFamily="{StaticResource DisplayFont}" FontSize="11" FontWeight="Bold" LetterSpacing="1.1"
+                         Foreground="{StaticResource TextMidBrush}" />
+            </Border>
+          </StackPanel>
+          <TextBlock Classes="h1" FontSize="26" Text="{Binding Title}" TextWrapping="Wrap" />
+          <TextBlock Classes="body" Foreground="{StaticResource TextHiBrush}" Text="{Binding Do}" TextWrapping="Wrap" />
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12" MaxWidth="420" HorizontalAlignment="Left">
+            <ProgressBar Classes="bar" Height="10" MinHeight="10" CornerRadius="5" Minimum="0" Maximum="1" Value="{Binding Progress}"
+                         Foreground="{Binding ProgressBrush}" MinWidth="260" VerticalAlignment="Center" />
+            <TextBlock Grid.Column="1" Classes="mono" FontSize="13" Foreground="{StaticResource TextMidBrush}" Text="{Binding Count}"
+                       IsVisible="{Binding HasCount}" VerticalAlignment="Center" />
+          </Grid>
+        </StackPanel>
+      </Grid>
+    </Border>
+
+    <!-- Everything measured: one line instead of the large card -->
+    <TextBlock Classes="body" Text="{Binding NextText}" IsVisible="{Binding Next, Converter={x:Static ObjectConverters.IsNull}}" />
+
+    <StackPanel Spacing="8" IsVisible="{Binding HasGuide}">
+      <TextBlock Classes="label strong" Text="IN PRACTICE" IsVisible="{Binding HasPractice}" />
+      <ItemsControl ItemsSource="{Binding Practice}" ItemTemplate="{StaticResource GuideCard}" IsVisible="{Binding HasPractice}">
+        <ItemsControl.ItemsPanel>
+          <ItemsPanelTemplate>
+            <WrapPanel />
+          </ItemsPanelTemplate>
+        </ItemsControl.ItemsPanel>
+      </ItemsControl>
+      <TextBlock Classes="label strong" Text="IN QUALIFYING" IsVisible="{Binding HasQualifying}" />
+      <ItemsControl ItemsSource="{Binding Qualifying}" ItemTemplate="{StaticResource GuideCard}" IsVisible="{Binding HasQualifying}">
+        <ItemsControl.ItemsPanel>
+          <ItemsPanelTemplate>
+            <WrapPanel />
+          </ItemsPanelTemplate>
+        </ItemsControl.ItemsPanel>
+      </ItemsControl>
+      <TextBlock Classes="label strong" Text="IN THE RACE" IsVisible="{Binding HasRace}" />
+      <ItemsControl ItemsSource="{Binding Race}" ItemTemplate="{StaticResource GuideCard}" IsVisible="{Binding HasRace}">
+        <ItemsControl.ItemsPanel>
+          <ItemsPanelTemplate>
+            <WrapPanel />
+          </ItemsPanelTemplate>
+        </ItemsControl.ItemsPanel>
+      </ItemsControl>
+    </StackPanel>
+  </StackPanel>
+</UserControl>

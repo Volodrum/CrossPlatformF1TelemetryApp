@@ -147,6 +147,9 @@ public enum EnergyPage
     Session,
     Plan,
     Model,
+
+    /// <summary>What the car model and the plans rest on at the track, and what to drive to measure the rest.</summary>
+    Guide,
 }
 
 /// <summary>
@@ -284,12 +287,21 @@ public sealed partial class EnergyViewModel : ObservableObject
     public bool IsSessionPage => Page == EnergyPage.Session;
     public bool IsPlanPage => Page == EnergyPage.Plan;
     public bool IsModelPage => Page == EnergyPage.Model;
+    public bool IsGuidePage => Page == EnergyPage.Guide;
+
+    /// <summary>SESSION and ERS PLAN share the map and the battery trace.</summary>
+    public bool IsMapPage => Page is EnergyPage.Session or EnergyPage.Plan;
+
+    /// <summary>The energy data guide for the track on the tab.</summary>
+    public DataGuideViewModel Guide { get; } = new();
 
     partial void OnPageChanged(EnergyPage value)
     {
         OnPropertyChanged(nameof(IsSessionPage));
         OnPropertyChanged(nameof(IsPlanPage));
         OnPropertyChanged(nameof(IsModelPage));
+        OnPropertyChanged(nameof(IsGuidePage));
+        OnPropertyChanged(nameof(IsMapPage));
         ShowPlanOnMap = value == EnergyPage.Plan;
     }
 
@@ -323,6 +335,7 @@ public sealed partial class EnergyViewModel : ObservableObject
         if (Recording is not { } recording)
         {
             Clear("Select a recording in the sidebar.");
+            Guide.Clear("Select a recording to see what the energy plans know at its track.");
             Header = "Select a recording";
             return;
         }
@@ -346,6 +359,7 @@ public sealed partial class EnergyViewModel : ObservableObject
         if (energies.Count == 0 || samples.All(s => s.ErsStoreEnergy == 0 && s.ErsDeployed == 0))
         {
             Clear("No battery data in this recording.");
+            await ShowGuideAsync(model, null, recording.TrackName, version);
             return;
         }
 
@@ -411,8 +425,31 @@ public sealed partial class EnergyViewModel : ObservableObject
         if (version == _loadVersion)
         {
             await Plan.SetSessionAsync(inputs, unavailable);
+            await ShowGuideAsync(model, inputs, recording.TrackName, version);
         }
     }
+
+    /// <summary>The energy data guide for the track: the car model and the laps the plans on this tab are built on.</summary>
+    private async Task ShowGuideAsync(ErsCarModel? model, PlanInputs? inputs, string trackName, int version)
+    {
+        if (model is null)
+        {
+            Guide.Clear("No car model for this track yet. It is learned from the laps you record here, and the ERS plans are built on it.");
+            return;
+        }
+
+        var guide = await Task.Run(() => EnergyGuideBuilder.Build(model, inputs?.Race, inputs?.Qualifying));
+        if (version == _loadVersion)
+        {
+            Guide.Load(guide, ScoreText(guide, trackName), AllMeasured);
+        }
+    }
+
+    /// <summary>The energy guide's headline.</summary>
+    public static string ScoreText(Core.Analytics.DataGuide guide, string trackName) => $"{guide.Done} OF {guide.Total} MEASURED AT {trackName.ToUpperInvariant()}";
+
+    /// <summary>What the energy guide says when nothing is left to measure.</summary>
+    public const string AllMeasured = "Everything the energy plans use is measured here. More laps still steady the car model.";
 
     /// <summary>A session's typical laps among those with energy data (every such lap when none is timed), and its fastest.</summary>
     private static (IReadOnlyList<LapRecord> Representative, HashSet<int> Laps, LapRecord? Fastest) Typical(IReadOnlyList<LapRecord> laps, IReadOnlyList<LapEnergy> energies)
@@ -646,18 +683,24 @@ public sealed partial class EnergyViewModel : ObservableObject
         }
     }
 
+    /// <summary>The key to a deploy-mode map: each mode's colour, and the battery labels at each switch.</summary>
+    public static IReadOnlyList<LegendEntry> ModeLegend() =>
+    [
+        new("N · NONE", Palette.TextLo, 2),
+        .. new[] { DeployModes.Medium, DeployModes.Hotlap, DeployModes.Overtake }
+            .Select(mode => new LegendEntry($"{DeployModes.Letter(mode)} · {DeployModes.Name(mode).ToUpperInvariant()}", Palette.DeployMode(mode))),
+        new("% · BATTERY AT EACH SWITCH", Palette.TextHi, 2),
+    ];
+
     private void FillLegend()
     {
         Legend.Clear();
         if (Layer == MapColoring.DeployMode)
         {
-            Legend.Add(new LegendEntry("N · NONE", Palette.TextLo, 2));
-            foreach (var mode in new[] { DeployModes.Medium, DeployModes.Hotlap, DeployModes.Overtake })
+            foreach (var entry in ModeLegend())
             {
-                Legend.Add(new LegendEntry($"{DeployModes.Letter(mode)} · {DeployModes.Name(mode).ToUpperInvariant()}", Palette.DeployMode(mode)));
+                Legend.Add(entry);
             }
-
-            Legend.Add(new LegendEntry("% · BATTERY AT EACH SWITCH", Palette.TextHi, 2));
         }
         else if (Unit == EnergyUnit.Percent)
         {

@@ -163,30 +163,64 @@
               <TextBlock Classes="body" FontSize="13" Text="{Binding Basis}" TextWrapping="Wrap" Foreground="{StaticResource TextHiBrush}"
                          IsVisible="{Binding Basis, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
 
-              <WrapPanel ItemSpacing="40" LineSpacing="14" IsVisible="{Binding HasPlan}">
-                <StackPanel Spacing="2">
-                  <TextBlock Classes="label" Text="PREDICTED LAP" />
-                  <StackPanel Orientation="Horizontal" Spacing="10">
-                    <TextBlock Classes="data-l" Text="{Binding Predicted}" />
-                    <TextBlock Classes="data-s" Text="{Binding Gain}" Foreground="{StaticResource FasterBrush}" VerticalAlignment="Bottom" Margin="0,0,0,6" />
+              <!-- Energy use map (the plan's deploy mode along the racing line, the battery at each switch) beside the plan's figures -->
+              <Grid ColumnDefinitions="*,340" ColumnSpacing="16" MinHeight="420" IsVisible="{Binding HasPlan}">
+                <Border Background="{StaticResource CardBrush}" CornerRadius="8" ClipToBounds="True">
+                  <Panel>
+                    <controls:TrackMapControl Outline="{Binding $parent[views:HubView].((vm:HubViewModel)DataContext).Outline, FallbackValue={x:Null}}"
+                                              ActiveLap="{Binding MapLine}" ColorByInputs="True" Coloring="DeployMode" BatteryAtModeChanges="True"
+                                              IsVisible="{Binding HasMap}" />
+                    <StackPanel Margin="16,14" HorizontalAlignment="Left" VerticalAlignment="Top" Spacing="2" IsHitTestVisible="False">
+                      <TextBlock Classes="label strong" Text="ENERGY USE MAP" />
+                      <TextBlock Classes="label" Text="{Binding MapTitle}" />
+                    </StackPanel>
+                    <TextBlock Classes="body" FontSize="13" Margin="16,0" MaxWidth="420" HorizontalAlignment="Center" VerticalAlignment="Center" TextAlignment="Center"
+                               IsVisible="{Binding !HasMap}"
+                               Text="No racing line kept for this track yet. Record a session here, or save one to the hub again, and the plan is drawn on the track." />
+                    <ItemsControl ItemsSource="{Binding $parent[views:HubView].((vm:HubViewModel)DataContext).MapLegend, FallbackValue={x:Null}}"
+                                  Margin="16,14" HorizontalAlignment="Right" VerticalAlignment="Bottom" IsHitTestVisible="False" IsVisible="{Binding HasMap}">
+                      <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                          <StackPanel Spacing="8" />
+                        </ItemsPanelTemplate>
+                      </ItemsControl.ItemsPanel>
+                      <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:LegendEntry">
+                          <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Border Width="24" Height="{Binding Thickness}" CornerRadius="3" Background="{Binding Swatch}" VerticalAlignment="Center" />
+                            <TextBlock Classes="label strong" Text="{Binding Label}" VerticalAlignment="Center" />
+                          </StackPanel>
+                        </DataTemplate>
+                      </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                  </Panel>
+                </Border>
+
+                <StackPanel Grid.Column="1" Spacing="14">
+                  <StackPanel Spacing="2">
+                    <TextBlock Classes="label" Text="PREDICTED LAP" />
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                      <TextBlock Classes="data-l" Text="{Binding Predicted}" />
+                      <TextBlock Classes="data-s" Text="{Binding Gain}" Foreground="{StaticResource FasterBrush}" VerticalAlignment="Bottom" Margin="0,0,0,6" />
+                    </StackPanel>
+                  </StackPanel>
+                  <StackPanel Spacing="2">
+                    <TextBlock Classes="label" Text="{Binding UnitLabel, StringFormat='BATTERY AT THE LINE · {0}'}" />
+                    <TextBlock Classes="data-m" Text="{Binding Battery}" />
+                    <TextBlock Classes="body" FontSize="13" Text="{Binding BatteryNote}" TextWrapping="Wrap" />
+                  </StackPanel>
+                  <StackPanel Spacing="2">
+                    <TextBlock Classes="label" Text="{Binding UnitLabel, StringFormat='HARVEST / DEPLOY PER LAP · {0}'}" />
+                    <TextBlock Classes="data-m" Text="{Binding Energy}" />
+                    <TextBlock Classes="body" FontSize="13" Text="{Binding EnergyNote}" TextWrapping="Wrap" />
+                  </StackPanel>
+                  <StackPanel Spacing="4">
+                    <TextBlock Classes="label" Text="CONFIDENCE" />
+                    <ContentControl Content="{Binding Confidence}" HorizontalAlignment="Left" />
+                    <TextBlock Classes="body" FontSize="13" Text="{Binding ConfidenceNote}" TextWrapping="Wrap" />
                   </StackPanel>
                 </StackPanel>
-                <StackPanel Spacing="2" MaxWidth="320">
-                  <TextBlock Classes="label" Text="{Binding UnitLabel, StringFormat='BATTERY AT THE LINE · {0}'}" />
-                  <TextBlock Classes="data-m" Text="{Binding Battery}" />
-                  <TextBlock Classes="body" FontSize="13" Text="{Binding BatteryNote}" TextWrapping="Wrap" />
-                </StackPanel>
-                <StackPanel Spacing="2" MaxWidth="320">
-                  <TextBlock Classes="label" Text="{Binding UnitLabel, StringFormat='HARVEST / DEPLOY PER LAP · {0}'}" />
-                  <TextBlock Classes="data-m" Text="{Binding Energy}" />
-                  <TextBlock Classes="body" FontSize="13" Text="{Binding EnergyNote}" TextWrapping="Wrap" />
-                </StackPanel>
-                <StackPanel Spacing="4" MaxWidth="320">
-                  <TextBlock Classes="label" Text="CONFIDENCE" />
-                  <ContentControl Content="{Binding Confidence}" HorizontalAlignment="Left" />
-                  <TextBlock Classes="body" FontSize="13" Text="{Binding ConfidenceNote}" TextWrapping="Wrap" />
-                </StackPanel>
-              </WrapPanel>
+              </Grid>
 
               <StackPanel Spacing="4" IsVisible="{Binding HasPlan}">
                 <TextBlock Classes="label strong" Text="DEPLOY MODE PER ZONE · SIMULATED ON THE CAR MODEL" Margin="0,6,0,4" />
@@ -232,6 +266,14 @@
               </StackPanel>
             </StackPanel>
           </Border>
+
+          <!-- The energy data guide: what the car model and the plans rest on here, and the runs that measure the rest -->
+          <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,12,0,0">
+            <TextBlock Classes="label strong" Text="ENERGY DATA GUIDE" FontSize="14" VerticalAlignment="Center" />
+            <controls:HelpTip Width="18" Height="18"
+                              Text="What the car model and the ERS plans rest on at this track, measured from every session here, and what to drive in practice and qualifying to measure the rest. Each card's tooltip says what is recorded, what to do and why it matters." />
+          </StackPanel>
+          <views:DataGuidePanel DataContext="{Binding EnergyGuide}" />
         </StackPanel>
       </ScrollViewer>
 

@@ -35,6 +35,7 @@ internal static class Program
         AppBuilder.Configure<App>()
             .UsePlatformDetect()
             .WithInterFont()
+            .With(App.CyrillicFallback)
             .LogToTrace();
 
     private static void WriteCrash(AppPaths paths, object error)

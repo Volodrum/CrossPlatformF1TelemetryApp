@@ -11,4 +11,8 @@
   <ItemGroup>
     <InternalsVisibleTo Include="F1Telemetry.Tests" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- Translations keyed by the English text (see Localization/Loc.cs). -->
+    <EmbeddedResource Include="Localization\*.json" />
+  </ItemGroup>
 </Project>

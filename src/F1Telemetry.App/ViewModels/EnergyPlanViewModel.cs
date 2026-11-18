@@ -6,6 +6,7 @@ using CommunityToolkit.Mvvm.Input;
 using F1Telemetry.App.Services;
 using F1Telemetry.Core.Energy;
 using F1Telemetry.Core.Formatting;
+using F1Telemetry.Core.Models;
 using Microsoft.Extensions.Logging;
 
 namespace F1Telemetry.App.ViewModels;
@@ -62,6 +63,16 @@ public sealed partial class EnergyPlanViewModel(ILogger<EnergyPlanViewModel> log
     [ObservableProperty] public partial Chip? Confidence { get; set; }
     [ObservableProperty] public partial string ConfidenceNote { get; set; } = "";
 
+    /// <summary>
+    /// The plan on the racing line of the lap it is built on, a point every <see cref="LapProfile.Step"/> m with the plan's
+    /// deploy mode and battery there, for the track map; null without a plan or a line (laps kept before the line was).
+    /// </summary>
+    [ObservableProperty] public partial IReadOnlyList<TelemetrySample>? MapLine { get; set; }
+
+    [ObservableProperty] public partial string MapTitle { get; set; } = "";
+
+    public bool HasMap => MapLine is { Count: > 1 };
+
     public ObservableCollection<ZoneRowViewModel> Zones { get; } = [];
 
     public bool HasPlan => Result is not null;
@@ -87,6 +98,8 @@ public sealed partial class EnergyPlanViewModel(ILogger<EnergyPlanViewModel> log
         OnPropertyChanged(nameof(UnitLabel));
         Render(Result);
     }
+
+    partial void OnMapLineChanged(IReadOnlyList<TelemetrySample>? value) => OnPropertyChanged(nameof(HasMap));
 
     partial void OnResultChanged(PlanResult? value)
     {
@@ -191,6 +204,8 @@ public sealed partial class EnergyPlanViewModel(ILogger<EnergyPlanViewModel> log
         if (shown is not { } result || _shownLap is not { } lap)
         {
             Basis = "";
+            MapLine = null;
+            MapTitle = "";
             return;
         }
 
@@ -200,6 +215,8 @@ public sealed partial class EnergyPlanViewModel(ILogger<EnergyPlanViewModel> log
 
         Basis = _shownBasis;
         Predicted = TimeFormat.Lap(result.PredictedSeconds(lap.ActualSeconds) * 1000);
+        MapLine = Line(lap, plan);
+        MapTitle = $"{(plan.Kind == PlanKind.Race ? "RACE" : "QUALIFYING")} PLAN · {Predicted}";
         Gain = (result.Gain >= 0 ? "−" : "+") + Math.Abs(result.Gain).ToString("0.000", CultureInfo.InvariantCulture) + " s";
         Battery = $"{EnergyText.Format(plan.StartStore, unit)} → {EnergyText.Format(plan.EndStore, unit)}";
         BatteryNote = plan.Kind == PlanKind.Qualifying
@@ -238,5 +255,30 @@ public sealed partial class EnergyPlanViewModel(ILogger<EnergyPlanViewModel> log
                 .ToList();
             Zones.Add(new ZoneRowViewModel(zone, driven, unit));
         }
+    }
+
+    /// <summary>The lap's racing line carrying the plan's mode and battery at every boundary; null when the lap has no line.</summary>
+    private static List<TelemetrySample>? Line(LapProfile lap, LapPlan plan)
+    {
+        if (lap.LineX is not { } x || lap.LineZ is not { } z || plan.Modes.Length == 0)
+        {
+            return null;
+        }
+
+        var points = new List<TelemetrySample>(x.Length);
+        for (var i = 0; i < x.Length; i++)
+        {
+            // Boundary i starts segment i (the last one ends the last segment): its mode, and the battery there
+            // (Stores[k] is the battery at the end of segment k).
+            var segment = Math.Clamp(i, 0, plan.Modes.Length - 1);
+            var store = i == 0 || plan.Stores.Length == 0 ? plan.StartStore : plan.Stores[Math.Min(i - 1, plan.Stores.Length - 1)];
+            points.Add(new TelemetrySample
+            {
+                LapNumber = 1, LapDistance = i * LapProfile.Step, WorldPosX = x[i], WorldPosZ = z[i],
+                ErsDeployMode = plan.Modes[segment], ErsStoreEnergy = store,
+            });
+        }
+
+        return points;
     }
 }

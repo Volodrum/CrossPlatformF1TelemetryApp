@@ -5,12 +5,32 @@
              xmlns:controls="using:F1Telemetry.App.Controls"
              xmlns:models="using:F1Telemetry.Core.Models"
              xmlns:engine="using:F1Telemetry.Core.Engine"
+             xmlns:loc="using:F1Telemetry.Core.Localization"
              x:Class="F1Telemetry.App.Views.SettingsView"
              x:DataType="vm:SettingsViewModel"
              Focusable="True">
   <DockPanel Margin="0,16,0,0">
     <ScrollViewer>
-      <StackPanel Spacing="16" MaxWidth="1100" HorizontalAlignment="Left">
+      <StackPanel Spacing="16" MaxWidth="1200" HorizontalAlignment="Left">
+        <!-- Language: each language in its own name; applied when the app starts -->
+        <Border Classes="panel" Padding="18">
+          <StackPanel Spacing="10">
+            <TextBlock Classes="label strong" Text="LANGUAGE" FontSize="14" />
+            <StackPanel Orientation="Horizontal" Spacing="16">
+              <ComboBox ItemsSource="{Binding Languages}" SelectedItem="{Binding Language}" MinWidth="220" VerticalAlignment="Center"
+                        AutomationProperties.Name="Language">
+                <ComboBox.ItemTemplate>
+                  <DataTemplate x:DataType="loc:AppLanguage">
+                    <TextBlock Text="{Binding Name}" />
+                  </DataTemplate>
+                </ComboBox.ItemTemplate>
+              </ComboBox>
+              <TextBlock Text="{Binding LanguageNote}" Foreground="{StaticResource SlowerBrush}" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="Wrap"
+                         IsVisible="{Binding LanguageNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+            </StackPanel>
+          </StackPanel>
+        </Border>
+
         <!-- Controls: one row per action, one column per input method -->
         <Border Classes="panel" Padding="18">
           <StackPanel Spacing="12">
@@ -26,7 +46,7 @@
               <TextBlock Grid.Column="3" Classes="label" Text="WHEEL · UDP ACTION" />
 
               <!-- Start / stop recording -->
-              <TextBlock Grid.Row="1" Classes="h2" Text="Start / stop recording" VerticalAlignment="Center" />
+              <TextBlock Grid.Row="1" Classes="h2" Text="Start / stop recording" VerticalAlignment="Center" TextWrapping="Wrap" />
               <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal" Spacing="8">
                 <TextBlock Classes="data-s" Text="{Binding StartStopHotkey}" Width="150" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
                 <Button Theme="{StaticResource SecondaryButton}" Content="SET…" Command="{Binding BeginCaptureCommand}" CommandParameter="startStop" ToolTip.Tip="Press SET…, then the new key combination" />
@@ -41,7 +61,7 @@
               <TextBlock Grid.Row="1" Grid.Column="3" Classes="muted" Text="—" VerticalAlignment="Center" />
 
               <!-- Toggle overlays -->
-              <TextBlock Grid.Row="2" Classes="h2" Text="Toggle overlays" VerticalAlignment="Center" />
+              <TextBlock Grid.Row="2" Classes="h2" Text="Toggle overlays" VerticalAlignment="Center" TextWrapping="Wrap" />
               <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal" Spacing="8">
                 <TextBlock Classes="data-s" Text="{Binding ToggleOverlaysHotkey}" Width="150" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
                 <Button Theme="{StaticResource SecondaryButton}" Content="SET…" Command="{Binding BeginCaptureCommand}" CommandParameter="toggleOverlays" ToolTip.Tip="Press SET…, then the new key combination" />
@@ -56,7 +76,7 @@
               <TextBlock Grid.Row="2" Grid.Column="3" Classes="muted" Text="—" VerticalAlignment="Center" />
 
               <!-- Strategy / damage page: the only action a wheel can trigger through the game's UDP actions -->
-              <TextBlock Grid.Row="3" Classes="h2" Text="Strategy / damage page" VerticalAlignment="Center" />
+              <TextBlock Grid.Row="3" Classes="h2" Text="Strategy / damage page" VerticalAlignment="Center" TextWrapping="Wrap" />
               <StackPanel Grid.Row="3" Grid.Column="1" Orientation="Horizontal" Spacing="8">
                 <TextBlock Classes="data-s" Text="{Binding StrategyPageHotkey}" Width="150" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
                 <Button Theme="{StaticResource SecondaryButton}" Content="SET…" Command="{Binding BeginCaptureCommand}" CommandParameter="strategyPage" ToolTip.Tip="Press SET…, then the new key combination" />
@@ -72,7 +92,7 @@
                         MinWidth="170" HorizontalAlignment="Left" VerticalAlignment="Center" />
 
               <!-- ERS plan: next mode -->
-              <TextBlock Grid.Row="4" Classes="h2" Text="ERS plan: next mode" VerticalAlignment="Center" />
+              <TextBlock Grid.Row="4" Classes="h2" Text="ERS plan: next mode" VerticalAlignment="Center" TextWrapping="Wrap" />
               <StackPanel Grid.Row="4" Grid.Column="1" Orientation="Horizontal" Spacing="8">
                 <TextBlock Classes="data-s" Text="{Binding ErsPlanHotkey}" Width="150" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
                 <Button Theme="{StaticResource SecondaryButton}" Content="SET…" Command="{Binding BeginCaptureCommand}" CommandParameter="ersPlan" ToolTip.Tip="Press SET…, then the new key combination" />

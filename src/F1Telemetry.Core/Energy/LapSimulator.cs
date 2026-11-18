@@ -21,8 +21,10 @@ public sealed record PlanSegment(int Index, double From, bool FullThrottle, int 
     double ReferenceSeconds, bool Override = false, bool Empty = false, double LateralG = 0, double Clip = 0);
 
 /// <summary>A <see cref="LapProfile"/> as plain data (see <see cref="LapProfile.ToData"/>).</summary>
+/// <param name="LineX">World X of the racing line at each segment boundary (see <see cref="LapProfile.LineX"/>); null in data kept before it was.</param>
+/// <param name="LineZ">World Z, as <paramref name="LineX"/>.</param>
 public sealed record LapProfileData(int LapNumber, int LapCount, IReadOnlyList<PlanSegment> Segments, double[] Speed, double[] Level, double Braking,
-    double MassKg, double ActualSeconds, double HarvestLimit);
+    double MassKg, double ActualSeconds, double HarvestLimit, double[]? LineX = null, double[]? LineZ = null);
 
 /// <summary>
 /// A lap cut into <see cref="Step"/> m segments for the <see cref="LapSimulator"/>: speeds at every boundary, where it
@@ -37,9 +39,13 @@ public sealed class LapProfile
     public const double NearlyEmpty = 150_000;
 
     private LapProfile(int lapNumber, int lapCount, IReadOnlyList<PlanSegment> segments, double[] speed, double[] level, double braking, double massKg,
-        double actualSeconds, double harvestLimit)
+        double actualSeconds, double harvestLimit, double[]? lineX = null, double[]? lineZ = null)
     {
         LapNumber = lapNumber;
+        // A line only counts when it has a point at every boundary.
+        (LineX, LineZ) = lineX is { } x && lineZ is { } z && x.Length > segments.Count && z.Length > segments.Count
+            ? (x[..(segments.Count + 1)], z[..(segments.Count + 1)])
+            : ((double[]?)null, (double[]?)null);
         LapCount = lapCount;
         Segments = segments;
         Speed = speed;
@@ -98,6 +104,15 @@ public sealed class LapProfile
     /// <summary>What the MGU-K had harvested on the lap at each segment boundary, J (one more than the segments).</summary>
     public double[] Harvested { get; }
 
+    /// <summary>
+    /// World X of the racing line at each segment boundary, so a plan can be drawn on the track map without the
+    /// recording; null when the lap came from data kept before the line was.
+    /// </summary>
+    public double[]? LineX { get; }
+
+    /// <summary>World Z of the racing line at each segment boundary (see <see cref="LineX"/>).</summary>
+    public double[]? LineZ { get; }
+
     public double Length => Segments.Count * Step;
 
     /// <summary>
@@ -122,6 +137,8 @@ public sealed class LapProfile
         var speed = new double[count + 1];
         var time = new double[count + 1];
         var level = new double[count + 1];
+        var lineX = new double[count + 1];
+        var lineZ = new double[count + 1];
         var j = 0;
         for (var i = 0; i <= count; i++)
         {
@@ -136,6 +153,8 @@ public sealed class LapProfile
             speed[i] = Math.Max(5, (a.Speed + f * (b.Speed - a.Speed)) / 3.6);
             time[i] = a.SessionTime + f * (b.SessionTime - a.SessionTime);
             level[i] = a.ErsStoreEnergy + f * (b.ErsStoreEnergy - a.ErsStoreEnergy);
+            lineX[i] = a.WorldPosX + f * (b.WorldPosX - a.WorldPosX);
+            lineZ[i] = a.WorldPosZ + f * (b.WorldPosZ - a.WorldPosZ);
         }
 
         // The game measures lap distance along the track's centre line, a little longer than the line the car drives:
@@ -191,7 +210,7 @@ public sealed class LapProfile
 
         var fuel = samples.Average(s => s.FuelInTank);
         return new LapProfile(samples[0].LapNumber, 1, segments, speed, level, braking, ErsModelBuilder.CarMass(format) + fuel,
-            lapSeconds is > 0 ? lapSeconds.Value : segments.Sum(s => s.ReferenceSeconds), samples.Max(s => s.ErsHarvestLimit));
+            lapSeconds is > 0 ? lapSeconds.Value : segments.Sum(s => s.ReferenceSeconds), samples.Max(s => s.ErsHarvestLimit), lineX, lineZ);
     }
 
     /// <summary>
@@ -246,20 +265,22 @@ public sealed class LapProfile
                 Clip: Of(s => s.Clip)));
         }
 
+        // The line is where the car went, not a figure to average: the first lap that has one.
+        var lined = laps.FirstOrDefault(l => l.LineX is { } x && x.Length > count);
         return new LapProfile(0, (int)total, segments, speed, level, Mean(l => l.Braking), Mean(l => l.MassKg),
-            Mean(l => l.ActualSeconds), Mean(l => l.HarvestLimit));
+            Mean(l => l.ActualSeconds), Mean(l => l.HarvestLimit), lined?.LineX, lined?.LineZ);
     }
 
     /// <summary>The profile as plain data, to keep (the track hub).</summary>
     public LapProfileData ToData() =>
-        new(LapNumber, LapCount, [.. Segments], Speed, Level, Braking, MassKg, ActualSeconds, HarvestLimit);
+        new(LapNumber, LapCount, [.. Segments], Speed, Level, Braking, MassKg, ActualSeconds, HarvestLimit, LineX, LineZ);
 
     /// <summary>A profile kept with <see cref="ToData"/>; null when it holds no segments.</summary>
     public static LapProfile? FromData(LapProfileData data) =>
         data.Segments.Count == 0 || data.Speed.Length != data.Segments.Count + 1 || data.Level.Length != data.Segments.Count + 1
             ? null
             : new LapProfile(data.LapNumber, Math.Max(1, data.LapCount), data.Segments, data.Speed, data.Level, data.Braking, data.MassKg,
-                data.ActualSeconds, data.HarvestLimit);
+                data.ActualSeconds, data.HarvestLimit, data.LineX, data.LineZ);
 
     /// <summary>Highest speed at each boundary that still makes the next braking zone, braking at <paramref name="braking"/> m/s².</summary>
     private static double[] BrakingEnvelope(IReadOnlyList<PlanSegment> segments, double[] speed, double braking)

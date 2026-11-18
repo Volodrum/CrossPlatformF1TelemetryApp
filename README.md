@@ -208,6 +208,23 @@ ffmpeg -framerate 12 -i frames/frame-%03d.png -vf palettegen frames/palette.png
 ffmpeg -framerate 12 -i frames/frame-%03d.png -i frames/palette.png -lavfi paletteuse=dither=none -loop 0 docs/screenshots/23-guide-animations.gif
 ```
 
+### Languages
+
+The app is in English and Ukrainian: **Settings → Language** (applied when the app next starts; with no choice saved it follows the system language).
+
+- **Keys.** Translations are keyed by the English text itself, in `src/F1Telemetry.Core/Localization/uk*.json`. The files are merged and embedded in Core.
+- **Holes.** A key can have holes, which match texts built from it: `"{0} laps": "{0} {0|коло|кола|кіл}"`. Each hole's content is translated too. `{0|one|few|many}` picks the Ukrainian plural form for the number in hole 0.
+- **Fallbacks.** A label in capitals finds its key in any case. A label joined with ` · ` is translated part by part.
+- **No code changes for most texts.** `UiTranslation` swaps every `TextBlock` and `Run` text for its translation as it is shown, and bindings stay live. Text drawn in code (charts, the damage page) calls `Loc.T`.
+- **Names stay as the game shows them.** Compounds (Soft, Medium, Hard) and deploy modes (None, Medium, Hotlap, Overtake) stay in English, as do DRS, ERS, SC and VSC. A word like "Medium" means both a compound and a mode, so translating it would be ambiguous.
+- **Fonts.** Chakra Petch has no Cyrillic, so those letters come from the bundled IBM Plex Sans (`App.CyrillicFallback`).
+
+To find texts still missing a translation, render the pages in Ukrainian. The tool lists every shown text with no translation in `loc-missing.txt`:
+
+```bash
+dotnet run --project tools/F1Telemetry.Screenshots -- shots-uk --lang uk
+```
+
 ### Packaging
 
 Windows single-file exe (no .NET install needed). Output goes to `publish/win-x64/`: `F1Telemetry.exe` plus the `fonts/`, `track_maps/` and `tracks/` folders, which must stay next to it.
@@ -339,6 +356,21 @@ The battery pays what each mode takes by the game's deploy counter at the segmen
 The game resets its per-lap harvest and deploy counters at the line, but not always on the same packet as the lap number. `EnergyAnalyzer` takes each lap's totals from after the last reset, so a lap never inherits the previous lap's figures. Lap detail's ENERGY charts add the battery difference to the comparison lap, the deploy mode and ICE / MGU-K power.
 
 ![Energy tab](docs/screenshots/13-energy.png)
+
+### Energy data guide
+
+The energy tab's **DATA GUIDE** page, also under the hub's ERS plan, is the energy counterpart of the strategy data guide. `EnergyGuideBuilder` builds it from the track's car model and the laps the plans are built on. It shows what is measured and what to drive next:
+
+| Item | Measured when | Run |
+|---|---|---|
+| Laps with engine power | 10+ laps with ICE and MGU-K power | any laps at the track |
+| Race-pace run | the race plan averages 5+ typical laps | a run at race pace |
+| Medium / Hotlap / Overtake by speed | the mode's speed curve covers 80 % of the lap's flat-out speed bands | flat out in that mode with the battery above 10 % |
+| Every mode on every straight | each of N, M, H and O has its own output on 60 % of the flat-out stretches | a lap in each mode |
+| Harvest under braking | braking harvest learned on 80 % of the braking and lifting (only with room in the battery and below the lap's limit) | deploy hard before the braking zones |
+| Acceleration in every aero state | a straight-line fit for each aero / DRS state the lap uses | flat-out laps with and without it |
+| Push lap from a full battery | the qualifying plan's lap starts with 90 % of the battery | fill up on the out-lap, then push |
+| The model replays your lap | the model replays the typical lap within 0.3 s | more laps in the modes the plan uses |
 
 ## Track hub
 

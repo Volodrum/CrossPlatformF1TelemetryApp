@@ -20,7 +20,7 @@ public class ErsPlanTests
         new DeployCurve(DeployModes.Overtake, [.. Enumerable.Range(10, 26).Select(b => new DeployPoint(b * 10, b * 10 < 250 ? 300_000 : 100_000, 50))], 250),
     ]);
 
-    private static readonly ErsCarModel Model = new(GameFormat.F1_26, 99, 1, 1, Map, [new StraightLineFit(0, Efficiency, Drag, 0, 1, 0, 1000)], []);
+    internal static readonly ErsCarModel Model = new(GameFormat.F1_26, 99, 1, 1, Map, [new StraightLineFit(0, Efficiency, Drag, 0, 1, 0, 1000)], []);
 
     private static bool InCorner(double d) => d is < 300 or (>= 1450 and < 1750);
 
@@ -37,7 +37,7 @@ public class ErsPlanTests
     }
 
     /// <summary>One lap, Medium on the straights, from <paramref name="store"/> J; harvests 400 kW under braking.</summary>
-    private static List<TelemetrySample> DriveLap(double store, double harvestLimit = 0)
+    internal static List<TelemetrySample> DriveLap(double store, double harvestLimit = 0)
     {
         var samples = new List<TelemetrySample>();
         double t = 0, d = 0, v = CornerSpeed, harvested = 0, deployed = 0;

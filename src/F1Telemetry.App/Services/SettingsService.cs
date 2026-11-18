@@ -65,6 +65,9 @@ public sealed class AppSettings
     /// <summary>F1 25 or F1 26 (2026 Season Pack). Must match the game's Settings → Telemetry → UDP Format.</summary>
     public GameFormat TelemetryMode { get; set; } = GameFormat.F1_25;
 
+    /// <summary>The app's language ("en", "uk"); null follows the system language when the app has it, else English.</summary>
+    public string? Language { get; set; }
+
     public int UdpPort { get; set; } = UdpPacketSource.DefaultPort;
     public bool ListenOnStartup { get; set; } = true;
     public string StartStopHotkey { get; set; } = "Ctrl+Alt+S";

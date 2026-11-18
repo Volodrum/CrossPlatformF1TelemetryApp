@@ -59,6 +59,12 @@ public sealed class PositionMap
         return (Math.Max(0, output), Math.Max(0, draw));
     }
 
+    /// <summary>
+    /// <paramref name="mode"/> was run flat out with charge at <paramref name="segment"/> often enough for its own output
+    /// there to count (else the plan uses the mode's speed curve there): for the energy data guide.
+    /// </summary>
+    public bool HasDeploy(int mode, int segment) => At(_deploy, mode, segment) is { Samples: >= MinSamples };
+
     /// <summary>What the game harvests flat out at <paramref name="segment"/> in <paramref name="mode"/>, W; null when unknown.</summary>
     public double? Clip(int mode, int segment) => At(_clip, mode, segment) is { Samples: >= MinSamples } r ? r.Watts : null;
 

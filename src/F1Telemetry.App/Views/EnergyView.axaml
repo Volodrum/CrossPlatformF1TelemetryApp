@@ -4,6 +4,7 @@
              xmlns:controls="using:F1Telemetry.App.Controls"
              xmlns:services="using:F1Telemetry.App.Services"
              xmlns:energy="using:F1Telemetry.Core.Energy"
+             xmlns:views="using:F1Telemetry.App.Views"
              x:Class="F1Telemetry.App.Views.EnergyView"
              x:DataType="vm:EnergyViewModel">
   <UserControl.Resources>
@@ -79,12 +80,15 @@
         <Button Theme="{StaticResource ModeToggle}" Content="CAR MODEL" Classes.selected="{Binding IsModelPage}"
                 Command="{Binding SetPageCommand}" CommandParameter="{x:Static vm:EnergyPage.Model}"
                 ToolTip.Tip="What the car's ERS delivers, learned from every lap at this track" />
+        <Button Theme="{StaticResource ModeToggle}" Content="DATA GUIDE" Classes.selected="{Binding IsGuidePage}"
+                Command="{Binding SetPageCommand}" CommandParameter="{x:Static vm:EnergyPage.Guide}"
+                ToolTip.Tip="What the car model and the plans rest on here, and what to drive to measure the rest" />
       </StackPanel>
     </Border>
 
     <Panel>
       <!-- SESSION and ERS PLAN share the map and the battery trace -->
-      <DockPanel IsVisible="{Binding !IsModelPage}">
+      <DockPanel IsVisible="{Binding IsMapPage}">
         <TextBlock DockPanel.Dock="Top" Classes="body" Text="{Binding EmptyText}" IsVisible="{Binding !HasData}" />
 
         <ScrollViewer IsVisible="{Binding HasData}">
@@ -356,6 +360,11 @@
           </StackPanel>
         </ScrollViewer>
       </DockPanel>
+
+      <!-- DATA GUIDE: what the car model and the plans rest on at this track, and the runs that measure the rest -->
+      <ScrollViewer IsVisible="{Binding IsGuidePage}">
+        <views:DataGuidePanel DataContext="{Binding Guide}" Margin="0,0,8,0" />
+      </ScrollViewer>
 
       <!-- CAR MODEL: learned from every lap at this track -->
       <ScrollViewer IsVisible="{Binding IsModelPage}">

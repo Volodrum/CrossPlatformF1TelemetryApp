@@ -128,7 +128,7 @@
           </StackPanel>
           <Button.Flyout>
             <Flyout Placement="RightEdgeAlignedTop">
-              <StackPanel Spacing="8" Width="440">
+              <StackPanel Spacing="8" Width="500">
                 <TextBlock Classes="label strong" Text="GAME" />
                 <ItemsControl ItemsSource="{Binding Games}">
                   <ItemsControl.ItemTemplate>
@@ -151,8 +151,6 @@
                     </DataTemplate>
                   </ItemsControl.ItemTemplate>
                 </ItemsControl>
-                <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap"
-                           Text="The pages, overlays and recordings on screen are the selected game's. Planned games are listed but can't be selected yet." />
               </StackPanel>
             </Flyout>
           </Button.Flyout>

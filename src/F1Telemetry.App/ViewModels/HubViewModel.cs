@@ -177,6 +177,15 @@ public sealed partial class HubViewModel : ObservableObject
     [ObservableProperty] public partial string PreviewNote { get; set; } = "";
     [ObservableProperty] public partial string EnergyNote { get; set; } = "";
 
+    /// <summary>The selected track's outline, under the ERS plan on the energy page.</summary>
+    [ObservableProperty] public partial F1Telemetry.Core.Tracks.TrackOutline? Outline { get; set; }
+
+    /// <summary>The energy data guide of the selected track, under its ERS plan.</summary>
+    public DataGuideViewModel EnergyGuide { get; } = new();
+
+    /// <summary>The key to the energy page's map: the deploy modes, and the battery labels at each switch.</summary>
+    public IReadOnlyList<LegendEntry> MapLegend { get; } = EnergyViewModel.ModeLegend();
+
     public ObservableCollection<HubTrackOption> Tracks { get; } = [];
     public ObservableCollection<HubSessionRowViewModel> Sessions { get; } = [];
     public ObservableCollection<HubCompareRow> Preview { get; } = [];
@@ -394,10 +403,13 @@ public sealed partial class HubViewModel : ObservableObject
 
                 case HubPage.Energy:
                     EnergyPlan.Clear(loading: true);
+                    Outline = _runtime.Tracks.ForTrackId(track.TrackId);
                     var model = await _runtime.Hub.BuildErsModelAsync(track.Format, track.TrackId);
                     var (inputs, unavailable) = await _runtime.Hub.PlanInputsAsync(track.Format, track.TrackId, model);
                     EnergyNote = $"Car model from {Count(model.PowerLaps, "lap")} with engine power at this track (the hub's and every unsaved recording's).";
                     await EnergyPlan.SetSessionAsync(inputs, unavailable);
+                    var guide = await Task.Run(() => EnergyGuideBuilder.Build(model, inputs?.Race, inputs?.Qualifying));
+                    EnergyGuide.Load(guide, EnergyViewModel.ScoreText(guide, track.Name), EnergyViewModel.AllMeasured);
                     break;
 
                 case HubPage.Setups:

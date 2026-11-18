@@ -5,6 +5,7 @@ using Avalonia.Media;
 using Avalonia.Threading;
 using F1Telemetry.App.ViewModels;
 using F1Telemetry.Core.Analytics;
+using F1Telemetry.Core.Energy;
 
 namespace F1Telemetry.App.Controls;
 
@@ -24,6 +25,10 @@ public sealed class GuideIllustration : Control
     /// <summary>The compound the item is about (long runs); the others pick their own.</summary>
     public static readonly StyledProperty<string?> CompoundProperty =
         AvaloniaProperty.Register<GuideIllustration, string?>(nameof(Compound));
+
+    /// <summary>The ERS deploy mode the item is about (the energy guide's speed curves).</summary>
+    public static readonly StyledProperty<int?> ModeProperty =
+        AvaloniaProperty.Register<GuideIllustration, int?>(nameof(Mode));
 
     public static readonly StyledProperty<bool> IsAnimatingProperty =
         AvaloniaProperty.Register<GuideIllustration, bool>(nameof(IsAnimating));
@@ -47,18 +52,19 @@ public sealed class GuideIllustration : Control
     private static readonly IPen CarOutline = new Pen(Palette.OnColor, 1.5);
     private static readonly IBrush Ghost = new SolidColorBrush(Color.Parse("#F4F6F9"), 0.35);
     private static readonly IBrush FuelBrush = Palette.Info;
-    private static readonly Typeface LetterFace = new(new FontFamily("avares://F1Telemetry/Assets/Fonts#Chakra Petch"), FontStyle.Normal, FontWeight.Bold);
+    private static readonly Typeface LetterFace = new(new FontFamily("avares://F1Telemetry/Assets/Fonts#Chakra Petch, avares://F1Telemetry/Assets/Fonts#IBM Plex Sans"), FontStyle.Normal, FontWeight.Bold);
 
     private DispatcherTimer? _timer;
     private readonly DateTime _start = DateTime.UtcNow;
 
     static GuideIllustration()
     {
-        AffectsRender<GuideIllustration>(KindProperty, CompoundProperty, IsAnimatingProperty, PhaseProperty);
+        AffectsRender<GuideIllustration>(KindProperty, CompoundProperty, ModeProperty, IsAnimatingProperty, PhaseProperty);
     }
 
     public GuideKind Kind { get => GetValue(KindProperty); set => SetValue(KindProperty, value); }
     public string? Compound { get => GetValue(CompoundProperty); set => SetValue(CompoundProperty, value); }
+    public int? Mode { get => GetValue(ModeProperty); set => SetValue(ModeProperty, value); }
     public bool IsAnimating { get => GetValue(IsAnimatingProperty); set => SetValue(IsAnimatingProperty, value); }
     public double? Phase { get => GetValue(PhaseProperty); set => SetValue(PhaseProperty, value); }
 
@@ -143,7 +149,230 @@ public sealed class GuideIllustration : Control
             case GuideKind.SafetyCar:
                 PitStop(context, t, safetyCar: true);
                 break;
+            case GuideKind.PowerLaps:
+                Laps(context, t, 10, Palette.Info, null);
+                break;
+            case GuideKind.RaceRun:
+                Laps(context, t, 5, Palette.TextHi, null);
+                break;
+            case GuideKind.ModeSpeeds:
+                ModeSpeeds(context, t, Mode ?? DeployModes.Medium);
+                break;
+            case GuideKind.ModeStraights:
+                ModeStraights(context, t);
+                break;
+            case GuideKind.BrakingHarvest:
+                BrakingHarvest(context, t);
+                break;
+            case GuideKind.AeroStates:
+                AeroStates(context, t);
+                break;
+            case GuideKind.FullBattery:
+                FullBattery(context, t);
+                break;
+            case GuideKind.Replay:
+                Replay(context, t);
+                break;
         }
+    }
+
+    // ---- The energy guide ----
+
+    /// <summary>
+    /// A car laps the circuit while lap tiles light up, <paramref name="count"/> of them in two rows when there are many:
+    /// laps recorded with power data, or a run at race pace.
+    /// </summary>
+    private static void Laps(DrawingContext context, double t, int count, IBrush colour, string? compound)
+    {
+        context.DrawGeometry(null, TrackPen, CircuitGeometry);
+        context.DrawLine(ThinPen, new Point(60, 80), new Point(60, 92));
+        if (compound is not null)
+        {
+            Badge(context, new Point(50, 46), 12, compound);
+        }
+
+        var lapShare = 0.8 / count;
+        var done = Math.Min(count, (int)(t / lapShare));
+        var (at, heading) = AlongCircuit(done >= count ? 0 : t / lapShare % 1);
+        using (context.PushTransform(Matrix.CreateRotation(heading) * Matrix.CreateTranslation(at.X, at.Y)))
+        {
+            context.DrawRectangle(Palette.TextHi, CarOutline, new Rect(-8, -4.5, 16, 9), 2.5, 2.5);
+        }
+
+        var perRow = count > 6 ? (count + 1) / 2 : count;
+        var rows = (count + perRow - 1) / perRow;
+        var width = 110.0 / perRow;
+        var height = rows == 1 ? 40.0 : 26.0;
+        for (var i = 0; i < count; i++)
+        {
+            var (row, column) = (i / perRow, i % perRow);
+            var tile = new Rect(120 + column * width, (rows == 1 ? 30 : 18) + row * (height + 8), width - 4, height);
+            var lit = i < done;
+            context.DrawRectangle(lit ? colour : null, new Pen(lit ? colour : Palette.LineStrong, 2), tile, 3, 3);
+        }
+    }
+
+    /// <summary>
+    /// A deploy mode's output against speed: as the car runs flat out up the speed axis, a dot lights in each speed band
+    /// it passes, tracing the mode's curve (rising, flat, fading near top speed).
+    /// </summary>
+    private static void ModeSpeeds(DrawingContext context, double t, int mode)
+    {
+        const double left = 40, right = 230, bottom = 84, top = 14;
+        var colour = Palette.DeployMode(mode);
+        ModeChip(context, mode, new Point(18, 50));
+        context.DrawLine(ThinPen, new Point(left, bottom), new Point(right, bottom));
+        context.DrawLine(ThinPen, new Point(left, bottom), new Point(left, top));
+
+        static double Output(double k) => k < 0.25 ? 0.55 + k * 1.8 : k < 0.75 ? 1 : 1 - (k - 0.75) * 2.4; // 0–1 along the speeds
+        const int bands = 14;
+        var reached = Ease(t / 0.8) * bands;
+        for (var i = 0; i < bands; i++)
+        {
+            var k = (i + 0.5) / bands;
+            var centre = new Point(left + 8 + k * (right - left - 16), bottom - 6 - Output(k) * (bottom - top - 12));
+            var lit = i < reached;
+            context.DrawEllipse(lit ? colour : null, new Pen(lit ? colour : Palette.LineStrong, 1.5), centre, 4, 4);
+        }
+
+        // The car running up the speed axis.
+        var x = left + 8 + Math.Min(1, reached / bands) * (right - left - 16);
+        Car(context, new Point(x, bottom + 8), Palette.TextHi);
+    }
+
+    /// <summary>Four rows, one per mode: the lap's straights fill in as each mode is run on them, a lap per mode.</summary>
+    private static void ModeStraights(DrawingContext context, double t)
+    {
+        int[] modes = [DeployModes.None, DeployModes.Medium, DeployModes.Hotlap, DeployModes.Overtake];
+        const int straights = 5;
+        for (var r = 0; r < modes.Length; r++)
+        {
+            var y = 14 + r * 23;
+            ModeChip(context, modes[r], new Point(18, y));
+            var filled = Ease((t - r * 0.2) / 0.2) * straights;
+            for (var s = 0; s < straights; s++)
+            {
+                var bar = new Rect(36 + s * 40, y - 5, 34, 10);
+                var lit = s < filled;
+                var colour = Palette.DeployMode(modes[r]);
+                context.DrawRectangle(lit ? colour : null, new Pen(lit ? colour : Palette.LineStrong, 1.5), bar, 4, 4);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Deploy hard on the straight (the battery drains), then brake (red markers): the battery has room, so it fills with
+    /// what the braking harvests.
+    /// </summary>
+    private static void BrakingHarvest(DrawingContext context, double t)
+    {
+        const double trackY = 56, brakeFrom = 128, brakeTo = 186;
+        context.DrawLine(TrackPen, new Point(8, trackY), new Point(196, trackY));
+        for (var x = brakeFrom; x <= brakeTo; x += 14)
+        {
+            context.DrawLine(new Pen(Palette.Danger, 3, lineCap: PenLineCap.Round), new Point(x, trackY + 10), new Point(x + 6, trackY + 10));
+        }
+
+        // Fast to the braking zone, then slowing through it.
+        var x0 = t < 0.45 ? 10 + (brakeFrom - 10) * (t / 0.45) : brakeFrom + (brakeTo - brakeFrom) * Math.Sin(Math.Min(1, (t - 0.45) / 0.45) * Math.PI / 2);
+        Car(context, new Point(x0, trackY), Palette.TextHi);
+
+        var level = t < 0.45 ? 0.6 - 0.4 * (t / 0.45) : 0.2 + 0.7 * Ease((t - 0.45) / 0.45);
+        Battery(context, new Rect(204, 24, 28, 56), level, t >= 0.45 ? Palette.Faster : Palette.Info);
+        if (t >= 0.45 && t < 0.92)
+        {
+            var arrow = new Pen(Palette.Faster, 2.5, lineCap: PenLineCap.Round);
+            context.DrawLine(arrow, new Point(x0 + 12, trackY - 10), new Point(198, 40));
+        }
+    }
+
+    /// <summary>Two straights flat out: the rear wing open (low drag) pulls away from the one shut.</summary>
+    private static void AeroStates(DrawingContext context, double t)
+    {
+        var k = Ease(t / 0.85);
+        for (var r = 0; r < 2; r++)
+        {
+            var open = r == 0;
+            var y = open ? 30 : 74;
+            context.DrawLine(ThinPen, new Point(30, y + 9), new Point(232, y + 9));
+            Wing(context, new Point(14, y), open);
+            var x = 40 + k * (open ? 180 : 140);
+            Car(context, new Point(x, y), open ? Palette.Info : Palette.TextHi);
+            if (open && t % 0.2 < 0.12)
+            {
+                context.DrawLine(DashPen, new Point(x - 30, y), new Point(x - 14, y)); // the faster car's streak
+            }
+        }
+    }
+
+    /// <summary>The out-lap fills the battery to the top; the push lap then spends all of it.</summary>
+    private static void FullBattery(DrawingContext context, double t)
+    {
+        var level = t < 0.45 ? 0.3 + 0.7 * Ease(t / 0.4) : 1 - Ease((t - 0.5) / 0.4);
+        Battery(context, new Rect(20, 16, 34, 70), level, t < 0.45 ? Palette.Faster : Palette.Info);
+        context.DrawRectangle(null, new Pen(Palette.LineStrong, 2), new Rect(76, 44, 150, 12), 6, 6);
+        var outLap = Ease(t / 0.45) * 70;
+        context.DrawRectangle(Palette.Faster, null, new Rect(76, 44, outLap, 12), 6, 6);
+        if (t > 0.5)
+        {
+            context.DrawRectangle(Palette.Info, null, new Rect(150, 44, Ease((t - 0.5) / 0.4) * 76, 12), 6, 6);
+        }
+
+        context.DrawLine(DashPen, new Point(148, 30), new Point(148, 70)); // the line: out-lap ends, push lap starts
+    }
+
+    /// <summary>The lap as driven (dashed) and the model's replay of it (solid) drawn together, ending side by side.</summary>
+    private static void Replay(DrawingContext context, double t)
+    {
+        const double left = 14, right = 226;
+        static double Driven(double k) => 50 + Math.Sin(k * Math.PI * 3) * 22 - k * 10;
+        static double Model(double k) => Driven(k) + Math.Sin(k * Math.PI * 7) * 7 * (1 - k); // wanders early, then settles on the lap
+        var head = Ease(t / 0.85);
+        StreamGeometry Trace(Func<double, double> y)
+        {
+            var g = new StreamGeometry();
+            using var c = g.Open();
+            c.BeginFigure(new Point(left, y(0)), false);
+            for (var k = 0.02; k <= head; k += 0.02)
+            {
+                c.LineTo(new Point(left + k * (right - left), y(k)));
+            }
+
+            c.EndFigure(false);
+            return g;
+        }
+
+        context.DrawGeometry(null, new Pen(Palette.TextMid, 2, new DashStyle([4, 3], 0)), Trace(Driven));
+        context.DrawGeometry(null, new Pen(Palette.Info, 2.5, lineCap: PenLineCap.Round), Trace(Model));
+        if (t > 0.86)
+        {
+            var at = new Point(right, Driven(1));
+            context.DrawEllipse(Palette.Faster, null, at, 5, 5);
+        }
+    }
+
+    private static void ModeChip(DrawingContext context, int mode, Point centre)
+    {
+        var letter = new FormattedText(DeployModes.Letter(mode), CultureInfo.InvariantCulture, FlowDirection.LeftToRight, LetterFace, 11, Palette.OnDeployMode(mode));
+        context.DrawRectangle(Palette.DeployMode(mode), null, new Rect(centre.X - 9, centre.Y - 8, 18, 16), 4, 4);
+        context.DrawText(letter, new Point(centre.X - letter.Width / 2, centre.Y - letter.Height / 2));
+    }
+
+    private static void Battery(DrawingContext context, Rect rect, double level, IBrush fill)
+    {
+        level = Math.Clamp(level, 0, 1);
+        context.DrawRectangle(Palette.TextMid, null, new Rect(rect.Center.X - 5, rect.Y - 4, 10, 5), 1.5, 1.5);
+        context.DrawRectangle(null, new Pen(Palette.TextMid, 2), rect, 4, 4);
+        var height = (rect.Height - 6) * level;
+        context.DrawRectangle(fill, null, new Rect(rect.X + 3, rect.Bottom - 3 - height, rect.Width - 6, height), 2, 2);
+    }
+
+    /// <summary>A rear wing from the side: the flap lies flat when open (low drag), stands up when shut.</summary>
+    private static void Wing(DrawingContext context, Point at, bool open)
+    {
+        var pen = new Pen(open ? Palette.Info : Palette.TextMid, 3, lineCap: PenLineCap.Round);
+        context.DrawLine(pen, new Point(at.X - 8, at.Y + 6), new Point(at.X + 8, at.Y + 6)); // main plane
+        context.DrawLine(pen, open ? new Point(at.X - 6, at.Y - 1) : new Point(at.X + 2, at.Y - 8), open ? new Point(at.X + 8, at.Y - 1) : new Point(at.X + 8, at.Y + 2));
     }
 
     /// <summary>
@@ -405,7 +634,7 @@ public sealed class GuideIllustration : Control
 
     private static void Chip(DrawingContext context, string text, Point centre)
     {
-        var label = new FormattedText(text, CultureInfo.InvariantCulture, FlowDirection.LeftToRight, LetterFace, 11, Palette.OnColor);
+        var label = new FormattedText(F1Telemetry.Core.Localization.Loc.T(text), CultureInfo.InvariantCulture, FlowDirection.LeftToRight, LetterFace, 11, Palette.OnColor);
         var box = new Rect(centre.X - label.Width / 2 - 5, centre.Y - label.Height / 2 - 1, label.Width + 10, label.Height + 2);
         context.DrawRectangle(Palette.Slower, null, box, 3, 3);
         context.DrawText(label, new Point(box.X + 5, box.Y + 1));

@@ -197,10 +197,14 @@
         </Style>
       </ControlTheme>
 
-      <!-- Segmented two-state toggle (F1 25 / F1 26, chart groups). Selected = inverted (white fill). -->
+      <!--
+        Segmented two-state toggle (F1 25 / F1 26, chart groups). Selected = inverted (white fill).
+        Rounded to the segmented frame's inner radius (8 - 2 px stroke), so a selected end segment follows the frame's
+        corners instead of poking square corners out of it.
+      -->
       <ControlTheme x:Key="ModeToggle" TargetType="Button">
         <Setter Property="Focusable" Value="False" />
-        <Setter Property="Background" Value="{StaticResource RaisedBrush}" />
+        <Setter Property="Background" Value="Transparent" />
         <Setter Property="Foreground" Value="{StaticResource TextMidBrush}" />
         <Setter Property="FontFamily" Value="{StaticResource DisplayFont}" />
         <Setter Property="FontSize" Value="16" />
@@ -210,7 +214,7 @@
         <Setter Property="Cursor" Value="Hand" />
         <Setter Property="Template">
           <ControlTemplate>
-            <Border Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}">
+            <Border Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}" CornerRadius="6">
               <ContentPresenter Content="{TemplateBinding Content}" Foreground="{TemplateBinding Foreground}" VerticalAlignment="Center" />
             </Border>
           </ControlTemplate>
@@ -276,6 +280,126 @@
         </Style>
         <Style Selector="^:pointerover:not(:selected)">
           <Setter Property="Foreground" Value="{StaticResource TextHiBrush}" />
+        </Style>
+      </ControlTheme>
+
+      <!-- A data guide card (strategy and energy guides): the run as a little animation, its state, and how far along it is. -->
+      <DataTemplate x:Key="GuideCard" x:DataType="vm:GuideRowViewModel">
+        <Border Classes="panel" Padding="14" Margin="0,0,12,12" Width="290" Background="{StaticResource PanelBrush}" ToolTip.Tip="{Binding Tip}">
+          <StackPanel Spacing="10">
+            <c:GuideIllustration Kind="{Binding Kind}" Compound="{Binding Compound}" Mode="{Binding Mode}" Opacity="{Binding PictureOpacity}"
+                                        IsAnimating="{Binding $parent[Border].IsPointerOver}" />
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+              <TextBlock Classes="h2" FontSize="15" Text="{Binding Title}" VerticalAlignment="Center" TextWrapping="Wrap" />
+              <Border Grid.Column="1" Height="24" CornerRadius="5" BorderThickness="2" Padding="8,0" VerticalAlignment="Center"
+                      Background="{Binding StateBackground}" BorderBrush="{Binding StateBorder}">
+                <TextBlock Text="{Binding State}" FontFamily="{StaticResource DisplayFont}" FontSize="11" FontWeight="Bold" LetterSpacing="1.1"
+                           Foreground="{Binding StateForeground}" VerticalAlignment="Center" />
+              </Border>
+            </Grid>
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+              <ProgressBar Classes="bar" Height="8" MinHeight="8" MinWidth="0" CornerRadius="4" Minimum="0" Maximum="1" Value="{Binding Progress}"
+                           Foreground="{Binding ProgressBrush}" VerticalAlignment="Center" />
+              <TextBlock Grid.Column="1" Classes="mono" FontSize="12" Foreground="{StaticResource TextMidBrush}" Text="{Binding Count}"
+                         IsVisible="{Binding HasCount}" VerticalAlignment="Center" />
+            </Grid>
+          </StackPanel>
+        </Border>
+      </DataTemplate>
+
+      <!-- Number box step buttons: flat, separated by a divider, filled on hover like the segmented toggles. -->
+      <ControlTheme x:Key="SpinnerButton" TargetType="RepeatButton">
+        <Setter Property="Focusable" Value="False" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="Foreground" Value="{StaticResource TextMidBrush}" />
+        <Setter Property="Width" Value="40" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Template">
+          <ControlTemplate>
+            <Border Name="PART_Root" Background="{TemplateBinding Background}">
+              <ContentPresenter Content="{TemplateBinding Content}" Foreground="{TemplateBinding Foreground}"
+                                HorizontalAlignment="Center" VerticalAlignment="Center" />
+            </Border>
+          </ControlTemplate>
+        </Setter>
+        <Style Selector="^:pointerover">
+          <Setter Property="Background" Value="{StaticResource SelectedBrush}" />
+          <Setter Property="Foreground" Value="{StaticResource TextHiBrush}" />
+        </Style>
+        <Style Selector="^:pressed">
+          <Setter Property="Background" Value="{StaticResource LineBrush}" />
+        </Style>
+        <Style Selector="^:disabled">
+          <Setter Property="Opacity" Value="0.35" />
+        </Style>
+      </ControlTheme>
+
+      <!-- The frame of a number box: the value, then − and + on the right. -->
+      <ControlTheme x:Key="HudSpinner" TargetType="ButtonSpinner">
+        <Setter Property="Template">
+          <ControlTemplate>
+            <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}"
+                    CornerRadius="{TemplateBinding CornerRadius}" MinHeight="{TemplateBinding MinHeight}" ClipToBounds="True">
+              <DockPanel>
+                <StackPanel Name="PART_SpinnerPanel" DockPanel.Dock="Right" Orientation="Horizontal" IsVisible="{TemplateBinding ShowButtonSpinner}">
+                  <Border Width="2" Background="{StaticResource LineBrush}" />
+                  <RepeatButton Name="PART_DecreaseButton" Theme="{StaticResource SpinnerButton}" AutomationProperties.Name="Decrease">
+                    <PathIcon Width="12" Height="12" Foreground="{Binding $parent[RepeatButton].Foreground}" Data="M0,5 H12 V7 H0 Z" />
+                  </RepeatButton>
+                  <Border Width="2" Background="{StaticResource LineBrush}" />
+                  <RepeatButton Name="PART_IncreaseButton" Theme="{StaticResource SpinnerButton}" AutomationProperties.Name="Increase">
+                    <PathIcon Width="12" Height="12" Foreground="{Binding $parent[RepeatButton].Foreground}" Data="M5,0 H7 V5 H12 V7 H7 V12 H5 V7 H0 V5 H5 Z" />
+                  </RepeatButton>
+                </StackPanel>
+                <ContentPresenter Name="PART_ContentPresenter" Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}"
+                                  HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" />
+              </DockPanel>
+            </Border>
+          </ControlTemplate>
+        </Setter>
+      </ControlTheme>
+
+      <!-- Number box: raised like the combo boxes, the value in the data face; white frame while typing. -->
+      <ControlTheme x:Key="{x:Type NumericUpDown}" TargetType="NumericUpDown">
+        <Setter Property="Background" Value="{StaticResource RaisedBrush}" />
+        <Setter Property="BorderBrush" Value="{StaticResource LineBrush}" />
+        <Setter Property="BorderThickness" Value="2" />
+        <Setter Property="CornerRadius" Value="8" />
+        <Setter Property="Foreground" Value="{StaticResource TextHiBrush}" />
+        <Setter Property="FontFamily" Value="{StaticResource DataFont}" />
+        <Setter Property="FontWeight" Value="ExtraBold" />
+        <Setter Property="FontSize" Value="18" />
+        <Setter Property="Padding" Value="12,0" />
+        <Setter Property="MinHeight" Value="44" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+        <Setter Property="Template">
+          <ControlTemplate>
+            <DataValidationErrors>
+              <ButtonSpinner Name="PART_Spinner" Theme="{StaticResource HudSpinner}"
+                             Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                             BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="{TemplateBinding CornerRadius}"
+                             MinHeight="{TemplateBinding MinHeight}"
+                             AllowSpin="{TemplateBinding AllowSpin}" ShowButtonSpinner="{TemplateBinding ShowButtonSpinner}">
+                <TextBox Name="PART_TextBox" Classes="bare" Background="Transparent" BorderThickness="0" MinHeight="0" MinWidth="0"
+                         Padding="{TemplateBinding Padding}" Foreground="{TemplateBinding Foreground}"
+                         FontFamily="{TemplateBinding FontFamily}" FontSize="{TemplateBinding FontSize}" FontWeight="{TemplateBinding FontWeight}"
+                         IsReadOnly="{TemplateBinding IsReadOnly}"
+                         VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"
+                         HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                         Text="{TemplateBinding Text}" TextAlignment="{TemplateBinding TextAlignment}"
+                         AcceptsReturn="False" TextWrapping="NoWrap" />
+              </ButtonSpinner>
+            </DataValidationErrors>
+          </ControlTemplate>
+        </Setter>
+        <Style Selector="^:pointerover">
+          <Setter Property="BorderBrush" Value="{StaticResource LineStrongBrush}" />
+        </Style>
+        <Style Selector="^:focus-within">
+          <Setter Property="BorderBrush" Value="{StaticResource TextHiBrush}" />
+        </Style>
+        <Style Selector="^:disabled">
+          <Setter Property="Opacity" Value="0.45" />
         </Style>
       </ControlTheme>
     </ResourceDictionary>
@@ -376,6 +500,7 @@
     <Setter Property="Background" Value="{StaticResource DividerBrush}" />
   </Style>
   <Style Selector="Border.segmented">
+    <Setter Property="Background" Value="{StaticResource RaisedBrush}" />
     <Setter Property="BorderBrush" Value="{StaticResource LineBrush}" />
     <Setter Property="BorderThickness" Value="2" />
     <Setter Property="CornerRadius" Value="8" />
@@ -456,12 +581,40 @@
     <Setter Property="BorderThickness" Value="2" />
     <Setter Property="CornerRadius" Value="8" />
   </Style>
-  <Style Selector="NumericUpDown">
-    <Setter Property="MinHeight" Value="44" />
-    <Setter Property="VerticalContentAlignment" Value="Center" />
-    <Setter Property="FontFamily" Value="{StaticResource DataFont}" />
-    <Setter Property="FontWeight" Value="ExtraBold" />
-    <Setter Property="FontSize" Value="18" />
+  <!-- The number box's text field keeps the frame's look: Fluent's hover and focus fills are switched off. -->
+  <Style Selector="TextBox.bare /template/ Border#PART_BorderElement">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderBrush" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+  </Style>
+  <Style Selector="TextBox.bare:pointerover /template/ Border#PART_BorderElement">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderBrush" Value="Transparent" />
+  </Style>
+  <Style Selector="TextBox.bare:focus /template/ Border#PART_BorderElement">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderBrush" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+  </Style>
+  <Style Selector="TextBox.bare:pointerover, TextBox.bare:focus">
+    <Setter Property="Foreground" Value="{StaticResource TextHiBrush}" />
+  </Style>
+
+  <!-- Flyouts (game picker, PLACE menu): the panel surface instead of Fluent's grey, sized to their content. -->
+  <Style Selector="FlyoutPresenter">
+    <Setter Property="Background" Value="{StaticResource PanelBrush}" />
+    <Setter Property="BorderBrush" Value="{StaticResource LineBrush}" />
+    <Setter Property="BorderThickness" Value="2" />
+    <Setter Property="CornerRadius" Value="{StaticResource PanelRadius}" />
+    <Setter Property="Padding" Value="14" />
+    <Setter Property="MaxWidth" Value="640" />
+    <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled" />
+  </Style>
+  <Style Selector="MenuFlyoutPresenter">
+    <Setter Property="Background" Value="{StaticResource PanelBrush}" />
+    <Setter Property="BorderBrush" Value="{StaticResource LineBrush}" />
+    <Setter Property="BorderThickness" Value="2" />
+    <Setter Property="CornerRadius" Value="8" />
   </Style>
   <Style Selector="ProgressBar.bar">
     <Setter Property="MinHeight" Value="18" />

@@ -147,6 +147,7 @@ public sealed record GuideRowViewModel(GuideItem Item)
     // The picture and the progress under it.
     public GuideKind Kind => Item.Kind;
     public string? Compound => Item.Compound;
+    public int? Mode => Item.Mode;
     public string Short => Item.Short.ToUpperInvariant();
     public double Progress => Item.Progress;
     public string Count => Item.Count;

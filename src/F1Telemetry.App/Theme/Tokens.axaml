@@ -70,7 +70,8 @@
   <SolidColorBrush x:Key="ErsOvertakeBrush" Color="{StaticResource ErsOvertakeColor}" />
 
   <!-- Type: Chakra Petch for labels/headings, JetBrains Mono for every number, IBM Plex Sans for text. -->
-  <FontFamily x:Key="DisplayFont">avares://F1Telemetry/Assets/Fonts#Chakra Petch</FontFamily>
+  <!-- Chakra Petch has no Cyrillic: those letters (Ukrainian) come from IBM Plex Sans. -->
+  <FontFamily x:Key="DisplayFont">avares://F1Telemetry/Assets/Fonts#Chakra Petch, avares://F1Telemetry/Assets/Fonts#IBM Plex Sans</FontFamily>
   <FontFamily x:Key="DataFont">avares://F1Telemetry/Assets/Fonts#JetBrains Mono</FontFamily>
   <FontFamily x:Key="BodyFont">avares://F1Telemetry/Assets/Fonts#IBM Plex Sans</FontFamily>
 

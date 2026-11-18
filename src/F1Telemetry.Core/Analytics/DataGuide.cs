@@ -36,6 +36,32 @@ public enum GuideKind
 
     /// <summary>A stop under a safety car.</summary>
     SafetyCar,
+
+    // The energy data guide (see EnergyGuideBuilder).
+
+    /// <summary>Laps that record ICE and MGU-K power.</summary>
+    PowerLaps,
+
+    /// <summary>A run of laps in a row at race pace.</summary>
+    RaceRun,
+
+    /// <summary>One deploy mode flat out across the speeds of the lap.</summary>
+    ModeSpeeds,
+
+    /// <summary>Every deploy mode on every straight.</summary>
+    ModeStraights,
+
+    /// <summary>Braking with room in the battery and below the harvest limit.</summary>
+    BrakingHarvest,
+
+    /// <summary>Flat out on the straights in each aero (DRS / active aero) state.</summary>
+    AeroStates,
+
+    /// <summary>A push lap from a full battery.</summary>
+    FullBattery,
+
+    /// <summary>The model replaying a lap as driven.</summary>
+    Replay,
 }
 
 /// <summary>The kind of session in which a figure is best measured.</summary>
@@ -60,8 +86,9 @@ public enum GuideSession
 /// <param name="Compound">The compound it is about, when it is about one.</param>
 /// <param name="Progress">How far along it is, 0 to 1.</param>
 /// <param name="Count">The same as a count ("4 / 6 LAPS"); empty when it is all or nothing.</param>
+/// <param name="Mode">The ERS deploy mode it is about, when it is about one (energy guide).</param>
 public sealed record GuideItem(string Title, GuideState State, string Have, string Do, string Why, GuideSession Session, bool Optional = false, string Short = "",
-    GuideKind Kind = GuideKind.LongRun, string? Compound = null, double Progress = 0, string Count = "");
+    GuideKind Kind = GuideKind.LongRun, string? Compound = null, double Progress = 0, string Count = "", int? Mode = null);
 
 /// <summary>
 /// What the race plans know at a track and what to drive next to know more: the checklist behind the strategy tab's

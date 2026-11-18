@@ -29,6 +29,7 @@ Environment.SetEnvironmentVariable("F1TELEMETRY_DATA_DIR", dataDir);
 AppBuilder.Configure<App>()
     .UseSkia()
     .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false })
+    .With(App.CyrillicFallback)
     .SetupWithoutStarting();
 
 void Pump(Task? task = null, int minMs = 0)
@@ -111,6 +112,28 @@ if (args.Contains("--frames"))
 var services = App.ConfigureServices();
 var settings = services.GetRequiredService<SettingsService>();
 settings.Load();
+
+// --lang uk: the pages in that language; every text shown without a translation is listed in loc-missing.txt.
+if (args.SkipWhile(a => a != "--lang").Skip(1).FirstOrDefault() is { } language)
+{
+    F1Telemetry.Core.Localization.Loc.Use(language);
+    settings.Current.Language = language;
+    var missing = new SortedSet<string>(StringComparer.Ordinal);
+    F1Telemetry.Core.Localization.Loc.Missing += text =>
+    {
+        lock (missing)
+        {
+            missing.Add(text.Replace("\n", "\\n"));
+        }
+    };
+    AppDomain.CurrentDomain.ProcessExit += (_, _) =>
+    {
+        lock (missing)
+        {
+            File.WriteAllLines(Path.Combine(output, "loc-missing.txt"), missing);
+        }
+    };
+}
 settings.Current.ListenOnStartup = false;
 settings.Current.TelemetryMode = GameFormat.F1_26;
 // Sample controller bindings, drawn as DualSense icons (no pad is opened here).
@@ -207,6 +230,13 @@ vm.IsSettingsOpen = false;
 // Overlays have their own page in the rail.
 vm.SelectedTab = MainTab.Overlays;
 Capture(window, "06-overlays");
+if (window.GetVisualDescendants().OfType<OverlaysView>().FirstOrDefault()?.GetVisualDescendants().OfType<ScrollViewer>().FirstOrDefault() is { } overlaysScroll)
+{
+    // The overlays further down carry the segmented options (sector box GAP TO, timing tower RACE GAP).
+    overlaysScroll.Offset = overlaysScroll.Offset.WithY(10_000);
+    Capture(window, "06b-overlay-options");
+    overlaysScroll.Offset = default;
+}
 
 // Race vs race: the one-stop race as A, the two-stop race as B; the second shot scrolls down to the charts.
 vm.SelectedRecording = vm.Recordings.First(r => r.Description == "One stop");
@@ -219,6 +249,8 @@ if (window.GetVisualDescendants().OfType<CompareView>().FirstOrDefault()?.GetVis
 {
     compareScroll.Offset = compareScroll.Offset.WithY(640);
     Capture(window, "10-compare-charts");
+    compareScroll.Offset = compareScroll.Offset.WithY(10_000); // the stints under the pace chart
+    Capture(window, "10b-compare-stints");
 }
 
 // Lap vs lap: the one-stop race's best lap against the best lap of another recording at the track.
@@ -263,6 +295,8 @@ Capture(window, "13-energy");
 Pump(minMs: 2000); // the plan is computed in the background
 vm.Energy.Page = EnergyPage.Plan;
 Capture(window, "15-energy-plan");
+vm.Energy.Page = EnergyPage.Guide;
+Capture(window, "30-energy-guide");
 vm.Energy.Page = EnergyPage.Session;
 
 // Track hub: Monza's sessions, none saved yet; the preview of saving them; then saved, with the strategy and ERS plans
@@ -285,6 +319,13 @@ Capture(window, "27-hub-strategy");
 vm.Hub.Page = HubPage.Energy;
 Pump(minMs: 4000); // the plan is computed in the background
 Capture(window, "28-hub-energy");
+if (window.GetVisualDescendants().OfType<HubView>().FirstOrDefault()?.GetVisualDescendants().OfType<ScrollViewer>()
+        .FirstOrDefault(s => s.IsEffectivelyVisible) is { } hubScroll)
+{
+    hubScroll.Offset = hubScroll.Offset.WithY(10_000); // the energy data guide under the plan
+    Capture(window, "28b-hub-energy-guide");
+    hubScroll.Offset = default;
+}
 
 // Setups: the three Monza setups the races ran (a new front wing at each stop), the newest compared with the one before.
 vm.Hub.Page = HubPage.Setups;
@@ -418,6 +459,35 @@ foreach (var (kind, compound) in new[]
 var filmBoard = new Window { Width = 1080, Height = 780, Background = new SolidColorBrush(Color.Parse("#07080A")), Content = film };
 filmBoard.Show();
 Capture(filmBoard, "23-guide-animations");
+
+// The energy guide's animations, the same way.
+var energyFilm = new StackPanel { Spacing = 10, Margin = new Thickness(20) };
+foreach (var (kind, mode) in new[]
+         {
+             (F1Telemetry.Core.Analytics.GuideKind.PowerLaps, (int?)null), (F1Telemetry.Core.Analytics.GuideKind.RaceRun, null),
+             (F1Telemetry.Core.Analytics.GuideKind.ModeSpeeds, 2), (F1Telemetry.Core.Analytics.GuideKind.ModeStraights, null),
+             (F1Telemetry.Core.Analytics.GuideKind.BrakingHarvest, null), (F1Telemetry.Core.Analytics.GuideKind.AeroStates, null),
+             (F1Telemetry.Core.Analytics.GuideKind.FullBattery, null), (F1Telemetry.Core.Analytics.GuideKind.Replay, null),
+         })
+{
+    var row = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 10 };
+    foreach (var phase in new[] { 0.15, 0.4, 0.62, 0.9 })
+    {
+        row.Children.Add(new Border
+        {
+            Background = new SolidColorBrush(Color.Parse("#101216")),
+            CornerRadius = new CornerRadius(8),
+            Padding = new Thickness(8),
+            Child = new GuideIllustration { Kind = kind, Mode = mode, Phase = phase, Width = 240 },
+        });
+    }
+
+    energyFilm.Children.Add(row);
+}
+
+var energyFilmBoard = new Window { Width = 1080, Height = 1040, Background = new SolidColorBrush(Color.Parse("#07080A")), Content = energyFilm };
+energyFilmBoard.Show();
+Capture(energyFilmBoard, "31-energy-guide-animations");
 
 // The ERS PLAN overlay in preview: Overtake wanted while the car runs Medium, so the switch is called out.
 overlays.ErsPlan.LoadPreview();
