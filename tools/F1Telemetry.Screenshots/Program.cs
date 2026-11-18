@@ -265,8 +265,29 @@ vm.Energy.Page = EnergyPage.Plan;
 Capture(window, "15-energy-plan");
 vm.Energy.Page = EnergyPage.Session;
 
-// Setups: the three Monza setups the races ran (a new front wing at each stop), the newest compared with the one before.
+// Track hub: Monza's sessions, none saved yet; the preview of saving them; then saved, with the strategy and ERS plans
+// the hub gives.
 vm.SelectedTab = MainTab.Setups;
+Pump(vm.Hub.LoadAsync(), 1500);
+Capture(window, "24-hub-sessions");
+vm.Hub.TickUnsavedCommand.Execute(null);
+Pump(vm.Hub.SaveCommand.ExecuteAsync(null), 1500);
+Capture(window, "25-hub-preview");
+Pump(vm.Hub.ConfirmSaveCommand.ExecuteAsync(null), 1500);
+Capture(window, "26-hub-saved");
+vm.Hub.TickSavedCommand.Execute(null);
+Pump(vm.Hub.DeleteRecordingsCommand.ExecuteAsync(null), 300); // the first click arms it
+Pump(vm.Hub.DeleteRecordingsCommand.ExecuteAsync(null), 1500);
+Capture(window, "29-hub-recordings-deleted");
+vm.Hub.Page = HubPage.Strategy;
+Pump(minMs: 2000);
+Capture(window, "27-hub-strategy");
+vm.Hub.Page = HubPage.Energy;
+Pump(minMs: 4000); // the plan is computed in the background
+Capture(window, "28-hub-energy");
+
+// Setups: the three Monza setups the races ran (a new front wing at each stop), the newest compared with the one before.
+vm.Hub.Page = HubPage.Setups;
 Pump(vm.Setups.LoadAsync(), 800);
 foreach (var row in vm.Setups.Rows.Take(2))
 {

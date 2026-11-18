@@ -2,8 +2,12 @@ using F1Telemetry.Core.Models;
 
 namespace F1Telemetry.Core.Analytics;
 
-/// <summary>One side of a comparison: a recording's classified laps, their fuel/wear aggregates and its analysis.</summary>
-public sealed record RaceInput(RecordingInfo Recording, IReadOnlyList<LapRecord> Laps, IReadOnlyList<LapAggregate> Aggregates, SessionAnalysis Analysis);
+/// <summary>One side of a comparison: a recording's (or a track hub session's) classified laps, their fuel/wear aggregates and its analysis.</summary>
+public sealed record RaceInput(RecordingInfo Recording, IReadOnlyList<LapRecord> Laps, IReadOnlyList<LapAggregate> Aggregates, SessionAnalysis Analysis)
+{
+    /// <summary>The race length the session counts for (see <see cref="Protocol.Lookups.RaceLengths"/>); 0 when not known.</summary>
+    public int RaceLength { get; init; }
+}
 
 /// <summary>
 /// Where one race's time went over the compared laps. The parts add up to <see cref="Total"/> exactly: every lap is

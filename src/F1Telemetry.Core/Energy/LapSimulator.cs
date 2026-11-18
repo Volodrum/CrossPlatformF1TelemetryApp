@@ -20,6 +20,10 @@ namespace F1Telemetry.Core.Energy;
 public sealed record PlanSegment(int Index, double From, bool FullThrottle, int Aero, double IcePower, double MgukPower, double Harvest, double Deploy, int Mode,
     double ReferenceSeconds, bool Override = false, bool Empty = false, double LateralG = 0, double Clip = 0);
 
+/// <summary>A <see cref="LapProfile"/> as plain data (see <see cref="LapProfile.ToData"/>).</summary>
+public sealed record LapProfileData(int LapNumber, int LapCount, IReadOnlyList<PlanSegment> Segments, double[] Speed, double[] Level, double Braking,
+    double MassKg, double ActualSeconds, double HarvestLimit);
+
 /// <summary>
 /// A lap cut into <see cref="Step"/> m segments for the <see cref="LapSimulator"/>: speeds at every boundary, where it
 /// was flat out, what it harvested where, and the speed cap ahead of every braking zone. Either one lap as driven
@@ -193,7 +197,8 @@ public sealed class LapProfile
     /// <summary>
     /// The typical lap of a session: speeds, power, harvest, deployment and battery level averaged segment by segment,
     /// flat-out stretches, aero and deploy mode by majority. A race plan built on it holds for every lap of the stint,
-    /// not just the one that happened to be fastest. Null for no laps.
+    /// not just the one that happened to be fastest. Each profile counts as the <see cref="LapCount"/> laps it stands for,
+    /// so averages of averages (the track hub's sessions) come out as the average of all their laps. Null for no laps.
     /// </summary>
     public static LapProfile? Average(IReadOnlyList<LapProfile> laps)
     {
@@ -207,38 +212,54 @@ public sealed class LapProfile
             return laps[0];
         }
 
+        var total = laps.Sum(l => (double)l.LapCount);
+        double Mean(Func<LapProfile, double> value) => laps.Sum(l => l.LapCount * value(l)) / total;
+
         var count = laps.Min(l => l.Segments.Count);
         var speed = new double[count + 1];
         var level = new double[count + 1];
         for (var i = 0; i <= count; i++)
         {
-            speed[i] = laps.Average(l => l.Speed[i]);
-            level[i] = laps.Average(l => l.Level[i]);
+            speed[i] = Mean(l => l.Speed[i]);
+            level[i] = Mean(l => l.Level[i]);
         }
 
         var segments = new List<PlanSegment>(count);
         for (var i = 0; i < count; i++)
         {
-            var at = laps.Select(l => l.Segments[i]).ToList();
+            var at = laps.Select(l => (Segment: l.Segments[i], Weight: (double)l.LapCount)).ToList();
+            double Of(Func<PlanSegment, double> value) => at.Sum(s => s.Weight * value(s.Segment)) / total;
+            bool Most(Func<PlanSegment, bool> value) => at.Where(s => value(s.Segment)).Sum(s => s.Weight) * 2 > total;
             segments.Add(new PlanSegment(
                 i, i * Step,
-                FullThrottle: at.Count(s => s.FullThrottle) * 2 > at.Count,
-                Aero: at.GroupBy(s => s.Aero).MaxBy(g => g.Count())!.Key,
-                IcePower: at.Average(s => s.IcePower),
-                MgukPower: at.Average(s => s.MgukPower),
-                Harvest: at.Average(s => s.Harvest),
-                Deploy: at.Average(s => s.Deploy),
-                Mode: at.GroupBy(s => s.Mode).MaxBy(g => g.Count())!.Key,
+                FullThrottle: Most(s => s.FullThrottle),
+                Aero: at.GroupBy(s => s.Segment.Aero).MaxBy(g => g.Sum(s => s.Weight))!.Key,
+                IcePower: Of(s => s.IcePower),
+                MgukPower: Of(s => s.MgukPower),
+                Harvest: Of(s => s.Harvest),
+                Deploy: Of(s => s.Deploy),
+                Mode: at.GroupBy(s => s.Segment.Mode).MaxBy(g => g.Sum(s => s.Weight))!.Key,
                 ReferenceSeconds: 2 * Step / (speed[i] + speed[i + 1]),
-                Override: at.Count(s => s.Override) * 2 > at.Count,
-                Empty: at.Any(s => s.Empty),
-                LateralG: at.Average(s => s.LateralG),
-                Clip: at.Average(s => s.Clip)));
+                Override: Most(s => s.Override),
+                Empty: at.Any(s => s.Segment.Empty),
+                LateralG: Of(s => s.LateralG),
+                Clip: Of(s => s.Clip)));
         }
 
-        return new LapProfile(0, laps.Count, segments, speed, level, laps.Average(l => l.Braking), laps.Average(l => l.MassKg),
-            laps.Average(l => l.ActualSeconds), laps.Average(l => l.HarvestLimit));
+        return new LapProfile(0, (int)total, segments, speed, level, Mean(l => l.Braking), Mean(l => l.MassKg),
+            Mean(l => l.ActualSeconds), Mean(l => l.HarvestLimit));
     }
+
+    /// <summary>The profile as plain data, to keep (the track hub).</summary>
+    public LapProfileData ToData() =>
+        new(LapNumber, LapCount, [.. Segments], Speed, Level, Braking, MassKg, ActualSeconds, HarvestLimit);
+
+    /// <summary>A profile kept with <see cref="ToData"/>; null when it holds no segments.</summary>
+    public static LapProfile? FromData(LapProfileData data) =>
+        data.Segments.Count == 0 || data.Speed.Length != data.Segments.Count + 1 || data.Level.Length != data.Segments.Count + 1
+            ? null
+            : new LapProfile(data.LapNumber, Math.Max(1, data.LapCount), data.Segments, data.Speed, data.Level, data.Braking, data.MassKg,
+                data.ActualSeconds, data.HarvestLimit);
 
     /// <summary>Highest speed at each boundary that still makes the next braking zone, braking at <paramref name="braking"/> m/s².</summary>
     private static double[] BrakingEnvelope(IReadOnlyList<PlanSegment> segments, double[] speed, double braking)

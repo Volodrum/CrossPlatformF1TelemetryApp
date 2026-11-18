@@ -285,6 +285,7 @@ public sealed class PacketWriter(FormatLayout layout)
         s[653] = d.PitStopWindowIdealLap;
         s[654] = d.PitStopWindowLatestLap;
         s[655] = d.PitStopRejoinPosition;
+        s[671] = d.SessionLength;
         s[676] = d.NumSafetyCarPeriods;
         s[677] = d.NumVirtualSafetyCarPeriods;
         s[678] = d.NumRedFlagPeriods;

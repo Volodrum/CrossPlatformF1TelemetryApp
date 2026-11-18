@@ -1,0 +1,242 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:F1Telemetry.App.ViewModels"
+             xmlns:controls="using:F1Telemetry.App.Controls"
+             xmlns:views="using:F1Telemetry.App.Views"
+             xmlns:energy="using:F1Telemetry.Core.Energy"
+             x:Class="F1Telemetry.App.Views.HubView"
+             x:DataType="vm:HubViewModel">
+  <!-- The track hub: what each session taught the strategy and energy planners, kept after its recording is deleted -->
+  <DockPanel>
+    <!-- Pages, and the track they are for -->
+    <Grid DockPanel.Dock="Top" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="16" Margin="0,4,8,0">
+      <Border Classes="segmented" HorizontalAlignment="Left">
+        <StackPanel Orientation="Horizontal">
+          <Button Theme="{StaticResource ModeToggle}" Content="SESSIONS" Classes.selected="{Binding IsSessionsPage}"
+                  Command="{Binding SetPageCommand}" CommandParameter="{x:Static vm:HubPage.Sessions}"
+                  ToolTip.Tip="What is saved at this track, what isn't yet, and the recordings that can go" />
+          <Button Theme="{StaticResource ModeToggle}" Content="STRATEGY" Classes.selected="{Binding IsStrategyPage}"
+                  Command="{Binding SetPageCommand}" CommandParameter="{x:Static vm:HubPage.Strategy}"
+                  ToolTip.Tip="The track's compounds and race plans, by race length" />
+          <Button Theme="{StaticResource ModeToggle}" Content="ENERGY" Classes.selected="{Binding IsEnergyPage}"
+                  Command="{Binding SetPageCommand}" CommandParameter="{x:Static vm:HubPage.Energy}"
+                  ToolTip.Tip="The track's ERS plan: a deploy mode per zone, for the race and for qualifying" />
+          <Button Theme="{StaticResource ModeToggle}" Content="SETUPS" Classes.selected="{Binding IsSetupsPage}"
+                  Command="{Binding SetPageCommand}" CommandParameter="{x:Static vm:HubPage.Setups}"
+                  ToolTip.Tip="Setup library: every setup you drove, at every track" />
+        </StackPanel>
+      </Border>
+      <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="10" IsVisible="{Binding ShowsTrack}">
+        <TextBlock Classes="label strong" Text="TRACK" VerticalAlignment="Center" />
+        <ComboBox ItemsSource="{Binding Tracks}" SelectedItem="{Binding SelectedTrack}" MinWidth="260" VerticalAlignment="Center" />
+      </StackPanel>
+    </Grid>
+
+    <TextBlock DockPanel.Dock="Bottom" Classes="body" Text="{Binding Status}" Margin="0,10,0,0" TextWrapping="Wrap"
+               IsVisible="{Binding Status, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+
+    <Panel>
+      <!-- SESSIONS -->
+      <DockPanel Margin="0,16,0,0" IsVisible="{Binding IsSessionsPage}">
+        <controls:PageHeader DockPanel.Dock="Top" Eyebrow="TRACK HUB" Title="{Binding Header}" Margin="0,0,8,12"
+                             Help="Save a session to keep what it taught the strategy and energy planners: its clean laps, tyre wear and fuel, its pit stops, its part of the ERS car model, its typical and fastest laps, and the setups it ran. A saved session stays in the plans after its recording is deleted, so recordings can be cleared out without losing progress. Saving the same recording again updates it. Each session counts for a race length: the game scales tyre wear and fuel to it, so the plans take those figures from the sessions run at the length planned for." />
+
+        <TextBlock DockPanel.Dock="Top" Classes="body" Text="{Binding Summary}" TextWrapping="Wrap" Margin="0,0,8,12" />
+
+        <Panel>
+        <!-- What a save changes: shown in place of the list before anything is saved -->
+        <Border Classes="panel" Padding="18" Margin="0,0,8,0" IsVisible="{Binding IsPreviewing}">
+          <DockPanel>
+            <StackPanel DockPanel.Dock="Top" Spacing="4" Margin="0,0,0,12">
+              <TextBlock Classes="label strong" Text="{Binding PreviewTitle}" />
+              <TextBlock Classes="body" FontSize="13" Text="{Binding PreviewNote}" TextWrapping="Wrap" />
+            </StackPanel>
+            <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Spacing="10" HorizontalAlignment="Right" Margin="0,12,0,0">
+              <Button Theme="{StaticResource SecondaryButton}" Content="CANCEL" Command="{Binding CancelPreviewCommand}" />
+              <Button Theme="{StaticResource PrimaryButton}" Content="CONFIRM SAVE" Command="{Binding ConfirmSaveCommand}" />
+            </StackPanel>
+            <Grid DockPanel.Dock="Top" ColumnDefinitions="110,*,220,220" ColumnSpacing="12" Margin="0,0,16,6">
+              <TextBlock Grid.Column="2" Classes="label" Text="HUB NOW" HorizontalAlignment="Right" />
+              <TextBlock Grid.Column="3" Classes="label" Text="AFTER SAVING" HorizontalAlignment="Right" />
+            </Grid>
+            <ScrollViewer>
+            <ItemsControl ItemsSource="{Binding Preview}" Margin="0,0,16,0">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:HubCompareRow">
+                  <Border BorderBrush="{StaticResource DividerBrush}" BorderThickness="0,1,0,0" Padding="0,6">
+                    <Grid ColumnDefinitions="110,*,220,220" ColumnSpacing="12">
+                      <TextBlock Classes="label" Text="{Binding Group}" VerticalAlignment="Center" />
+                      <TextBlock Grid.Column="1" Classes="label strong" Text="{Binding Label}" VerticalAlignment="Center" />
+                      <TextBlock Grid.Column="2" Classes="mono" Text="{Binding Before}" Foreground="{StaticResource TextMidBrush}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                      <TextBlock Grid.Column="3" Classes="mono" FontWeight="Bold" Text="{Binding After}" Foreground="{Binding AfterBrush}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                    </Grid>
+                  </Border>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            </ScrollViewer>
+          </DockPanel>
+        </Border>
+
+        <Border Classes="panel" Padding="8" Margin="0,0,8,0" IsVisible="{Binding !IsPreviewing}">
+          <DockPanel>
+            <WrapPanel DockPanel.Dock="Bottom" Margin="8,10,8,4" ItemSpacing="8" LineSpacing="8">
+              <Button Theme="{StaticResource SecondaryButton}" Content="TICK UNSAVED" Command="{Binding TickUnsavedCommand}"
+                      ToolTip.Tip="Tick the recordings not saved yet, and those changed since they were saved" />
+              <Button Theme="{StaticResource SecondaryButton}" Content="TICK SAVED RECORDINGS" Command="{Binding TickSavedCommand}"
+                      ToolTip.Tip="Tick the recordings that are saved to the hub as they are: the ones that can be deleted" />
+              <Button Theme="{StaticResource PrimaryButton}" Content="{Binding SaveText}" Command="{Binding SaveCommand}"
+                      ToolTip.Tip="Save the ticked recordings to the hub as they are now (a saved one is updated). You see what changes first." />
+              <Button Theme="{StaticResource SecondaryButton}" Content="{Binding RemoveText}" Command="{Binding RemoveCommand}"
+                      ToolTip.Tip="{Binding RemoveTip}" />
+              <Button Theme="{StaticResource SecondaryButton}" Content="{Binding DeleteText}" Command="{Binding DeleteRecordingsCommand}"
+                      ToolTip.Tip="{Binding DeleteTip}" />
+            </WrapPanel>
+
+            <Grid DockPanel.Dock="Top" ColumnDefinitions="32,*,230,200" ColumnSpacing="12" Margin="12,4,12,8">
+              <TextBlock Grid.Column="1" Classes="label" Text="SESSION" />
+              <TextBlock Grid.Column="2" Classes="label" Text="IN THE HUB" />
+              <TextBlock Grid.Column="3" Classes="label" Text="RACE LENGTH" ToolTip.Tip="The race length each session's tyre wear and fuel count for" Background="Transparent" />
+            </Grid>
+
+            <Panel>
+              <TextBlock Classes="body" Margin="12" TextWrapping="Wrap" IsVisible="{Binding !HasSessions}"
+                         Text="No sessions at this track yet. Record one: what it teaches the plans can be saved here, and its recording deleted afterwards." />
+              <ScrollViewer>
+                <ItemsControl ItemsSource="{Binding Sessions}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:HubSessionRowViewModel">
+                      <Border BorderBrush="{StaticResource DividerBrush}" BorderThickness="0,0,0,1" Padding="12,8">
+                        <Grid ColumnDefinitions="32,*,230,200" ColumnSpacing="12">
+                          <CheckBox IsChecked="{Binding IsChecked}" VerticalAlignment="Center" />
+                          <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                            <TextBlock Classes="h2" FontSize="15" Text="{Binding Title}" TextTrimming="CharacterEllipsis" />
+                            <TextBlock Classes="mono" FontSize="13" Text="{Binding Detail}" Foreground="{StaticResource TextMidBrush}" TextTrimming="CharacterEllipsis" />
+                          </StackPanel>
+                          <ContentControl Grid.Column="2" Content="{Binding Status}" HorizontalAlignment="Left" VerticalAlignment="Center"
+                                          Background="Transparent" ToolTip.Tip="{Binding StatusTip}" />
+                          <ComboBox Grid.Column="3" ItemsSource="{x:Static vm:HubSessionRowViewModel.LengthOptions}" SelectedItem="{Binding Length}"
+                                    HorizontalAlignment="Stretch" VerticalAlignment="Center"
+                                    ToolTip.Tip="The race length this session's tyre wear and fuel count for. A race reads it from the game; practice and qualifying take their weekend's race." />
+                        </Grid>
+                      </Border>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </ScrollViewer>
+            </Panel>
+          </DockPanel>
+        </Border>
+        </Panel>
+      </DockPanel>
+
+      <!-- STRATEGY -->
+      <ScrollViewer Margin="0,16,0,0" IsVisible="{Binding IsStrategyPage}">
+        <StackPanel Spacing="12" Margin="0,0,8,0">
+          <controls:PageHeader Eyebrow="TRACK HUB · RACE PLANS" Title="{Binding Header}"
+                               Help="The track's compound library and race plans from the sessions saved to the hub and every recording here not saved to it. Pick the race length to plan for: wear, degradation, cliff and fuel come from the sessions run at it." />
+          <views:RacePlansPanel DataContext="{Binding Plans}" />
+        </StackPanel>
+      </ScrollViewer>
+
+      <!-- ENERGY -->
+      <ScrollViewer Margin="0,16,0,0" IsVisible="{Binding IsEnergyPage}">
+        <StackPanel Spacing="12" Margin="0,0,8,0">
+          <controls:PageHeader Eyebrow="TRACK HUB · ERS PLAN" Title="{Binding Header}"
+                               Help="The ERS plan of the track: race plans on the typical laps of every session here (saved and unsaved) averaged, qualifying plans on the fastest of their laps, simulated on the car model learned from all of them." />
+          <TextBlock Classes="body" FontSize="13" Text="{Binding EnergyNote}" TextWrapping="Wrap" />
+          <Border Classes="panel" Padding="18" DataContext="{Binding EnergyPlan}" x:DataType="vm:EnergyPlanViewModel">
+            <StackPanel Spacing="14">
+              <Border Classes="segmented" HorizontalAlignment="Left" IsVisible="{Binding CanPlan}">
+                <StackPanel Orientation="Horizontal">
+                  <Button Theme="{StaticResource ModeToggle}" Content="RACE" Classes.selected="{Binding IsRace}"
+                          Command="{Binding SetKindCommand}" CommandParameter="{x:Static energy:PlanKind.Race}"
+                          ToolTip.Tip="A lap that deploys exactly what it harvests, so every race lap can run it" />
+                  <Button Theme="{StaticResource ModeToggle}" Content="QUALIFYING" Classes.selected="{Binding IsQualifying}"
+                          Command="{Binding SetKindCommand}" CommandParameter="{x:Static energy:PlanKind.Qualifying}"
+                          ToolTip.Tip="One push lap from a full battery" />
+                </StackPanel>
+              </Border>
+              <TextBlock Classes="body" Text="{Binding Note}" TextWrapping="Wrap" Foreground="{StaticResource SlowerBrush}"
+                         IsVisible="{Binding Note, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+              <TextBlock Classes="muted" Text="Planning…" IsVisible="{Binding IsBusy}" />
+              <TextBlock Classes="body" FontSize="13" Text="{Binding Basis}" TextWrapping="Wrap" Foreground="{StaticResource TextHiBrush}"
+                         IsVisible="{Binding Basis, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+
+              <WrapPanel ItemSpacing="40" LineSpacing="14" IsVisible="{Binding HasPlan}">
+                <StackPanel Spacing="2">
+                  <TextBlock Classes="label" Text="PREDICTED LAP" />
+                  <StackPanel Orientation="Horizontal" Spacing="10">
+                    <TextBlock Classes="data-l" Text="{Binding Predicted}" />
+                    <TextBlock Classes="data-s" Text="{Binding Gain}" Foreground="{StaticResource FasterBrush}" VerticalAlignment="Bottom" Margin="0,0,0,6" />
+                  </StackPanel>
+                </StackPanel>
+                <StackPanel Spacing="2" MaxWidth="320">
+                  <TextBlock Classes="label" Text="{Binding UnitLabel, StringFormat='BATTERY AT THE LINE · {0}'}" />
+                  <TextBlock Classes="data-m" Text="{Binding Battery}" />
+                  <TextBlock Classes="body" FontSize="13" Text="{Binding BatteryNote}" TextWrapping="Wrap" />
+                </StackPanel>
+                <StackPanel Spacing="2" MaxWidth="320">
+                  <TextBlock Classes="label" Text="{Binding UnitLabel, StringFormat='HARVEST / DEPLOY PER LAP · {0}'}" />
+                  <TextBlock Classes="data-m" Text="{Binding Energy}" />
+                  <TextBlock Classes="body" FontSize="13" Text="{Binding EnergyNote}" TextWrapping="Wrap" />
+                </StackPanel>
+                <StackPanel Spacing="4" MaxWidth="320">
+                  <TextBlock Classes="label" Text="CONFIDENCE" />
+                  <ContentControl Content="{Binding Confidence}" HorizontalAlignment="Left" />
+                  <TextBlock Classes="body" FontSize="13" Text="{Binding ConfidenceNote}" TextWrapping="Wrap" />
+                </StackPanel>
+              </WrapPanel>
+
+              <StackPanel Spacing="4" IsVisible="{Binding HasPlan}">
+                <TextBlock Classes="label strong" Text="DEPLOY MODE PER ZONE · SIMULATED ON THE CAR MODEL" Margin="0,6,0,4" />
+                <Grid ColumnDefinitions="52,120,*,140,80" ColumnSpacing="12" Margin="10,0">
+                  <TextBlock Classes="label" Text="ZONE" />
+                  <TextBlock Grid.Column="1" Classes="label" Text="LAP DISTANCE" />
+                  <TextBlock Grid.Column="2" Classes="label" Text="PLAN" />
+                  <TextBlock Grid.Column="3" Classes="label" Text="{Binding UnitLabel, StringFormat='BATTERY · {0}'}" HorizontalAlignment="Right" />
+                  <TextBlock Grid.Column="4" Classes="label" Text="Δ TIME · S" HorizontalAlignment="Right" />
+                </Grid>
+                <ItemsControl ItemsSource="{Binding Zones}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:ZoneRowViewModel">
+                      <Border Background="{StaticResource CardBrush}" CornerRadius="6" Padding="0,8" Margin="0,0,0,4">
+                        <Grid ColumnDefinitions="52,120,*,140,80" ColumnSpacing="12" Margin="10,0">
+                          <TextBlock Classes="h2" FontSize="15" Text="{Binding Number}" VerticalAlignment="Center" />
+                          <TextBlock Grid.Column="1" Classes="mono" Text="{Binding Range}" VerticalAlignment="Center" />
+                          <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                            <ItemsControl ItemsSource="{Binding Plan}" VerticalAlignment="Center">
+                              <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                  <StackPanel Orientation="Horizontal" Spacing="4" />
+                                </ItemsPanelTemplate>
+                              </ItemsControl.ItemsPanel>
+                              <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:ModeShare">
+                                  <Border Width="24" Height="22" CornerRadius="5" Background="{Binding Fill}" ToolTip.Tip="{Binding Name}">
+                                    <TextBlock Text="{Binding Letter}" FontFamily="{StaticResource DataFont}" FontSize="13" FontWeight="ExtraBold"
+                                               Foreground="{Binding Foreground}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                  </Border>
+                                </DataTemplate>
+                              </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                            <TextBlock Classes="body" FontSize="13" Text="{Binding Description}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                          </StackPanel>
+                          <TextBlock Grid.Column="3" Classes="mono" Text="{Binding Battery}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                          <TextBlock Grid.Column="4" Classes="data-s" FontSize="16" Text="{Binding Gain}" Foreground="{Binding GainBrush}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                        </Grid>
+                      </Border>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </StackPanel>
+            </StackPanel>
+          </Border>
+        </StackPanel>
+      </ScrollViewer>
+
+      <!-- SETUPS -->
+      <views:SetupsView DataContext="{Binding Setups}" IsVisible="{Binding $parent[views:HubView].((vm:HubViewModel)DataContext).IsSetupsPage, FallbackValue=False}" />
+    </Panel>
+  </DockPanel>
+</UserControl>

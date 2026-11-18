@@ -55,7 +55,8 @@ public sealed partial class DuckDbTelemetryStore(string databasePath, ILogger<Du
             Schema.Migrate(_writer);
             _reader = new DuckDBConnection($"Data Source={databasePath}"); // DuckDB.NET shares one database instance per path
             _reader.Open();
-            _lastRecordingId = Convert.ToInt64(ScalarOn(_writer, "SELECT coalesce(max(id), 0) FROM recordings"));
+            // Ids of deleted recordings saved to the hub stay taken, so a new recording never takes a saved one's id.
+            _lastRecordingId = Convert.ToInt64(ScalarOn(_writer, "SELECT greatest((SELECT coalesce(max(id), 0) FROM recordings), (SELECT coalesce(max(recording_id), 0) FROM hub_sessions))"));
         }, cancellationToken);
 
         _writerLoop = Task.Factory.StartNew(WriterLoopAsync, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default).Unwrap();
@@ -101,8 +102,8 @@ public sealed partial class DuckDbTelemetryStore(string databasePath, ILogger<Du
     public void EndRecording(long recordingId) => Enqueue(new EndOp(recordingId, DateTime.UtcNow));
 
     public void UpdateRecording(long recordingId, string? sessionUid = null, int? trackId = null, string? trackName = null, int? sessionType = null,
-        DateTimeOffset? startTime = null, DateTimeOffset? endTime = null, GameFormat? format = null) =>
-        Enqueue(new UpdateOp(recordingId, sessionUid, trackId, trackName, sessionType, startTime?.UtcDateTime, endTime?.UtcDateTime, format));
+        DateTimeOffset? startTime = null, DateTimeOffset? endTime = null, GameFormat? format = null, int? sessionLength = null) =>
+        Enqueue(new UpdateOp(recordingId, sessionUid, trackId, trackName, sessionType, startTime?.UtcDateTime, endTime?.UtcDateTime, format, sessionLength));
 
     public void AppendSample(TelemetrySample sample) => Enqueue(new SampleOp(sample));
 
@@ -240,12 +241,13 @@ public sealed partial class DuckDbTelemetryStore(string databasePath, ILogger<Du
             {
                 case BeginOp b:
                     NonQuery("""
-                        INSERT INTO recordings (id, session_uid, description, track_id, track_name, session_type, game_format, start_time)
-                        VALUES ($id, $uid, $description, $trackId, $trackName, $sessionType, $format, $start)
+                        INSERT INTO recordings (id, session_uid, description, track_id, track_name, session_type, game_format, start_time, session_length)
+                        VALUES ($id, $uid, $description, $trackId, $trackName, $sessionType, $format, $start, $length)
                         """,
                         ("id", b.Id), ("uid", b.Recording.SessionUid), ("description", b.Recording.Description),
                         ("trackId", b.Recording.TrackId), ("trackName", b.Recording.TrackName),
-                        ("sessionType", b.Recording.SessionType), ("format", (int)b.Recording.Format), ("start", b.StartUtc));
+                        ("sessionType", b.Recording.SessionType), ("format", (int)b.Recording.Format), ("start", b.StartUtc),
+                        ("length", b.Recording.SessionLength));
                     break;
 
                 case EndOp e:
@@ -300,6 +302,10 @@ public sealed partial class DuckDbTelemetryStore(string databasePath, ILogger<Du
                     f.Done.TrySetResult();
                     break;
 
+                case HubOp h:
+                    h.Done.TrySetResult(h.Run());
+                    break;
+
                 case DeleteOp d:
                     using (var tx = _writer!.BeginTransaction())
                     {
@@ -332,6 +338,9 @@ public sealed partial class DuckDbTelemetryStore(string databasePath, ILogger<Du
                     break;
                 case ImportSetupsOp import:
                     import.Done.TrySetException(ex);
+                    break;
+                case HubOp h:
+                    h.Done.TrySetException(ex);
                     break;
             }
         }
@@ -412,6 +421,12 @@ public sealed partial class DuckDbTelemetryStore(string databasePath, ILogger<Du
             args.Add(("format", (int)u.Format));
         }
 
+        if (u.SessionLength is not null)
+        {
+            sets.Add("session_length = $length");
+            args.Add(("length", u.SessionLength));
+        }
+
         if (sets.Count > 0)
         {
             NonQuery($"UPDATE recordings SET {string.Join(", ", sets)} WHERE id = $id", [.. args]);
@@ -451,13 +466,13 @@ public sealed partial class DuckDbTelemetryStore(string databasePath, ILogger<Du
 
     public Task<IReadOnlyList<RecordingInfo>> GetRecordingsAsync(CancellationToken cancellationToken = default) =>
         QueryAsync("""
-            SELECT id, session_uid, description, track_id, track_name, session_type, game_format, start_time, end_time
+            SELECT id, session_uid, description, track_id, track_name, session_type, game_format, start_time, end_time, session_length
             FROM recordings ORDER BY start_time DESC
             """, ReadRecording, cancellationToken);
 
     public async Task<RecordingInfo?> GetRecordingAsync(long recordingId, CancellationToken cancellationToken = default) =>
         (await QueryAsync("""
-            SELECT id, session_uid, description, track_id, track_name, session_type, game_format, start_time, end_time
+            SELECT id, session_uid, description, track_id, track_name, session_type, game_format, start_time, end_time, session_length
             FROM recordings WHERE id = $id
             """, ReadRecording, cancellationToken, ("id", recordingId))).FirstOrDefault();
 
@@ -609,7 +624,10 @@ public sealed partial class DuckDbTelemetryStore(string databasePath, ILogger<Du
         SessionType: r.IsDBNull(5) ? 0 : r.GetInt32(5),
         Format: r.IsDBNull(6) ? GameFormat.F1_25 : (GameFormat)r.GetInt32(6),
         StartTime: new DateTimeOffset(DateTime.SpecifyKind(r.GetDateTime(7), DateTimeKind.Utc)),
-        EndTime: r.IsDBNull(8) ? null : new DateTimeOffset(DateTime.SpecifyKind(r.GetDateTime(8), DateTimeKind.Utc)));
+        EndTime: r.IsDBNull(8) ? null : new DateTimeOffset(DateTime.SpecifyKind(r.GetDateTime(8), DateTimeKind.Utc)))
+    {
+        SessionLength = r.IsDBNull(9) ? 0 : r.GetInt32(9),
+    };
 
     private static long GetLong(DbDataReader r, int i) => r.IsDBNull(i) ? 0 : r.GetInt64(i);
 
@@ -657,7 +675,8 @@ public sealed partial class DuckDbTelemetryStore(string databasePath, ILogger<Du
     private abstract record WriteOp;
     private sealed record BeginOp(long Id, NewRecording Recording, DateTime StartUtc) : WriteOp;
     private sealed record EndOp(long Id, DateTime EndUtc) : WriteOp;
-    private sealed record UpdateOp(long Id, string? SessionUid, int? TrackId, string? TrackName, int? SessionType, DateTime? StartUtc, DateTime? EndUtc, GameFormat? Format) : WriteOp;
+    private sealed record UpdateOp(long Id, string? SessionUid, int? TrackId, string? TrackName, int? SessionType, DateTime? StartUtc, DateTime? EndUtc, GameFormat? Format,
+        int? SessionLength) : WriteOp;
     private sealed record SampleOp(TelemetrySample Sample) : WriteOp;
     private sealed record LapOp(long RecordingId, LapRecord Lap) : WriteOp;
     private sealed record RestartLapOp(long RecordingId, int LapNumber, double SessionTime) : WriteOp;

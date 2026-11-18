@@ -15,6 +15,9 @@ public sealed record SimulationOptions
     public byte SessionType { get; init; } = 15;
     public int Laps { get; init; } = 6;
 
+    /// <summary>The session length setting sent in the session packet (see <c>RaceLengths</c>); 0 = none.</summary>
+    public byte SessionLength { get; init; }
+
     /// <summary>Lap at whose end the player pits (0 = no stop).</summary>
     public int PitOnLap { get; init; } = 3;
 
@@ -346,7 +349,7 @@ public sealed class SessionSimulator
             ForecastAccuracy: 0, AiDifficulty: 90, PitStopWindowIdealLap: (byte)_pitLaps.FirstOrDefault(), PitStopWindowLatestLap: (byte)(_pitLaps.FirstOrDefault() + 2),
             PitStopRejoinPosition: 7, NumSafetyCarPeriods: 0, NumVirtualSafetyCarPeriods: 0, NumRedFlagPeriods: 0,
             Sector2LapDistanceStart: (float)(lapLength / 3), Sector3LapDistanceStart: (float)(2 * lapLength / 3),
-            Aero: new SessionAeroInfo(1, [], [], [], 0.2f)));
+            Aero: new SessionAeroInfo(1, [], [], [], 0.2f), SessionLength: _o.SessionLength));
         return p;
     }
 

@@ -88,7 +88,15 @@ public sealed partial class DuckDbTelemetryStore
         return await QueryAsync(LibrarySql, ReadEntry, cancellationToken);
     }
 
-    public Task<IReadOnlyList<SetupRun>> GetSetupRunsAsync(CancellationToken cancellationToken = default) =>
+    /// <summary>The runs of the recordings there are, and those the track hub kept of recordings since deleted.</summary>
+    public async Task<IReadOnlyList<SetupRun>> GetSetupRunsAsync(CancellationToken cancellationToken = default)
+    {
+        var recorded = await RecordedRunsAsync(cancellationToken);
+        var kept = await HubRunsWithoutRecordingAsync(cancellationToken);
+        return kept.Count == 0 ? recorded : [.. recorded.Concat(kept).OrderByDescending(r => r.RecordingStart).ThenBy(r => r.FromLap)];
+    }
+
+    private Task<IReadOnlyList<SetupRun>> RecordedRunsAsync(CancellationToken cancellationToken) =>
         QueryAsync(RunsSql, r => new SetupRun(
             SetupId: r.GetInt64(0),
             RecordingId: r.GetInt64(1),

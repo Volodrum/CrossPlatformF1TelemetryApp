@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using F1Telemetry.Core.Analytics;
 using F1Telemetry.Core.Engine;
+using F1Telemetry.Core.Hub;
 using F1Telemetry.Core.Models;
 using F1Telemetry.Protocol;
 
@@ -23,6 +24,9 @@ public sealed class SessionAnalysisService(ITelemetryStore store, StrategyOption
     // Kept apart: the laps alone are a light read that many views need; the analysis also reads the per-lap aggregates.
     private readonly ConcurrentDictionary<long, (RecordingInfo Recording, IReadOnlyList<LapRecord> Laps)> _finishedLaps = new();
     private readonly ConcurrentDictionary<long, (RecordingInfo Recording, RaceInput? Race)> _finished = new();
+
+    // Hub sessions analysed again, by hub id: a session only changes when it is saved again.
+    private readonly ConcurrentDictionary<long, (DateTimeOffset SavedAt, int RaceLength, RaceInput? Race)> _restored = new();
 
     public async Task<IReadOnlyList<LapRecord>> GetClassifiedLapsAsync(RecordingInfo recording, CancellationToken ct = default)
     {
@@ -100,13 +104,64 @@ public sealed class SessionAnalysisService(ITelemetryStore store, StrategyOption
 
     public double DefaultFuelEffect => (options ?? new StrategyOptions()).FuelEffectSecondsPerKg;
 
-    /// <summary>Every analysed recording at a track in one game format: what the compound library is built from.</summary>
-    public async Task<IReadOnlyList<RaceInput>> LoadTrackAsync(GameFormat format, int trackId, CancellationToken ct = default)
+    /// <summary>
+    /// Every session at a track in one game format: each recording (with its copy in the track hub when it was saved),
+    /// then each hub session whose recording is gone. Oldest first.
+    /// </summary>
+    public async Task<IReadOnlyList<TrackSession>> LoadTrackSessionsAsync(GameFormat format, int trackId, CancellationToken ct = default)
+    {
+        var recordings = (await store.GetRecordingsAsync(ct)).Where(r => r.TrackId == trackId && r.Format == format).ToList();
+        var saved = await store.GetHubSessionsAsync(format, trackId, ct);
+        var sessions = new List<TrackSession>();
+        foreach (var recording in recordings)
+        {
+            var copy = saved.FirstOrDefault(h => h.IsOf(recording));
+            sessions.Add(new TrackSession(recording, copy, copy?.RaceLength ?? TrackHub.RaceLengthOf(recording, recordings)));
+        }
+
+        sessions.AddRange(saved.Where(h => !recordings.Any(h.IsOf)).Select(h => new TrackSession(null, h, h.RaceLength)));
+        return [.. sessions.OrderBy(s => s.StartTime)];
+    }
+
+    /// <summary>
+    /// A session's laps and analysis: a saved session's from what the hub kept (whether or not its recording is still
+    /// there: the hub is what it was saved as), an unsaved one's from its recording. Null when it has no laps.
+    /// </summary>
+    public async Task<RaceInput?> LoadRaceAsync(TrackSession session, CancellationToken ct = default)
+    {
+        if (session.Saved is { } saved)
+        {
+            return Restore(saved) is { } kept ? kept with { RaceLength = session.RaceLength } : null;
+        }
+
+        return await LoadRaceAsync(session.Recording!, ct) is { } race ? race with { RaceLength = session.RaceLength } : null;
+    }
+
+    /// <summary>The laps and analysis a hub session kept, analysed again as its recording was; null when it kept no laps.</summary>
+    public RaceInput? Restore(HubSession saved)
+    {
+        if (_restored.TryGetValue(saved.Id, out var kept) && kept.SavedAt == saved.SavedAt && kept.RaceLength == saved.RaceLength)
+        {
+            return kept.Race;
+        }
+
+        var data = saved.Strategy;
+        var analysis = data.Laps.Count == 0 ? null : StintAnalyzer.Analyze(data.Laps, data.Aggregates, data.LatestWear, saved.SessionType, options);
+        var race = analysis is null ? null : new RaceInput(saved.AsRecording(), data.Laps, data.Aggregates, analysis) { RaceLength = saved.RaceLength };
+        _restored[saved.Id] = (saved.SavedAt, saved.RaceLength, race);
+        return race;
+    }
+
+    /// <summary>
+    /// Every analysed session at a track in one game format, saved and unsaved (see <see cref="LoadTrackSessionsAsync"/>):
+    /// what the compound library is built from. <paramref name="include"/> picks some of them.
+    /// </summary>
+    public async Task<IReadOnlyList<RaceInput>> LoadTrackAsync(GameFormat format, int trackId, Func<TrackSession, bool>? include = null, CancellationToken ct = default)
     {
         var sessions = new List<RaceInput>();
-        foreach (var recording in await store.GetRecordingsAsync(ct))
+        foreach (var session in await LoadTrackSessionsAsync(format, trackId, ct))
         {
-            if (recording.TrackId == trackId && recording.Format == format && await LoadRaceAsync(recording, ct) is { } race)
+            if ((include is null || include(session)) && await LoadRaceAsync(session, ct) is { } race)
             {
                 sessions.Add(race);
             }
@@ -116,23 +171,44 @@ public sealed class SessionAnalysisService(ITelemetryStore store, StrategyOption
     }
 
     /// <summary>
-    /// The compound library of <paramref name="anchor"/>'s track and game format, from every recording there, with paces
+    /// The compound library of <paramref name="anchor"/>'s track and game format, from every session there, with paces
     /// in <paramref name="anchor"/>'s conditions (see <see cref="CompoundLibraryBuilder"/>).
     /// </summary>
     public async Task<CompoundLibrary> BuildCompoundLibraryAsync(RecordingInfo anchor, CancellationToken ct = default) =>
-        CompoundLibraryBuilder.Build(await LoadTrackAsync(anchor.Format, anchor.TrackId, ct), anchor.Id, options);
+        (await BuildTrackKnowledgeAsync(anchor.Format, anchor.TrackId, anchor.Id, ct: ct)).Library;
 
     /// <summary>
     /// The compound library of a track with the data guide for it: what the plans know there and what to drive next.
+    /// Built on the track hub's sessions and every recording there not saved to it.
     /// </summary>
     /// <param name="anchorRecordingId">
-    /// The session whose conditions the paces are in; null (the session being driven now has no recording, say) takes the
+    /// The session whose conditions the paces are in: a recording's id, or a hub session's as its
+    /// <see cref="HubSession.AsRecording"/> gives it. Null (the session being driven now has no recording, say) takes the
     /// session with the most laps.
     /// </param>
-    public async Task<TrackKnowledge> BuildTrackKnowledgeAsync(GameFormat format, int trackId, long? anchorRecordingId, CancellationToken ct = default)
+    /// <param name="raceLength">The race length to plan for (see <see cref="CompoundLibraryBuilder.Build"/>); 0 pools them.</param>
+    public async Task<TrackKnowledge> BuildTrackKnowledgeAsync(GameFormat format, int trackId, long? anchorRecordingId, int raceLength = 0,
+        Func<TrackSession, bool>? include = null, CancellationToken ct = default)
     {
-        var sessions = await LoadTrackAsync(format, trackId, ct);
-        var library = CompoundLibraryBuilder.Build(sessions, anchorRecordingId, options);
+        var all = await LoadTrackSessionsAsync(format, trackId, ct);
+        var sessions = new List<RaceInput>();
+        foreach (var session in all.Where(s => include is null || include(s)))
+        {
+            if (await LoadRaceAsync(session, ct) is { } race)
+            {
+                sessions.Add(race);
+            }
+        }
+
+        // A saved recording is analysed as its hub copy: anchor on that.
+        var anchor = all.FirstOrDefault(s => s.Recording?.Id == anchorRecordingId && s.Saved is not null) is { Saved: { } copy } ? -copy.Id : anchorRecordingId;
+        return BuildTrackKnowledge(sessions, anchor, raceLength);
+    }
+
+    /// <summary>The compound library and data guide of these sessions (see <see cref="BuildTrackKnowledgeAsync"/>).</summary>
+    public TrackKnowledge BuildTrackKnowledge(IReadOnlyList<RaceInput> sessions, long? anchorRecordingId, int raceLength = 0)
+    {
+        var library = CompoundLibraryBuilder.Build(sessions, anchorRecordingId, options, raceLength);
         return new TrackKnowledge(library, DataGuideBuilder.Build(library, sessions, options));
     }
 

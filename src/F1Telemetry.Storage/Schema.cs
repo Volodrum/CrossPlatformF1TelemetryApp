@@ -117,6 +117,31 @@ internal static class Schema
         [
             "ALTER TABLE laps ADD COLUMN IF NOT EXISTS neutralisation VARCHAR",
         ],
+
+        // v8: the game's session length setting per recording (race distance); the track hub, which keeps what the
+        // strategy, energy and setup views learned from a session after its recording is deleted
+        [
+            "ALTER TABLE recordings ADD COLUMN IF NOT EXISTS session_length INTEGER",
+            """
+            CREATE TABLE IF NOT EXISTS hub_sessions (
+                id BIGINT PRIMARY KEY,
+                game_format INTEGER,
+                track_id INTEGER,
+                track_name VARCHAR,
+                session_uid VARCHAR,
+                recording_id BIGINT,
+                session_type INTEGER,
+                race_length INTEGER,
+                start_time TIMESTAMP,
+                saved_at TIMESTAMP,
+                laps INTEGER,
+                best_lap_ms BIGINT,
+                strategy VARCHAR,
+                energy VARCHAR,
+                setup_runs VARCHAR
+            )
+            """,
+        ],
     ];
 
     public static int LatestVersion => Migrations.Length;

@@ -330,8 +330,7 @@ public sealed partial class EnergyViewModel : ObservableObject
         var laps = await runtime.Analysis.GetClassifiedLapsAsync(recording);
         var samples = await runtime.Store.GetEnergySamplesAsync(recording.Id);
         var model = recording.TrackId >= 0
-            ? await Task.Run(async () => ErsModelBuilder.Build(recording.Format, recording.TrackId,
-                await runtime.Store.GetModelSamplesAsync(recording.Format, recording.TrackId)))
+            ? await runtime.Hub.BuildErsModelAsync(recording.Format, recording.TrackId)
             : null;
         var energies = EnergyAnalyzer.AnalyzeLaps(samples, model?.Deploy);
         if (version != _loadVersion)

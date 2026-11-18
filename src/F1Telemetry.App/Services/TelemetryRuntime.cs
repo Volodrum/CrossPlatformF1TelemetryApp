@@ -2,6 +2,7 @@ using F1Telemetry.App.Infrastructure;
 using F1Telemetry.Core;
 using F1Telemetry.Core.Engine;
 using F1Telemetry.Core.Games;
+using F1Telemetry.Core.Hub;
 using F1Telemetry.Core.Models;
 using F1Telemetry.Core.Recording;
 using F1Telemetry.Core.Tracks;
@@ -47,6 +48,7 @@ public sealed class TelemetryRuntime : IAsyncDisposable
         Statistics = new PacketStatistics();
         Pipeline = new TelemetryPipeline(Engine, Statistics, loggers.CreateLogger<TelemetryPipeline>());
         Analysis = new SessionAnalysisService(Store, strategy);
+        Hub = new TrackHubService(Store, Analysis);
         Tracks = new TrackLibrary(paths.TrackMapsDirectory, paths.TracksDirectory);
 
         Recorder.StateChanged += OnRecordingStateChanged;
@@ -58,6 +60,9 @@ public sealed class TelemetryRuntime : IAsyncDisposable
     public PacketStatistics Statistics { get; }
     public TelemetryPipeline Pipeline { get; }
     public SessionAnalysisService Analysis { get; }
+
+    /// <summary>The track hub: what the strategy, energy and setup views learned, kept after recordings are deleted.</summary>
+    public TrackHubService Hub { get; }
     public TrackLibrary Tracks { get; }
     public SourceKind? ActiveSourceKind { get; private set; }
 
@@ -184,6 +189,7 @@ public sealed class TelemetryRuntime : IAsyncDisposable
         var captures = RecordingCaptures.Find(_paths.CapturesDirectory, recording, existing);
         await Store.DeleteRecordingAsync(recording.Id);
         Analysis.Forget(recording.Id);
+        Hub.Forget(recording.Id);
 
         var deleted = new List<string>();
         var failed = new List<string>();

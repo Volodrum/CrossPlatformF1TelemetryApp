@@ -130,37 +130,37 @@ public static class ErsModelBuilder
     /// <summary>A straight-line fit needs this many samples.</summary>
     public const int MinFitSamples = 200;
 
-    private const double MinPeakW = 5_000;
+    internal const double MinPeakW = 5_000;
 
     // A mode fades where its output drops below 60 % of its peak and stays under 75 % at every higher speed.
     private const double FadeBelow = 0.6;
     private const double FadeStaysBelow = 0.75;
 
     // The part of a lap a lap must cover to count for the along-the-lap profile.
-    private const double LapCoverage = 0.9;
+    internal const double LapCoverage = 0.9;
 
     // Per-sample counter steps above this are resets or flashbacks, not harvest (2 MW at 10 Hz).
-    private const double MaxCounterStep = 200_000;
+    internal const double MaxCounterStep = 200_000;
 
     // Longer gaps between samples are pauses or dropped packets: no rate to read from them.
-    private const double MaxSampleGap = 0.5;
+    internal const double MaxSampleGap = 0.5;
 
     /// <summary>Minimum car mass with driver, kg: 798 in the 2025 rules, 768 in 2026.</summary>
     public static double CarMass(GameFormat format) => format == GameFormat.F1_26 ? 768 : 798;
 
     // The battery has charge to give a mode all it asks above this, J.
-    private const float Charged = 300_000;
+    internal const float Charged = 300_000;
 
     // Harvest is learned only this far below a full battery and the lap's harvest limit, J: there it isn't cut short.
-    private const float HarvestHeadroom = 100_000;
+    internal const float HarvestHeadroom = 100_000;
 
     // The traction bands: speeds (km/h) and lateral loads (g) a band starts at.
-    private static readonly int[] TractionSpeeds = [0, 100, 140, 170, TractionMap.ReferenceKmh, 1000];
-    private static readonly double[] TractionLoads = [0, 1.5, double.PositiveInfinity];
+    internal static readonly int[] TractionSpeeds = [0, 100, 140, 170, TractionMap.ReferenceKmh, 1000];
+    internal static readonly double[] TractionLoads = [0, 1.5, double.PositiveInfinity];
 
     // A traction band needs this many samples, and a slope known to within this share of the reference's.
-    private const int MinTractionSamples = 300;
-    private const double MaxTractionError = 0.15;
+    internal const int MinTractionSamples = 300;
+    internal const double MaxTractionError = 0.15;
 
     public static ErsCarModel Build(GameFormat format, int trackId, IReadOnlyList<ModelSample> samples)
     {
@@ -395,7 +395,7 @@ public static class ErsModelBuilder
         return (slope, error, residuals.Count);
     }
 
-    private static int? FadeFrom(IReadOnlyList<DeployPoint> points)
+    internal static int? FadeFrom(IReadOnlyList<DeployPoint> points)
     {
         if (points.Count < 2)
         {
@@ -541,6 +541,17 @@ public static class ErsModelBuilder
                 }
             }
         }
+
+        return Solve(a);
+    }
+
+    /// <summary>
+    /// Solves an n × (n + 1) augmented system (the normal equations X'X | X'y), Gauss–Jordan with partial pivoting; null
+    /// when it is degenerate. <paramref name="a"/> is overwritten.
+    /// </summary>
+    internal static double[]? Solve(double[,] a)
+    {
+        var n = a.GetLength(0);
 
         // Gauss–Jordan with partial pivoting.
         for (var c = 0; c < n; c++)

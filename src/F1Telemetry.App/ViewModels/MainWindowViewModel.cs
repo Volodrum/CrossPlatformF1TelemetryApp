@@ -99,6 +99,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
         CompareViewModel compare,
         EnergyViewModel energy,
         SetupsViewModel setups,
+        HubViewModel trackHub,
         SettingsViewModel settings,
         ErsPlanService ersPlan,
         ILogger<MainWindowViewModel> log)
@@ -113,6 +114,8 @@ public sealed partial class MainWindowViewModel : ObservableObject
         Compare = compare;
         Energy = energy;
         Setups = setups;
+        Hub = trackHub;
+        trackHub.RecordingsDeleted += () => _ = RefreshRecordingsAsync();
         Settings = settings;
 
         Sources =
@@ -174,6 +177,9 @@ public sealed partial class MainWindowViewModel : ObservableObject
     public CompareViewModel Compare { get; }
     public EnergyViewModel Energy { get; }
     public SetupsViewModel Setups { get; }
+
+    /// <summary>The track hub (with the setup library in it).</summary>
+    public HubViewModel Hub { get; }
     public SettingsViewModel Settings { get; }
     public IReadOnlyList<SourceOption> Sources { get; }
     public ObservableCollection<RecordingItemViewModel> Recordings { get; } = [];
@@ -433,7 +439,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
         }
         else if (value == MainTab.Setups)
         {
-            _ = Setups.LoadAsync();
+            _ = Hub.LoadAsync();
         }
     }
 
