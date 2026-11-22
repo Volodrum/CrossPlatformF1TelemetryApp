@@ -73,6 +73,12 @@ public sealed partial class EnergyPlanViewModel(ILogger<EnergyPlanViewModel> log
 
     public bool HasMap => MapLine is { Count: > 1 };
 
+    /// <summary>
+    /// The track's map: where the lap a plan is built on kept no racing line (hub sessions saved before it was), the plan
+    /// is drawn on its centre line by lap distance instead. Set before <see cref="SetSessionAsync"/>.
+    /// </summary>
+    public Core.Tracks.TrackOutline? Outline { get; set; }
+
     public ObservableCollection<ZoneRowViewModel> Zones { get; } = [];
 
     public bool HasPlan => Result is not null;
@@ -215,7 +221,7 @@ public sealed partial class EnergyPlanViewModel(ILogger<EnergyPlanViewModel> log
 
         Basis = _shownBasis;
         Predicted = TimeFormat.Lap(result.PredictedSeconds(lap.ActualSeconds) * 1000);
-        MapLine = Line(lap, plan);
+        MapLine = Line(lap, plan, Outline);
         MapTitle = $"{(plan.Kind == PlanKind.Race ? "RACE" : "QUALIFYING")} PLAN · {Predicted}";
         Gain = (result.Gain >= 0 ? "−" : "+") + Math.Abs(result.Gain).ToString("0.000", CultureInfo.InvariantCulture) + " s";
         Battery = $"{EnergyText.Format(plan.StartStore, unit)} → {EnergyText.Format(plan.EndStore, unit)}";
@@ -257,10 +263,21 @@ public sealed partial class EnergyPlanViewModel(ILogger<EnergyPlanViewModel> log
         }
     }
 
-    /// <summary>The lap's racing line carrying the plan's mode and battery at every boundary; null when the lap has no line.</summary>
-    private static List<TelemetrySample>? Line(LapProfile lap, LapPlan plan)
+    /// <summary>
+    /// The lap's racing line carrying the plan's mode and battery at every boundary, or the track map's centre line when
+    /// the lap kept none; null when there is neither.
+    /// </summary>
+    private static List<TelemetrySample>? Line(LapProfile lap, LapPlan plan, Core.Tracks.TrackOutline? outline)
     {
-        if (lap.LineX is not { } x || lap.LineZ is not { } z || plan.Modes.Length == 0)
+        if (plan.Modes.Length == 0)
+        {
+            return null;
+        }
+
+        var (x, z) = lap.LineX is { } lineX && lap.LineZ is { } lineZ ? (lineX, lineZ)
+            : outline?.AlongCenterline(LapProfile.Step, lap.Segments.Count + 1) is { } centre ? centre
+            : (null, null);
+        if (x is null || z is null)
         {
             return null;
         }

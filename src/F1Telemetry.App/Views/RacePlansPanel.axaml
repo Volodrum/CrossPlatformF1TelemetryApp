@@ -39,18 +39,18 @@
                       ToolTip.Tip="New sets of each compound you have for the race. A plan runs each set once. Default: the F1 weekend allocation (8 soft, 3 medium, 2 hard); lower it to what is left after practice and qualifying.">
             <TextBlock Classes="label strong" Text="SETS" VerticalAlignment="Center" Margin="0,0,4,0" />
             <controls:CompoundBadge Compound="Soft" Width="26" Height="26" VerticalAlignment="Center" />
-            <NumericUpDown Value="{Binding SoftSets}" Minimum="0" Maximum="13" Increment="1" FormatString="0" Width="110" />
+            <NumericUpDown Value="{Binding SoftSets}" Minimum="0" Maximum="13" Increment="1" FormatString="0" Width="140" />
             <controls:CompoundBadge Compound="Medium" Width="26" Height="26" VerticalAlignment="Center" Margin="6,0,0,0" />
-            <NumericUpDown Value="{Binding MediumSets}" Minimum="0" Maximum="13" Increment="1" FormatString="0" Width="110" />
+            <NumericUpDown Value="{Binding MediumSets}" Minimum="0" Maximum="13" Increment="1" FormatString="0" Width="140" />
             <controls:CompoundBadge Compound="Hard" Width="26" Height="26" VerticalAlignment="Center" Margin="6,0,0,0" />
-            <NumericUpDown Value="{Binding HardSets}" Minimum="0" Maximum="13" Increment="1" FormatString="0" Width="110" />
+            <NumericUpDown Value="{Binding HardSets}" Minimum="0" Maximum="13" Increment="1" FormatString="0" Width="140" />
           </StackPanel>
           <!-- The set the race starts on: the plan's pick, the set fitted in the game, or a used qualifying set -->
           <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right"
                       ToolTip.Tip="The set the first stint runs on. A used set (from qualifying, say) runs like a new one as many laps old as its wear is worth, with that much less life. In a race with the game's sets, the set fitted at the start.">
             <TextBlock Classes="label strong" Text="START ON" VerticalAlignment="Center" Margin="0,0,4,0" />
             <ComboBox ItemsSource="{Binding StartChoices}" SelectedItem="{Binding SelectedStart}" MinWidth="260" VerticalAlignment="Center" />
-            <NumericUpDown Value="{Binding StartWear}" Minimum="0" Maximum="100" Increment="1" FormatString="0 '%'" Width="120"
+            <NumericUpDown Value="{Binding StartWear}" Minimum="0" Maximum="100" Increment="1" FormatString="0 '%'" Width="150"
                            IsVisible="{Binding StartWearVisible}" />
           </StackPanel>
         </StackPanel>
@@ -149,10 +149,32 @@
         </ItemsControl>
       </StackPanel>
 
-      <Border Classes="panel" Padding="0" Height="420" Background="{StaticResource RaisedBrush}"
-              IsVisible="{Binding PlanChart, Converter={x:Static ObjectConverters.IsNotNull}}">
-        <controls:TelemetryPlot Model="{Binding PlanChart}" />
-      </Border>
+      <!-- Predicted lap times: the three best plans on one chart, or each on its own (same axes, shared cursor) -->
+      <StackPanel Spacing="8" IsVisible="{Binding HasPlans}" controls:TelemetryPlot.Sync="{Binding ChartSync}">
+        <StackPanel Orientation="Horizontal" Spacing="12" HorizontalAlignment="Right"
+                    ToolTip.Tip="Draw each plan on its own chart. They share the lap and time axes, so the charts still compare line for line; the cursor reads the same lap on all of them.">
+          <ToggleSwitch IsChecked="{Binding SplitChart}" OnContent="ONE CHART PER PLAN" OffContent="ONE CHART PER PLAN" VerticalAlignment="Center" />
+        </StackPanel>
+        <Border Classes="panel" Padding="0" Height="420" Background="{StaticResource RaisedBrush}"
+                IsVisible="{Binding PlanChart, Converter={x:Static ObjectConverters.IsNotNull}}">
+          <controls:TelemetryPlot Model="{Binding PlanChart}" />
+        </Border>
+        <TextBlock Classes="label strong" Text="PREDICTED LAP TIMES · FUEL LOAD INCLUDED, STOPS NOT" IsVisible="{Binding SplitChart}" Margin="0,4,0,0" />
+        <ItemsControl ItemsSource="{Binding PlanCharts}" IsVisible="{Binding SplitChart}">
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate>
+              <StackPanel Spacing="8" />
+            </ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:ChartModel">
+              <Border Classes="panel" Padding="0" Height="270" Background="{StaticResource RaisedBrush}">
+                <controls:TelemetryPlot Model="{Binding}" />
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </StackPanel>
     </StackPanel>
   </Border>
 </UserControl>

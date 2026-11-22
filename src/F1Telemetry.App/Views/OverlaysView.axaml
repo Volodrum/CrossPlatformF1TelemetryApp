@@ -8,7 +8,7 @@
              x:Class="F1Telemetry.App.Views.OverlaysView"
              x:DataType="vm:SettingsViewModel">
   <!-- The HUD overlays drawn over the game: one line each (show, size, opacity, place), what each does behind its ⓘ. -->
-  <DockPanel Margin="0,16,0,0" MaxWidth="1100" HorizontalAlignment="Left">
+  <DockPanel Margin="0,16,0,0">
     <controls:PageHeader DockPanel.Dock="Top" Eyebrow="HUD OVERLAYS · DRAWN OVER THE GAME" Title="Overlays"
                          Help="Each overlay is a click-through window over the game. SHOW: Always, Session (only while recording) or Never. The OVERLAYS switch in the toolbar (or its hotkey) hides or shows them all. Turn on PREVIEW to see them with sample data and drag them into place; leaving this page ends the preview. Click a size or opacity value to put it back to 100 %." />
 

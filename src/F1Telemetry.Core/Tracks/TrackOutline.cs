@@ -37,6 +37,46 @@ public sealed class TrackOutline
     public double MaxX { get; }
     public double MinZ { get; }
     public double MaxZ { get; }
+
+    /// <summary>
+    /// Points on the centre line every <paramref name="step"/> m from the start line, <paramref name="count"/> of them:
+    /// a stand-in racing line by lap distance for laps kept without their own. The shipped maps start at the start line
+    /// and run in the lap's direction, and the game measures lap distance along the centre line, so a lap distance lands
+    /// within a few metres of where the car was (checked against recorded laps at Bahrain, Singapore, Austria, Imola).
+    /// Null when the outline has too few points.
+    /// </summary>
+    public (double[] X, double[] Z)? AlongCenterline(double step, int count)
+    {
+        var line = Centerline;
+        if (line.Count < 3 || count < 1)
+        {
+            return null;
+        }
+
+        var x = new double[count];
+        var z = new double[count];
+        var (j, travelled) = (0, 0.0); // travelled: distance at line[j]
+        for (var i = 0; i < count; i++)
+        {
+            var d = i * step;
+            while (true)
+            {
+                var (a, b) = (line[j % line.Count], line[(j + 1) % line.Count]);
+                var length = Math.Sqrt((b.X - a.X) * (b.X - a.X) + (b.Z - a.Z) * (b.Z - a.Z));
+                if (travelled + length >= d || j >= 2 * line.Count)
+                {
+                    var f = length > 0 ? Math.Clamp((d - travelled) / length, 0, 1) : 0;
+                    (x[i], z[i]) = (a.X + f * (b.X - a.X), a.Z + f * (b.Z - a.Z));
+                    break;
+                }
+
+                travelled += length;
+                j++;
+            }
+        }
+
+        return (x, z);
+    }
 }
 
 /// <summary>

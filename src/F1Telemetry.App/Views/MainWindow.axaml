@@ -263,7 +263,7 @@
 
     <!-- Main area: the rail's section, or the settings page (opened from the toolbar) in its place -->
     <Panel>
-      <DockPanel Margin="20,12,20,16" MaxWidth="1100" HorizontalAlignment="Left" IsVisible="{Binding IsSettingsOpen}">
+      <DockPanel Margin="20,12,20,16" IsVisible="{Binding IsSettingsOpen}">
         <controls:PageHeader DockPanel.Dock="Top" Eyebrow="APP · CONTROLS, CONNECTION AND DATA" Title="Settings" Margin="0,4,0,0"
                              Help="Overlays are set up on their own page: OVERLAYS in the rail. The game is picked at the top of the rail.">
           <Button Theme="{StaticResource SecondaryButton}" Content="DONE" Command="{Binding CloseSettingsCommand}" MinWidth="120" ToolTip.Tip="Back (Esc)" />

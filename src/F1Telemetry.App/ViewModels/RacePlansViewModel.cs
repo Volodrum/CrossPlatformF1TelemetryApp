@@ -319,6 +319,8 @@ public sealed partial class RacePlansViewModel(TelemetryRuntime runtime, Setting
         GameSets = "";
         StartChoices.Clear();
         PlanChart = null;
+        PlanCharts.Clear();
+        _shownPlans = null;
         Guide.Clear();
         PracticeGuide.Clear();
         RaceGuide.Clear();
@@ -585,34 +587,107 @@ public sealed partial class RacePlansViewModel(TelemetryRuntime runtime, Setting
         }
 
         HasPlans = Plans.Count > 0;
-        PlanChart = HasPlans ? BuildChart(result) : null;
+        _shownPlans = result;
+        BuildCharts();
     }
 
-    /// <summary>Predicted lap times of the three best plans, with their stints as timeline rows under the plot.</summary>
-    private static ChartModel BuildChart(StrategyPlans result)
+    private const string ChartTitle = "Predicted lap times · fuel load included, stops not";
+
+    /// <summary>The plans the charts show, kept to draw them again when the layout changes.</summary>
+    private StrategyPlans? _shownPlans;
+
+    /// <summary>The cursor (and zoom) shared by the plan charts, so a lap reads across all of them.</summary>
+    public ChartSync ChartSync { get; } = new();
+
+    /// <summary>One chart per plan, on the same lap and time axes, instead of the three plans on one chart; saved in the settings.</summary>
+    [ObservableProperty] public partial bool SplitChart { get; set; } = settings.Current.RacePlanChartSplit;
+
+    /// <summary>The plans' charts when <see cref="SplitChart"/>: one per plan, best first.</summary>
+    public ObservableCollection<ChartModel> PlanCharts { get; } = [];
+
+    partial void OnSplitChartChanged(bool value)
     {
+        settings.Current.RacePlanChartSplit = value;
+        settings.Save();
+        BuildCharts();
+    }
+
+    /// <summary>The three best plans on one chart, or (<see cref="SplitChart"/>) each on its own.</summary>
+    private void BuildCharts()
+    {
+        PlanCharts.Clear();
+        ChartSync.Reset();
+        if (!HasPlans || _shownPlans is not { } result)
+        {
+            PlanChart = null;
+            return;
+        }
+
         var top = result.Plans.Take(PlanHex.Length).ToList();
-        var series = new List<ChartSeries>();
-        var timeline = new List<ChartTimelineRow>();
+        if (!SplitChart)
+        {
+            PlanChart = new ChartModel(ChartTitle, [.. top.Select(PlanSeries)], XLabel: "Lap", IntegerX: true,
+                Timeline: [.. top.Select(PlanRow)], YIsTime: true);
+            return;
+        }
+
+        // One value axis for them all, so the charts compare at a glance.
+        var times = top.SelectMany(p => PlanSeries(p, 0).Y).ToList();
+        var pad = Math.Max(0.2, (times.Max() - times.Min()) * 0.06);
+        var range = (times.Min() - pad, times.Max() + pad);
+        PlanChart = null;
         for (var i = 0; i < top.Count; i++)
         {
             var plan = top[i];
-            var stints = plan.Stints;
-            for (var s = 0; s < stints.Count; s++)
+            var gap = plan.GapSeconds < 0.05 ? "" : string.Create(CultureInfo.InvariantCulture, $" · +{plan.GapSeconds:0.0} s");
+            PlanCharts.Add(new ChartModel($"#{i + 1}{gap}", [PlanSeries(plan, i)], XLabel: "Lap", IntegerX: true,
+                Timeline: [PlanRow(plan, i)], YIsTime: true, YRange: range, TimelineRow: 0.32));
+        }
+    }
+
+    /// <summary>
+    /// A plan's predicted lap times as one line: each stint runs on half a lap to the stop, where the line steps to the
+    /// next stint's pace, so the stop reads as a step on the PIT line rather than a gap or a slope across it.
+    /// </summary>
+    private static ChartSeries PlanSeries(RacePlan plan, int index)
+    {
+        var (x, y) = (new List<double>(), new List<double>());
+        var stints = plan.Stints;
+        for (var s = 0; s < stints.Count; s++)
+        {
+            var (first, last) = (stints[s].FirstLap, stints[s].LastLap);
+            double At(int lap) => plan.LapSeconds[lap - 1];
+            // Half a lap of the stint's own trend each side of a stop (flat for a one-lap stint).
+            var slope = last > first ? (At(last) - At(first)) / (last - first) : 0;
+            if (s > 0)
             {
-                // One line per stint, so the stop shows as a step rather than a slope across the pit laps.
-                var laps = Enumerable.Range(stints[s].FirstLap, stints[s].Laps).ToArray();
-                series.Add(new ChartSeries($"#{i + 1} {string.Join("-", stints.Select(st => Palette.CompoundLetter(st.Compound)))}", PlanHex[i],
-                    [.. laps.Select(l => (double)l)], [.. laps.Select(l => plan.LapSeconds[l - 1])],
-                    Line: i == 0 ? ChartLine.Solid : ChartLine.Dashed, LineWidth: i == 0 ? 3 : 2, InLegend: s == 0));
+                x.Add(first - 0.5);
+                y.Add(At(first) - slope / 2);
             }
 
-            var segments = stints.Select(st => new ChartTimelineSegment(st.FirstLap - 0.5 + 0.08, st.LastLap + 0.5 - 0.08,
-                Palette.CompoundLetter(st.Compound), $"{st.Compound.ToUpperInvariant()} · {st.Laps} LAPS", "", Hex(Palette.Compound(st.Compound)))).ToList();
-            timeline.Add(new ChartTimelineRow($"#{i + 1}", PlanHex[i], segments, [.. plan.Stops.Select(p => p.InLap + 0.5)]));
+            for (var lap = first; lap <= last; lap++)
+            {
+                x.Add(lap);
+                y.Add(At(lap));
+            }
+
+            if (s < stints.Count - 1)
+            {
+                x.Add(last + 0.5);
+                y.Add(At(last) + slope / 2);
+            }
         }
 
-        return new ChartModel("Predicted lap times · fuel load included, stops not", series, XLabel: "Lap", IntegerX: true, Timeline: timeline, YIsTime: true);
+        return new ChartSeries($"#{index + 1} {string.Join("-", stints.Select(st => Palette.CompoundLetter(st.Compound)))}", PlanHex[index],
+            [.. x], [.. y], Line: index == 0 ? ChartLine.Solid : ChartLine.Dashed, LineWidth: index == 0 ? 3 : 2);
+    }
+
+    /// <summary>A plan's stints as a timeline row under the plot, a PIT chip at each stop.</summary>
+    private static ChartTimelineRow PlanRow(RacePlan plan, int index)
+    {
+        var segments = plan.Stints.Select(st => new ChartTimelineSegment(st.FirstLap - 0.5 + 0.08, st.LastLap + 0.5 - 0.08,
+            Palette.CompoundLetter(st.Compound), $"{st.Compound.ToUpperInvariant()} · {st.Laps} LAPS", "", Hex(Palette.Compound(st.Compound)))).ToList();
+        return new ChartTimelineRow($"#{index + 1}", PlanHex[index], segments, [.. plan.Stops.Select(p => p.InLap + 0.5)]);
     }
 
     private static string Hex(IBrush brush) => brush is ISolidColorBrush solid ? $"#{solid.Color.R:X2}{solid.Color.G:X2}{solid.Color.B:X2}" : "#F4F6F9";

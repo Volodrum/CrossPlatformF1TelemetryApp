@@ -11,7 +11,7 @@
              Focusable="True">
   <DockPanel Margin="0,16,0,0">
     <ScrollViewer>
-      <StackPanel Spacing="16" MaxWidth="1200" HorizontalAlignment="Left">
+      <StackPanel Spacing="16">
         <!-- Language: each language in its own name; applied when the app starts -->
         <Border Classes="panel" Padding="18">
           <StackPanel Spacing="10">

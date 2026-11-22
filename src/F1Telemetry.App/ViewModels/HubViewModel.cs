@@ -404,6 +404,7 @@ public sealed partial class HubViewModel : ObservableObject
                 case HubPage.Energy:
                     EnergyPlan.Clear(loading: true);
                     Outline = _runtime.Tracks.ForTrackId(track.TrackId);
+                    EnergyPlan.Outline = Outline;
                     var model = await _runtime.Hub.BuildErsModelAsync(track.Format, track.TrackId);
                     var (inputs, unavailable) = await _runtime.Hub.PlanInputsAsync(track.Format, track.TrackId, model);
                     EnergyNote = $"Car model from {Count(model.PowerLaps, "lap")} with engine power at this track (the hub's and every unsaved recording's).";

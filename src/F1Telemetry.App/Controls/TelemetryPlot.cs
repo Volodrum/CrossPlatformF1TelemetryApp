@@ -168,7 +168,7 @@ public sealed class TelemetryPlot : ContentControl
         _readout.IsVisible = visible;
         if (visible)
         {
-            _cursor.X = x!.Value;
+            _cursor.X = _model.IntegerX ? Math.Round(x!.Value) : x!.Value;
             _cursor.LabelText = _model.XIsTime ? LapAxis.FormatTime(x.Value) : x.Value.ToString(_model.IntegerX ? "0" : "0.#");
             _readout.Text = Readout(_model, x.Value);
             _readout.IsVisible = _readout.Text.Length > 0;
@@ -181,9 +181,16 @@ public sealed class TelemetryPlot : ContentControl
     private static string Readout(ChartModel model, double x)
     {
         var lines = new List<string>();
+        // On a lap axis only whole laps are values (a line may carry joining points between them, at a pit stop say).
+        x = model.IntegerX ? Math.Round(x) : x;
         foreach (var series in model.Series.Where(s => s.InLegend && s.X.Length > 0))
         {
             var i = Array.BinarySearch(series.X, x);
+            if (i < 0 && model.IntegerX)
+            {
+                continue;
+            }
+
             if (i < 0)
             {
                 i = ~i;
@@ -228,6 +235,16 @@ public sealed class TelemetryPlot : ContentControl
         // 50 px per wheel notch, the same step ScrollViewer uses; Offset is clamped by the ScrollViewer.
         scroller.Offset = scroller.Offset.WithY(scroller.Offset.Y - e.Delta.Y * 50);
         e.Handled = true;
+    }
+
+    /// <summary>A timeline's text and badge room are sized in pixels: lay it out again once the chart's real width is known.</summary>
+    protected override void OnSizeChanged(SizeChangedEventArgs e)
+    {
+        base.OnSizeChanged(e);
+        if (_model?.Timeline is { Count: > 0 } && Math.Abs(e.NewSize.Width - e.PreviousSize.Width) > 30)
+        {
+            Rebuild(_model);
+        }
     }
 
     public ChartModel? Model
@@ -328,7 +345,8 @@ public sealed class TelemetryPlot : ContentControl
         // Mouse drag / wheel only pans and zooms along the lap-distance axis; the value axis stays fixed,
         // and the view can't leave the recorded distance range.
         var limits = plot.Axes.GetLimits();
-        var (bottom, top) = model.InvertY ? (limits.Top, limits.Bottom) : (limits.Bottom, limits.Top);
+        var (bottom, top) = model.YRange is { } fixedY ? (fixedY.Min, fixedY.Max)
+            : model.InvertY ? (limits.Top, limits.Bottom) : (limits.Bottom, limits.Top);
         if (!model.InvertY && model.Series.Any(s => s.EndLabel.Length > 0))
         {
             // Labels sit above or below a line's last point: keep them inside the plot.
@@ -346,7 +364,11 @@ public sealed class TelemetryPlot : ContentControl
             right = Math.Max(right, segments.Max(s => s.X1));
             if (timeline.Max(r => r.Label.Length) is > 0 and var chars)
             {
-                left -= (right - left) * (0.015 + 0.011 * chars); // room for the badges at the start of each row
+                // Room for the badges at the start of each row, in pixels (a share of the axis clips them on a narrow
+                // chart): widen the axis by r px of a w px wide data area, r / (w − r) of its span.
+                var room = 16 + 10.0 * chars;
+                var width = Math.Max(400, (Bounds.Width > 0 ? Bounds.Width : 1300) - (_sync is null ? 200 : 224));
+                left -= (right - left) * room / (width - room);
             }
         }
 
@@ -357,7 +379,9 @@ public sealed class TelemetryPlot : ContentControl
 
         if (segments.Count > 0)
         {
-            bottom = AddTimeline(plot, timeline, bottom, top, left, right);
+            // No x ticks under the badges, left of the first stint.
+            plot.Axes.Bottom.TickGenerator = new FromTickGenerator(plot.Axes.Bottom.TickGenerator, segments.Min(s => s.X0));
+            bottom = AddTimeline(plot, timeline, bottom, top, left, right, model.TimelineRow);
         }
 
         // Synced charts share one data area (the legend and tick labels vary in width), so their cursor lines and
@@ -412,9 +436,9 @@ public sealed class TelemetryPlot : ContentControl
     /// and a dotted line from each chip up through the data so the stop can be read against the laps.
     /// Value ticks stop at the data. Returns the new bottom of the value axis.
     /// </summary>
-    private double AddTimeline(Plot plot, IReadOnlyList<ChartTimelineRow> rows, double dataBottom, double dataTop, double left, double right)
+    private double AddTimeline(Plot plot, IReadOnlyList<ChartTimelineRow> rows, double dataBottom, double dataTop, double left, double right, double rowShare)
     {
-        var rowHeight = (dataTop - dataBottom) * 0.17;
+        var rowHeight = (dataTop - dataBottom) * rowShare;
         var divider = dataBottom - rowHeight * 0.3;
         var bottom = divider - rowHeight * rows.Count - rowHeight * 0.1;
         if (plot.Axes.Left.TickGenerator is TimeTickGenerator ticks)

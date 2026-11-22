@@ -356,6 +356,7 @@ public sealed partial class EnergyViewModel : ObservableObject
         Header = $"{recording.TrackName} · {SessionTypes.Name(recording.SessionType)} · {energies.Count} laps";
         TrackName = recording.TrackName.ToUpperInvariant();
         Outline = runtime.Tracks.ForTrackId(recording.TrackId);
+        Plan.Outline = Outline;
         if (energies.Count == 0 || samples.All(s => s.ErsStoreEnergy == 0 && s.ErsDeployed == 0))
         {
             Clear("No battery data in this recording.");

@@ -267,6 +267,20 @@ Capture(window, "11-strategy-two-stops");
 Pump(minMs: 1500);
 vm.Session.StrategyPage = StrategyPage.Plans;
 Capture(window, "18-race-plans");
+if (window.GetVisualDescendants().OfType<StrategyView>().FirstOrDefault()?.GetVisualDescendants().OfType<ScrollViewer>()
+        .FirstOrDefault(s => s.IsEffectivelyVisible) is { } plansScroll)
+{
+    // The plans' lap-time chart at the bottom: the three plans on one chart, then one chart each.
+    plansScroll.Offset = plansScroll.Offset.WithY(10_000);
+    Capture(window, "18b-race-plans-chart");
+    vm.Session.Plans.SplitChart = true;
+    Pump(minMs: 500);
+    plansScroll.Offset = plansScroll.Offset.WithY(10_000);
+    Capture(window, "18c-race-plans-split");
+    vm.Session.Plans.SplitChart = false;
+    plansScroll.Offset = default;
+}
+
 vm.Session.StrategyPage = StrategyPage.Guide;
 Capture(window, "20-data-guide");
 if (window.GetVisualDescendants().OfType<StrategyView>().FirstOrDefault()?.GetVisualDescendants().OfType<ScrollViewer>()

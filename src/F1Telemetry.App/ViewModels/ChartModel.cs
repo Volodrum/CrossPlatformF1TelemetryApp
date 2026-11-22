@@ -49,6 +49,8 @@ public sealed record ChartTimelineSegment(double X0, double X1, string Badge, st
 /// <param name="XIsTime">X values are seconds; ticks are formatted as m:ss.</param>
 /// <param name="ZeroLine">Draws a dashed line at y = 0 (delta charts).</param>
 /// <param name="YIsTime">Y values are seconds; ticks are formatted as m:ss.t (lap times).</param>
+/// <param name="YRange">The value axis, fixed (charts stacked to compare share one); null fits it to the data.</param>
+/// <param name="TimelineRow">Height of a timeline row, as a share of the value axis's span.</param>
 public sealed record ChartModel(
     string Title,
     IReadOnlyList<ChartSeries> Series,
@@ -61,7 +63,9 @@ public sealed record ChartModel(
     IReadOnlyList<ChartMarker>? Markers = null,
     bool IntegerX = false,
     IReadOnlyList<ChartTimelineRow>? Timeline = null,
-    bool YIsTime = false);
+    bool YIsTime = false,
+    (double Min, double Max)? YRange = null,
+    double TimelineRow = 0.17);
 
 public sealed record SeriesSpec(string Name, string Color, Func<TelemetrySample, double> Value, bool Step = false);
 
