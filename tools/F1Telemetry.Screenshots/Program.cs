@@ -341,6 +341,11 @@ if (window.GetVisualDescendants().OfType<HubView>().FirstOrDefault()?.GetVisualD
     hubScroll.Offset = default;
 }
 
+// The hub's data guide: both guides of the track, one score, and what is left to drive by session.
+vm.Hub.Page = HubPage.Guide;
+Pump(minMs: 4000);
+Capture(window, "28c-hub-data-guide");
+
 // Setups: the three Monza setups the races ran (a new front wing at each stop), the newest compared with the one before.
 vm.Hub.Page = HubPage.Setups;
 Pump(vm.Setups.LoadAsync(), 800);

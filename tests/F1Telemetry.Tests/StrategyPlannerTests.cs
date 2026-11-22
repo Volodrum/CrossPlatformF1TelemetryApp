@@ -103,7 +103,8 @@ public sealed class StrategyPlannerTests
         Assert.Equal(GuideState.Missing, Item("Soft long run").State);
         Assert.Equal(GuideState.Done, Item("Medium long run").State);
         Assert.Equal("8 clean laps, longest run 8", Item("Medium long run").Have);
-        Assert.Equal(GuideState.Missing, Item("Fuel effect").State);
+        Assert.Equal(GuideState.Partial, Item("Fuel effect").State); // one run of the two it needs
+        Assert.Equal("1 / 2 RUNS", Item("Fuel effect").Count);
         Assert.Equal(GuideState.Missing, Item("Tyre cliff").State);
         Assert.Equal(GuideState.Missing, Item("Pit stop loss").State);
         Assert.DoesNotContain(guide.Items, i => i.Title == "Compounds in the same conditions"); // one compound: nothing to compare

@@ -81,7 +81,7 @@ public static class StintAnalyzer
         }
 
         var aggregateByLap = aggregates.ToDictionary(a => a.LapNumber);
-        var segments = Segment(classifiedLaps).ToList();
+        var segments = Segment(classifiedLaps, aggregateByLap).Select(OneCompound).ToList();
         var paceLaps = segments.Select((laps, idx) => PaceModel.CleanLaps(idx + 1, laps, aggregateByLap, sessionType, options.TyreCliffWearPercent)).ToList();
         var allPaceLaps = paceLaps.SelectMany(l => l).ToList();
         var fuelEffect = PaceModel.Resolve(allPaceLaps, options.FuelEffectSecondsPerKg);
@@ -106,12 +106,32 @@ public static class StintAnalyzer
         };
     }
 
-    private static IEnumerable<List<LapRecord>> Segment(IReadOnlyList<LapRecord> laps)
+    /// <summary>Fuel this much above what the previous lap ended on was put in: the car went back to the garage.</summary>
+    public const double RefuelKg = 1.0;
+
+    /// <summary>Fuel this much below what the previous lap ended on (more than two laps' burn) was taken out in the garage.</summary>
+    public const double DefuelKg = 3.0;
+
+    /// <summary>Wear (%) a set may move between the end of one lap and the start of the next and still be the same set.</summary>
+    public const double SameSetWear = 0.5;
+
+    /// <summary>
+    /// Splits the laps into runs: one set of tyres on one fill of fuel. The game's stint index decides, except where the
+    /// fuel and wear say otherwise:
+    /// <list type="bullet">
+    /// <item>Fuel going up between two laps (or down by more than the burn) is the garage changing it (practice,
+    /// qualifying): a new run, even on the same set, which the game can keep in one stint.</item>
+    /// <item>Fuel and every tyre's wear carrying straight on from a worn set is the same run, however the game numbers it.
+    /// In practice the game ends a stint a lap early (the lap before the in-lap), which would put the last lap on a
+    /// set onto the next set's compound.</item>
+    /// </list>
+    /// </summary>
+    internal static IEnumerable<List<LapRecord>> Segment(IReadOnlyList<LapRecord> laps, IReadOnlyDictionary<int, LapAggregate> aggregates)
     {
         var current = new List<LapRecord>();
         foreach (var lap in laps)
         {
-            if (current.Count > 0 && IsNewStint(current[^1], lap))
+            if (current.Count > 0 && IsNewStint(current[^1], lap, aggregates))
             {
                 yield return current;
                 current = [];
@@ -126,10 +146,43 @@ public static class StintAnalyzer
         }
     }
 
-    private static bool IsNewStint(LapRecord previous, LapRecord lap) =>
-        previous.StintIndex >= 0 && lap.StintIndex >= 0
+    private static bool IsNewStint(LapRecord previous, LapRecord lap, IReadOnlyDictionary<int, LapAggregate> aggregates)
+    {
+        var gameSays = previous.StintIndex >= 0 && lap.StintIndex >= 0
             ? previous.StintIndex != lap.StintIndex
             : previous.Compound != lap.Compound;
+        if (!aggregates.TryGetValue(previous.LapNumber, out var before) || !aggregates.TryGetValue(lap.LapNumber, out var after)
+            || before.MaxFuel <= 0 || after.MaxFuel <= 0)
+        {
+            return gameSays;
+        }
+
+        // Fuel put in, or taken out (a low-fuel run after a heavy one): only the garage changes it.
+        if (after.MaxFuel > before.MinFuel + RefuelKg || after.MaxFuel < before.MinFuel - DefuelKg)
+        {
+            return true;
+        }
+
+        return gameSays && !SameSet(before, after);
+    }
+
+    /// <summary>Every tyre of <paramref name="after"/> starts where <paramref name="before"/> left it, on a set already worn.</summary>
+    private static bool SameSet(LapAggregate before, LapAggregate after)
+    {
+        (double End, double Start)[] tyres =
+        [
+            (before.MaxWearFl, after.MinWearFl), (before.MaxWearFr, after.MinWearFr),
+            (before.MaxWearRl, after.MinWearRl), (before.MaxWearRr, after.MinWearRr),
+        ];
+        return tyres.Max(t => t.End) > 2 * SameSetWear && tyres.All(t => Math.Abs(t.Start - t.End) <= SameSetWear);
+    }
+
+    /// <summary>A run is on one compound: a lap the game put on another (see <see cref="Segment"/>) takes the run's.</summary>
+    private static List<LapRecord> OneCompound(List<LapRecord> run)
+    {
+        var compound = run.GroupBy(l => l.Compound).OrderByDescending(g => g.Count()).ThenBy(g => run.FindIndex(l => l.Compound == g.Key)).First().Key;
+        return run.All(l => l.Compound == compound) ? run : [.. run.Select(l => l with { Compound = compound })];
+    }
 
     private static StintAnalysis AnalyzeStint(int number, List<LapRecord> laps, List<PaceLap> paceLaps, double fuelEffect,
         Dictionary<int, LapAggregate> aggregates, StrategyOptions options)

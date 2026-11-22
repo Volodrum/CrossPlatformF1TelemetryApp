@@ -5,12 +5,42 @@ namespace F1Telemetry.Core.Energy;
 /// <summary>Which laps of a session the energy analysis is built on.</summary>
 public static class SessionLaps
 {
+    /// <summary>How far before the line a push lap's run-up is looked at, s: the out-lap's last straight and corners.</summary>
+    public const double RunUpSeconds = 30;
+
+    /// <summary>
+    /// The fullest the battery was in the <see cref="RunUpSeconds"/> before <paramref name="lap"/> crossed the line, J:
+    /// from the out-lap (lap 0 outside races) or the lap before. 0 when nothing was recorded there.
+    /// <para>A push lap's own first sample is not enough: the battery filled on the out-lap is often spent in part on
+    /// the run to the line, Overtake on the last straight, so the lap starts short of full although it was full.</para>
+    /// </summary>
+    public static async Task<double> RunUpStoreAsync(Recording.ITelemetryStore store, long recordingId, IReadOnlyList<TelemetrySample> lap,
+        CancellationToken ct = default)
+    {
+        if (lap.Count == 0)
+        {
+            return 0;
+        }
+
+        var start = lap.Min(s => s.SessionTime);
+        var lapNumber = lap[0].LapNumber;
+        var before = (await store.GetLapSamplesAsync(recordingId, 0, ct)).AsEnumerable();
+        if (lapNumber > 1)
+        {
+            before = before.Concat(await store.GetLapSamplesAsync(recordingId, lapNumber - 1, ct));
+        }
+
+        return before.Where(s => s.SessionTime < start && s.SessionTime >= start - RunUpSeconds)
+            .Select(s => (double)s.ErsStoreEnergy).DefaultIfEmpty(0).Max();
+    }
+
     /// <summary>A lap slower than the session's median by more than this share is not a typical lap (traffic, a mistake, lap 1).</summary>
     public const double Spread = 0.03;
 
     /// <summary>
     /// The session's typical laps, the ones a race plan should hold for: timed, not a pit, safety car or virtual safety car
-    /// lap, and within <see cref="Spread"/> of the median lap time. In lap order.
+    /// lap, and within <see cref="Spread"/> of the median lap time either way: much faster is a low-fuel push lap off a
+    /// battery filled on the out-lap, not race pace. In lap order.
     /// </summary>
     public static IReadOnlyList<LapRecord> Representative(IEnumerable<LapRecord> laps)
     {
@@ -22,7 +52,7 @@ public static class SessionLaps
 
         var times = timed.Select(l => (double)l.LapTimeMs).Order().ToList();
         var median = times.Count % 2 == 1 ? times[times.Count / 2] : (times[times.Count / 2 - 1] + times[times.Count / 2]) / 2;
-        return [.. timed.Where(l => l.LapTimeMs <= median * (1 + Spread)).OrderBy(l => l.LapNumber)];
+        return [.. timed.Where(l => l.LapTimeMs <= median * (1 + Spread) && l.LapTimeMs >= median * (1 - Spread)).OrderBy(l => l.LapNumber)];
     }
 
     /// <summary>The session's fastest timed regular lap: the reference for a qualifying lap. Null when none is timed.</summary>

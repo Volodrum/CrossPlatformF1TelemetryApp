@@ -43,6 +43,7 @@
   "{0} of {1} state fitted": "підігнано {0} з {1}",
   "{0} of {1} states fitted": "підігнано {0} з {1}",
   "the fastest lap started with {0} %": "найшвидше коло почалося з {0} %",
+  "the battery was {0} % on the run to the fastest lap, {1} % at the line": "на розгоні до найшвидшого кола батарея мала {0} %, на лінії {1} %",
   "no timed lap with power data": "немає кола з часом і даними потужності",
   "the typical lap replayed {0} s slow": "типове коло відтворено на {0} с повільніше",
   "the typical lap replayed {0} s fast": "типове коло відтворено на {0} с швидше",

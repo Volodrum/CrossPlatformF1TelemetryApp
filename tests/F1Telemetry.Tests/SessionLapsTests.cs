@@ -26,6 +26,9 @@ public class SessionLapsTests
         Assert.Equal([2, 3, 4, 6, 8], typical.Select(l => l.LapNumber));
         Assert.Equal(4, SessionLaps.Fastest(laps)!.LapNumber);
         Assert.Empty(SessionLaps.Representative([Lap(1, 0), Lap(2, 90_000, LapType.Pit)]));
+
+        // A low-fuel push lap off a full battery is as far from race pace as a slow lap.
+        Assert.Equal([2, 3, 4, 6, 8], SessionLaps.Representative([.. laps, Lap(10, 88_500)]).Select(l => l.LapNumber));
         Assert.Null(SessionLaps.Fastest([Lap(1, 0)]));
     }
 

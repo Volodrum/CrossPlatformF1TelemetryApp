@@ -28,6 +28,7 @@ public sealed class SessionEngine
     // Laps on which a new tyre stint began, seen live from the pit-stop counter (see TrackPitStops).
     private readonly List<int> _observedStintStarts = [];
     private int? _pitStops;
+    private bool _inGarage;
 
     // Pit-lane visits keyed by the lap the car entered the lane on (see TrackPitLane).
     private readonly Dictionary<int, (uint Lane, uint Stationary)> _pitVisits = [];
@@ -231,6 +232,7 @@ public sealed class SessionEngine
         _positionByLap.Clear();
         _observedStintStarts.Clear();
         _pitStops = null;
+        _inGarage = false;
         _pitVisits.Clear();
         _pitEntryLap = null;
         _lapTimesFromLapData.Clear();
@@ -284,6 +286,7 @@ public sealed class SessionEngine
             FormulaName = Formulas.Name(data.Formula),
             TotalLaps = data.TotalLaps,
             SessionLength = data.SessionLength,
+            WeekendId = data.WeekendLinkId,
             PlayerCarIndex = packet.Header.PlayerCarIndex,
         };
 
@@ -425,6 +428,16 @@ public sealed class SessionEngine
     /// </summary>
     private void TrackPitStops(int lapNum, LapData lap)
     {
+        // Outside races a run ends in the garage, and the pit-stop counter doesn't move. The lap the car is on when it
+        // gets there is abandoned (driving that belongs to no lap: see LapRestarts) and numbered again when the next run
+        // starts its first timed lap, so that lap starts the new stint. The game ends the stint a lap early here too.
+        var inGarage = lap.DriverStatus == DriverStatus.InGarage;
+        if (inGarage && !_inGarage && !SessionTypes.IsRace(Session?.SessionType ?? 0) && !_observedStintStarts.Contains(lapNum))
+        {
+            _observedStintStarts.Add(lapNum);
+        }
+
+        _inGarage = inGarage;
         if (_pitStops is { } previous && lap.NumPitStops > previous)
         {
             var length = _sessionData?.TrackLength ?? 0;
@@ -575,16 +588,21 @@ public sealed class SessionEngine
     private int[] StintEndLaps(SessionHistoryPacket history)
     {
         var ends = new int[history.Stints.Length];
+        var previousEnd = 0;
         for (var i = 0; i < ends.Length; i++)
         {
             int end = history.Stints[i].EndLap;
             if (end != TyreStint.Current)
             {
-                var inLaps = _observedStintStarts.Select(start => start - 1).Where(inLap => inLap >= end - 1 && inLap <= end + 2);
+                // Stints are in order: a stop already matched to an earlier stint can't end this one too.
+                var inLaps = _observedStintStarts.Select(start => start - 1)
+                    .Where(inLap => inLap > previousEnd && inLap >= end - 1 && inLap <= end + 2);
                 if (inLaps.OrderBy(inLap => Math.Abs(inLap - end)).FirstOrDefault() is > 0 and var observed)
                 {
                     end = observed;
                 }
+
+                previousEnd = end;
             }
 
             ends[i] = end;

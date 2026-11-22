@@ -88,6 +88,75 @@ public sealed class StrategyTests : IAsyncLifetime
         Assert.Equal(0.050, analysis.Stints[1].FuelCorrectedDegradationPerLap, 3);
     }
 
+    /// <summary>
+    /// A practice laid out like a real F1 25 one: runs back to the garage, each lap given here as (compound, game stint
+    /// index, fuel at the start of the lap, wear at its start, lap time).
+    /// </summary>
+    private static (List<LapRecord> Laps, List<LapAggregate> Aggregates) Practice((string Compound, int Stint, double Fuel, double Wear, double Seconds)[] laps)
+    {
+        var records = laps.Select((l, i) => new LapRecord
+        {
+            LapNumber = i + 1, LapTimeMs = (uint)Math.Round(l.Seconds * 1000), Compound = l.Compound, StintIndex = l.Stint, IsValid = true,
+        }).ToList();
+        var aggregates = laps.Select((l, i) =>
+            new LapAggregate(i + 1, l.Fuel - 1.35, l.Fuel, l.Wear, l.Wear + 0.8, l.Wear, l.Wear + 0.8, l.Wear, l.Wear + 0.8, l.Wear, l.Wear + 0.8)).ToList();
+        return (LapClassifier.Classify(records, sessionType: 1).ToList(), aggregates);
+    }
+
+    [Fact]
+    public void Practice_runs_follow_the_fuel_and_tyres_not_the_games_stint_ends()
+    {
+        // Madrid, F1 25 2026 pack: 8 laps on the hard, garage, one lap on a new soft, garage, a low-fuel lap on another new
+        // soft, garage (refuel, same set), a long run on it. The game ended the hard's stint a lap early (lap 8 came
+        // back as a soft lap) and kept the low-fuel lap and the long run in one stint.
+        var hard = Enumerable.Range(0, 8).Select(i => (i < 7 ? "Hard" : "Soft", i < 7 ? 0 : 1, 28.7 - 1.35 * i, 0.4 + 0.8 * i, 95.0));
+        (string, int, double, double, double)[] soft = [("Soft", 2, 28.7, 1.3, 92.7), ("Soft", 3, 3.6, 2.0, 91.8)];
+        var longRun = Enumerable.Range(0, 6).Select(i => ("Soft", 3, 26.6 - 1.35 * i, 8.1 + 2.4 * i, 95.0 + 0.1 * i));
+        var (laps, aggregates) = Practice([.. hard, .. soft, .. longRun]);
+
+        var analysis = StintAnalyzer.Analyze(laps, aggregates, default, 1)!;
+
+        Assert.Equal([("Hard", 1, 8), ("Soft", 9, 9), ("Soft", 10, 10), ("Soft", 11, 16)],
+            analysis.Stints.Select(s => (s.Compound, s.StartLap, s.EndLap)));
+        Assert.All(analysis.PaceLaps.Where(l => l.LapNumber <= 8), l => Assert.Equal("Hard", l.Compound));
+    }
+
+    [Fact]
+    public void Single_push_laps_dont_measure_the_fuel_effect_but_show_in_the_guide()
+    {
+        // One soft long run, plus two one-lap runs on the soft (one on high fuel, one on almost none): no fuel effect yet.
+        (string, int, double, double, double)[] pushLaps = [("Soft", 0, 28.7, 1.3, 92.7), ("Soft", 1, 3.6, 2.0, 91.8)];
+        var longRun = Enumerable.Range(0, 8).Select(i => ("Soft", 1, 26.6 - 1.35 * i, 8.1 + 2.4 * i, 95.0 + 0.1 * i - 0.04 * 1.35 * i));
+        var (laps, aggregates) = Practice([.. pushLaps, .. longRun]);
+        var analysis = StintAnalyzer.Analyze(laps, aggregates, default, 1)!;
+        Assert.Equal(FuelEffectSource.Default, analysis.FuelEffect.Source);
+
+        var session = new RaceInput(new RecordingInfo(1, "", "", 11, "Monza", 1, GameFormat.F1_26, DateTimeOffset.UnixEpoch, null), laps, aggregates, analysis);
+        var fuel = DataGuideBuilder.Build(CompoundLibraryBuilder.Build([session], 1), [session]).Items.Single(i => i.Title == "Fuel effect");
+        Assert.Equal(GuideState.Partial, fuel.State);
+        Assert.Equal("1 / 2 RUNS", fuel.Count);
+        Assert.Contains("one run of 3+ laps on the soft", fuel.Have);
+        Assert.Contains("2 shorter runs on the soft left out", fuel.Have);
+        Assert.Contains("starting on a fuel load well away from 26 kg", fuel.Do);
+    }
+
+    [Fact]
+    public void A_run_that_gets_faster_measures_no_degradation()
+    {
+        // The first run of a session: track rubbering in, the driver finding pace. Half a second quicker every lap.
+        var run = Enumerable.Range(0, 8).Select(i => ("Hard", 0, 28.7 - 1.35 * i, 0.4 + 0.8 * i, 96.5 - 0.5 * i));
+        var (laps, aggregates) = Practice([.. run]);
+        var analysis = StintAnalyzer.Analyze(laps, aggregates, default, 1)!;
+        var session = new RaceInput(new RecordingInfo(1, "", "", 11, "Monza", 1, GameFormat.F1_26, DateTimeOffset.UnixEpoch, null), laps, aggregates, analysis);
+
+        var library = CompoundLibraryBuilder.Build([session], 1);
+        Assert.False(library["Hard"]!.DegradationMeasured);
+
+        var item = DataGuideBuilder.Build(library, [session]).Items.Single(i => i.Title == "Hard long run");
+        Assert.Equal(GuideState.Partial, item.State);
+        Assert.Contains("got faster through the run", item.Have);
+    }
+
     [Fact]
     public void Fuel_effect_falls_back_to_the_default_when_it_cant_be_separated()
     {

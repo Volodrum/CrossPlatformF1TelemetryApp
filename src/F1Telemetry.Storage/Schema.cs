@@ -142,6 +142,13 @@ internal static class Schema
             )
             """,
         ],
+
+        // v9: the game's weekend link identifier per recording and hub session: practice and qualifying take the race
+        // length of the race of their own weekend
+        [
+            "ALTER TABLE recordings ADD COLUMN IF NOT EXISTS weekend_id BIGINT",
+            "ALTER TABLE hub_sessions ADD COLUMN IF NOT EXISTS weekend_id BIGINT",
+        ],
     ];
 
     public static int LatestVersion => Migrations.Length;

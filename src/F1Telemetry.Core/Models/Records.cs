@@ -78,6 +78,9 @@ public sealed record RecordingInfo(
 {
     /// <summary>The game's session length setting (see <see cref="Protocol.Lookups.RaceLengths"/>); 0 when not recorded.</summary>
     public int SessionLength { get; init; }
+
+    /// <summary>The game's weekend link identifier (session packet <c>m_weekendLinkIdentifier</c>, kept across saves); 0 when not recorded.</summary>
+    public long WeekendId { get; init; }
 }
 
 /// <summary>Weather (see <see cref="Protocol.Lookups.WeatherTypes"/>) and temperatures in °C.</summary>
@@ -116,7 +119,8 @@ public sealed record NewRecording(
     string TrackName,
     int SessionType,
     GameFormat Format,
-    int SessionLength = 0);
+    int SessionLength = 0,
+    long WeekendId = 0);
 
 /// <summary>Per-lap min/max of fuel and wear, used to derive consumption rates after the fact.</summary>
 public sealed record LapAggregate(

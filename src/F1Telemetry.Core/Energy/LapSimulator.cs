@@ -24,7 +24,7 @@ public sealed record PlanSegment(int Index, double From, bool FullThrottle, int 
 /// <param name="LineX">World X of the racing line at each segment boundary (see <see cref="LapProfile.LineX"/>); null in data kept before it was.</param>
 /// <param name="LineZ">World Z, as <paramref name="LineX"/>.</param>
 public sealed record LapProfileData(int LapNumber, int LapCount, IReadOnlyList<PlanSegment> Segments, double[] Speed, double[] Level, double Braking,
-    double MassKg, double ActualSeconds, double HarvestLimit, double[]? LineX = null, double[]? LineZ = null);
+    double MassKg, double ActualSeconds, double HarvestLimit, double[]? LineX = null, double[]? LineZ = null, double RunUpStore = 0);
 
 /// <summary>
 /// A lap cut into <see cref="Step"/> m segments for the <see cref="LapSimulator"/>: speeds at every boundary, where it
@@ -95,6 +95,16 @@ public sealed class LapProfile
 
     /// <summary>Battery at the first and last segment boundary, J.</summary>
     public double StartStore { get; }
+
+    /// <summary>
+    /// The fullest the battery was in the run to the line (see <see cref="SessionLaps.RunUpSeconds"/>), J: a push lap
+    /// starts from a battery filled on the out-lap, some of it spent before the line. 0 when not known.
+    /// </summary>
+    public double RunUpStore { get; private init; }
+
+    /// <summary>This lap with <paramref name="store"/> as its <see cref="RunUpStore"/>.</summary>
+    public LapProfile WithRunUp(double store) =>
+        new(LapNumber, LapCount, Segments, Speed, Level, Braking, MassKg, ActualSeconds, HarvestLimit, LineX, LineZ) { RunUpStore = store };
 
     public double EndStore { get; }
 
@@ -273,14 +283,14 @@ public sealed class LapProfile
 
     /// <summary>The profile as plain data, to keep (the track hub).</summary>
     public LapProfileData ToData() =>
-        new(LapNumber, LapCount, [.. Segments], Speed, Level, Braking, MassKg, ActualSeconds, HarvestLimit, LineX, LineZ);
+        new(LapNumber, LapCount, [.. Segments], Speed, Level, Braking, MassKg, ActualSeconds, HarvestLimit, LineX, LineZ, RunUpStore);
 
     /// <summary>A profile kept with <see cref="ToData"/>; null when it holds no segments.</summary>
     public static LapProfile? FromData(LapProfileData data) =>
         data.Segments.Count == 0 || data.Speed.Length != data.Segments.Count + 1 || data.Level.Length != data.Segments.Count + 1
             ? null
             : new LapProfile(data.LapNumber, Math.Max(1, data.LapCount), data.Segments, data.Speed, data.Level, data.Braking, data.MassKg,
-                data.ActualSeconds, data.HarvestLimit, data.LineX, data.LineZ);
+                data.ActualSeconds, data.HarvestLimit, data.LineX, data.LineZ) { RunUpStore = data.RunUpStore };
 
     /// <summary>Highest speed at each boundary that still makes the next braking zone, braking at <paramref name="braking"/> m/s².</summary>
     private static double[] BrakingEnvelope(IReadOnlyList<PlanSegment> segments, double[] speed, double braking)

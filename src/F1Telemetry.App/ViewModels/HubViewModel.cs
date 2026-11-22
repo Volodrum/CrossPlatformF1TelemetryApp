@@ -19,6 +19,7 @@ public enum HubPage
     Sessions,
     Strategy,
     Energy,
+    Guide,
     Setups,
 }
 
@@ -30,25 +31,67 @@ public sealed record HubTrackOption(GameFormat Format, int TrackId, string Name)
     public override string ToString() => Label;
 }
 
+/// <summary>A game session type (see <see cref="SessionTypes"/>), for the hub's session column.</summary>
+public sealed record SessionTypeOption(int Type, string Label)
+{
+    public override string ToString() => Label;
+}
+
 /// <summary>A session at the hub's track: a recording, saved or not, or a saved session whose recording was deleted.</summary>
 public sealed partial class HubSessionRowViewModel : ObservableObject
 {
     private readonly Action<HubSessionRowViewModel> _lengthChanged;
+    private readonly Action<HubSessionRowViewModel> _typeChanged;
     private bool _loading = true;
 
-    public HubSessionRowViewModel(TrackSession session, int lapsNow, bool isLive, Action<HubSessionRowViewModel> lengthChanged)
+    public HubSessionRowViewModel(TrackSession session, int lapsNow, bool isLive, Action<HubSessionRowViewModel> lengthChanged,
+        Action<HubSessionRowViewModel> typeChanged)
     {
         Session = session;
         LapsNow = lapsNow;
         IsLive = isLive;
         _lengthChanged = lengthChanged;
+        _typeChanged = typeChanged;
         Length = LengthOptions.FirstOrDefault(o => o.Length == session.RaceLength) ?? LengthOptions[0];
+        Type = TypeOptions.FirstOrDefault(o => o.Type == session.SessionType) ?? new SessionTypeOption(session.SessionType, SessionTypes.Name(session.SessionType).ToUpperInvariant());
         _loading = false;
     }
 
     /// <summary>Any length, then each length the game offers.</summary>
     public static IReadOnlyList<RaceLengthOption> LengthOptions { get; } =
         [new(0, "ANY LENGTH"), .. RaceLengths.All.Select(l => new RaceLengthOption(l, RaceLengths.Name(l).ToUpperInvariant()))];
+
+    /// <summary>Every session type the game sends (its <c>m_sessionType</c>), unknown first.</summary>
+    public static IReadOnlyList<SessionTypeOption> TypeOptions { get; } =
+        [.. Enumerable.Range(0, SessionTypes.TimeTrial + 1).Select(t => new SessionTypeOption(t, SessionTypes.Name(t).ToUpperInvariant()))];
+
+    /// <summary>What kind of session it was: filled in from the game, and can be corrected (not while it is recorded).</summary>
+    [ObservableProperty] public partial SessionTypeOption? Type { get; set; }
+
+    partial void OnTypeChanged(SessionTypeOption? value)
+    {
+        if (!_loading && value is not null && value.Type != Session.SessionType)
+        {
+            _typeChanged(this);
+        }
+    }
+
+    public bool CanChangeType => !IsLive;
+
+    public bool IsRace => SessionTypes.IsRace(Type?.Type ?? Session.SessionType);
+
+    public string TypeTip => IsLive
+        ? "Read from the game while the session is recorded."
+        : Session.SessionType == 0
+            ? "The game sent no session type for this recording. Pick what it was: practice and qualifying count for their weekend's race, a race keeps its standing start out of its pace."
+            : "Read from the game. Change it only if the game got it wrong: practice and qualifying count for their weekend's race, a race keeps its standing start out of its pace.";
+
+    /// <summary>The race-length column explained for this row: the game sends a race's length, never a practice's.</summary>
+    public string LengthTip => IsRace
+        ? "The race length this race's tyre wear and fuel count for, read from the game."
+        : RaceLengths.IsKnown(Session.RaceLength)
+            ? "The race this session prepares for: its tyre wear and fuel count for that length. Filled in from the race of the same weekend."
+            : "The race this session prepares for. The game doesn't send it in practice or qualifying: it is filled in once the race of the same weekend is recorded, or pick it here. ANY LENGTH counts it for every length.";
 
     public TrackSession Session { get; }
 
@@ -79,7 +122,10 @@ public sealed partial class HubSessionRowViewModel : ObservableObject
 
     public bool CanDeleteRecording => Session is { IsSaved: true, HasRecording: true } && !Changed && !IsLive;
 
-    public string Title => $"{SessionTypes.Name(Session.SessionType)} · {Session.StartTime.LocalDateTime.ToString("d MMM yyyy · HH:mm", CultureInfo.InvariantCulture)}";
+    public string Title => $"{SessionTypes.Name(Session.SessionType)} · {When}";
+
+    /// <summary>When it was driven, the row's heading (its type has its own column).</summary>
+    public string When => Session.StartTime.LocalDateTime.ToString("d MMM yyyy · HH:mm", CultureInfo.InvariantCulture);
 
     public string Detail
     {
@@ -108,6 +154,23 @@ public sealed partial class HubSessionRowViewModel : ObservableObject
         { IsSaved: true } => "In the hub: the plans use the saved copy. The recording can be deleted without losing anything the plans use.",
         _ => "Not in the hub: the plans use the recording while it exists. Save it to keep what it taught after deleting it.",
     };
+}
+
+/// <summary>One thing left to measure at a track, in the guide page's checklist.</summary>
+/// <param name="Guide">The guide it is from ("RACE STRATEGY", "ENERGY").</param>
+public sealed record HubTodoRow(string Guide, GuideItem Item)
+{
+    public GuideRowViewModel Row { get; } = new(Item);
+
+    public string Session => Item.Session switch
+    {
+        GuideSession.Race => "RACE",
+        GuideSession.Qualifying => "QUALIFYING",
+        _ => "PRACTICE",
+    };
+
+    /// <summary>What is recorded now, what to do, and why, for the tooltip.</summary>
+    public string Tip => string.Join(Environment.NewLine + Environment.NewLine, new[] { $"Recorded: {Item.Have}.", Item.Why }.Where(t => t.Length > 0));
 }
 
 /// <summary>One figure before and after a save, in the preview.</summary>
@@ -183,6 +246,19 @@ public sealed partial class HubViewModel : ObservableObject
     /// <summary>The energy data guide of the selected track, under its ERS plan.</summary>
     public DataGuideViewModel EnergyGuide { get; } = new();
 
+    /// <summary>The race strategy data guide of the selected track, on the guide page.</summary>
+    public DataGuideViewModel StrategyGuide { get; } = new();
+
+    /// <summary>Every item of both guides still to measure, by session (the guide page's checklist).</summary>
+    public ObservableCollection<HubTodoRow> Todo { get; } = [];
+
+    public bool HasTodo => Todo.Count > 0;
+
+    [ObservableProperty] public partial string GuideScore { get; set; } = "";
+    [ObservableProperty] public partial double GuideProgress { get; set; }
+    [ObservableProperty] public partial string GuideSummary { get; set; } = "";
+    [ObservableProperty] public partial bool GuideLoading { get; set; }
+
     /// <summary>The key to the energy page's map: the deploy modes, and the battery labels at each switch.</summary>
     public IReadOnlyList<LegendEntry> MapLegend { get; } = EnergyViewModel.ModeLegend();
 
@@ -195,6 +271,7 @@ public sealed partial class HubViewModel : ObservableObject
     public bool IsSessionsPage => Page == HubPage.Sessions;
     public bool IsStrategyPage => Page == HubPage.Strategy;
     public bool IsEnergyPage => Page == HubPage.Energy;
+    public bool IsGuidePage => Page == HubPage.Guide;
     public bool IsSetupsPage => Page == HubPage.Setups;
     public bool ShowsTrack => Page != HubPage.Setups;
 
@@ -227,6 +304,7 @@ public sealed partial class HubViewModel : ObservableObject
         OnPropertyChanged(nameof(IsSessionsPage));
         OnPropertyChanged(nameof(IsStrategyPage));
         OnPropertyChanged(nameof(IsEnergyPage));
+        OnPropertyChanged(nameof(IsGuidePage));
         OnPropertyChanged(nameof(IsSetupsPage));
         OnPropertyChanged(nameof(ShowsTrack));
         _ = ShowPageAsync();
@@ -307,7 +385,7 @@ public sealed partial class HubViewModel : ObservableObject
                 ? (await _runtime.Analysis.GetClassifiedLapsAsync(recording)).Count(l => l.HasTime)
                 : session.Saved!.Laps;
             var row = new HubSessionRowViewModel(session, laps, session.Recording?.Id == _runtime.Recorder.ActiveRecordingId && session.Recording?.EndTime is null,
-                OnRowLengthChanged) { IsChecked = ticked.Contains(Key(session)) };
+                OnRowLengthChanged, OnRowTypeChanged) { IsChecked = ticked.Contains(Key(session)) };
             row.PropertyChanged += (_, e) =>
             {
                 if (e.PropertyName == nameof(HubSessionRowViewModel.IsChecked))
@@ -386,6 +464,26 @@ public sealed partial class HubViewModel : ObservableObject
         }
     }
 
+    /// <summary>A corrected session type goes to the recording and the hub copy at once; the track is read again.</summary>
+    private async void OnRowTypeChanged(HubSessionRowViewModel row)
+    {
+        if (row.Type is not { } type || row.IsLive)
+        {
+            return;
+        }
+
+        try
+        {
+            await _runtime.Hub.SetSessionTypeAsync(row.Session, type.Type);
+            Status = $"{row.When} is now {SessionTypes.Name(type.Type)}.";
+        }
+        catch (Exception ex)
+        {
+            _log.LogError(ex, "Changing the session type failed");
+            Status = $"Could not change the session type: {ex.Message}";
+        }
+    }
+
     private async Task ShowPageAsync()
     {
         if (SelectedTrack is not { } track)
@@ -416,12 +514,65 @@ public sealed partial class HubViewModel : ObservableObject
                 case HubPage.Setups:
                     await Setups.LoadAsync();
                     break;
+
+                case HubPage.Guide:
+                    await LoadGuidesAsync(track);
+                    break;
             }
         }
         catch (Exception ex)
         {
             _log.LogError(ex, "Hub page {Page} failed", Page);
             Status = $"Could not build the {Page.ToString().ToLowerInvariant()} page: {ex.Message}";
+        }
+    }
+
+    /// <summary>
+    /// The guide page: both data guides of the track (race strategy and energy) over the hub's sessions and every
+    /// recording not saved, one score over the two, and everything still to drive, by the session to drive it in.
+    /// </summary>
+    private async Task LoadGuidesAsync(HubTrackOption track)
+    {
+        GuideLoading = true;
+        try
+        {
+            await Plans.LoadTrackAsync(track.Format, track.TrackId, track.Name);
+            if (Plans.GuideData is { } strategy)
+            {
+                StrategyGuide.Load(strategy, $"{strategy.Done} OF {strategy.Total} MEASURED", "Everything the race plans use is measured here. More clean laps still steady the figures.");
+            }
+            else
+            {
+                StrategyGuide.Clear("No session with timed laps at this track yet: record one and the guide fills in.");
+            }
+
+            var model = await _runtime.Hub.BuildErsModelAsync(track.Format, track.TrackId);
+            var (inputs, _) = await _runtime.Hub.PlanInputsAsync(track.Format, track.TrackId, model);
+            var energy = await Task.Run(() => EnergyGuideBuilder.Build(model, inputs?.Race, inputs?.Qualifying));
+            EnergyGuide.Load(energy, $"{energy.Done} OF {energy.Total} MEASURED", EnergyViewModel.AllMeasured);
+
+            var guides = new[] { (Name: "RACE STRATEGY", Guide: Plans.GuideData), (Name: "ENERGY", Guide: (DataGuide?)energy) }
+                .Where(g => g.Guide is not null).ToList();
+            var done = guides.Sum(g => g.Guide!.Done);
+            var total = guides.Sum(g => g.Guide!.Total);
+            GuideScore = $"{done} OF {total} MEASURED AT {track.Name.ToUpperInvariant()}";
+            GuideProgress = total > 0 ? (double)done / total : 0;
+            Todo.Clear();
+            foreach (var row in guides
+                         .SelectMany(g => g.Guide!.Items.Where(i => !i.Optional && i.State != GuideState.Done).Select(i => new HubTodoRow(g.Name, i)))
+                         .OrderBy(r => r.Item.Session))
+            {
+                Todo.Add(row);
+            }
+
+            GuideSummary = Todo.Count == 0
+                ? "Everything both plans use is measured at this track. More sessions still steady the figures."
+                : $"{Count(Todo.Count, "item")} left to measure. Each one is a run to drive: the session it is best driven in is on the left, and the cards below show how.";
+            OnPropertyChanged(nameof(HasTodo));
+        }
+        finally
+        {
+            GuideLoading = false;
         }
     }
 

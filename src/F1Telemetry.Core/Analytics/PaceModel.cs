@@ -165,22 +165,41 @@ public static class PaceModel
     }
 
     /// <summary>
+    /// Clean laps a run needs to count towards the fuel effect. Shorter runs are left out: a lone push lap after an
+    /// out-lap starts on a full battery and fresh tyres, faster than the fuel alone makes it.
+    /// </summary>
+    public const int FuelRunLaps = 3;
+
+    /// <summary>
+    /// The runs that can measure the fuel effect: per compound, its runs of <see cref="FuelRunLaps"/>+ clean laps, with
+    /// the fuel each started on (its first clean lap's); and how many shorter runs were left out.
+    /// </summary>
+    public static IReadOnlyList<(string Compound, IReadOnlyList<(int Stint, int Laps, double StartKg)> Runs, int ShortRuns)> FuelRuns(IReadOnlyList<PaceLap> laps) =>
+    [
+        .. laps.GroupBy(l => l.Compound).Select(g =>
+        {
+            var stints = g.GroupBy(l => l.StintNumber).ToList();
+            IReadOnlyList<(int, int, double)> runs = [.. stints.Where(s => s.Count() >= FuelRunLaps).Select(s => (s.Key, s.Count(), s.Max(l => l.FuelKg)))];
+            return (g.Key, runs, stints.Count - runs.Count);
+        }),
+    ];
+
+    /// <summary>
     /// Least-squares fit of lap time = base[compound] + degradation[compound] × age + fuel effect × fuel over every
-    /// compound run in two or more stints. Null when no compound was, or the result is implausible.
+    /// compound run in two or more runs of <see cref="FuelRunLaps"/>+ clean laps. Null when no compound was, or the
+    /// result is implausible or too uncertain.
     /// </summary>
     public static FuelEffect? MeasureFuelEffect(IReadOnlyList<PaceLap> laps)
     {
-        var repeated = laps
-            .GroupBy(l => l.Compound)
-            .Where(g => g.GroupBy(l => l.StintNumber).Count(s => s.Count() >= 2) >= 2)
-            .Select(g => g.Key)
-            .ToList();
+        var runs = FuelRuns(laps).Where(c => c.Runs.Count >= 2).ToList();
+        var repeated = runs.Select(c => c.Compound).ToList();
         if (repeated.Count == 0)
         {
             return null;
         }
 
-        var used = laps.Where(l => repeated.Contains(l.Compound)).ToList();
+        var counted = runs.SelectMany(c => c.Runs.Select(r => (c.Compound, r.Stint))).ToHashSet();
+        var used = laps.Where(l => counted.Contains((l.Compound, l.StintNumber))).ToList();
         var unknowns = 2 * repeated.Count + 1;
         if (used.Count < unknowns + 2)
         {

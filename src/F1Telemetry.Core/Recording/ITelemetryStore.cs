@@ -25,7 +25,7 @@ public interface ITelemetryStore : IAsyncDisposable
     void EndRecording(long recordingId);
 
     void UpdateRecording(long recordingId, string? sessionUid = null, int? trackId = null, string? trackName = null, int? sessionType = null,
-        DateTimeOffset? startTime = null, DateTimeOffset? endTime = null, GameFormat? format = null, int? sessionLength = null);
+        DateTimeOffset? startTime = null, DateTimeOffset? endTime = null, GameFormat? format = null, int? sessionLength = null, long? weekendId = null);
 
     void AppendSample(TelemetrySample sample);
 
@@ -113,4 +113,7 @@ public interface ITelemetryStore : IAsyncDisposable
 
     /// <summary>Sets the race length a hub session counts for (see <see cref="Protocol.Lookups.RaceLengths"/>).</summary>
     Task SetHubRaceLengthAsync(long hubId, int raceLength, CancellationToken cancellationToken = default);
+
+    /// <summary>Sets the session type of a hub session (see <see cref="Protocol.Lookups.SessionTypes"/>).</summary>
+    Task SetHubSessionTypeAsync(long hubId, int sessionType, CancellationToken cancellationToken = default);
 }

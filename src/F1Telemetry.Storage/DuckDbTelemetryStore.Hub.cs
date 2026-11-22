@@ -20,7 +20,7 @@ public sealed partial class DuckDbTelemetryStore
 
     private const string HubColumns = """
         id, game_format, track_id, track_name, session_uid, recording_id, session_type, race_length, start_time, saved_at, laps, best_lap_ms,
-        strategy, energy, setup_runs
+        strategy, energy, setup_runs, weekend_id
         """;
 
     public Task<IReadOnlyList<HubSession>> GetHubSessionsAsync(GameFormat? format = null, int? trackId = null, CancellationToken cancellationToken = default) =>
@@ -52,6 +52,13 @@ public sealed partial class DuckDbTelemetryStore
             return null;
         }, cancellationToken);
 
+    public Task SetHubSessionTypeAsync(long hubId, int sessionType, CancellationToken cancellationToken = default) =>
+        RunHubAsync(() =>
+        {
+            NonQuery("UPDATE hub_sessions SET session_type = $type WHERE id = $id", ("id", hubId), ("type", sessionType));
+            return null;
+        }, cancellationToken);
+
     private Task<object?> RunHubAsync(Func<object?> run, CancellationToken cancellationToken)
     {
         var op = new HubOp(run, new TaskCompletionSource<object?>(TaskCreationOptions.RunContinuationsAsynchronously));
@@ -79,13 +86,13 @@ public sealed partial class DuckDbTelemetryStore
             NonQuery("DELETE FROM hub_sessions WHERE recording_id = $rid AND session_uid = $uid", ("rid", s.RecordingId), ("uid", s.SessionUid));
             NonQuery($"""
                 INSERT INTO hub_sessions ({HubColumns})
-                VALUES ($id, $format, $track, $trackName, $uid, $rid, $type, $length, $start, $saved, $laps, $best, $strategy, $energy, $runs)
+                VALUES ($id, $format, $track, $trackName, $uid, $rid, $type, $length, $start, $saved, $laps, $best, $strategy, $energy, $runs, $weekend)
                 """,
                 ("id", id), ("format", (int)s.Format), ("track", s.TrackId), ("trackName", s.TrackName), ("uid", s.SessionUid),
                 ("rid", s.RecordingId), ("type", s.SessionType), ("length", s.RaceLength), ("start", s.StartTime.UtcDateTime),
                 ("saved", s.SavedAt.UtcDateTime), ("laps", s.Laps), ("best", (long)s.BestLapMs),
                 ("strategy", JsonSerializer.Serialize(s.Strategy, HubJson)), ("energy", JsonSerializer.Serialize(s.Energy, HubJson)),
-                ("runs", JsonSerializer.Serialize(s.SetupRuns, HubJson)));
+                ("runs", JsonSerializer.Serialize(s.SetupRuns, HubJson)), ("weekend", s.WeekendId));
             ids.Add(id);
         }
 
@@ -108,7 +115,10 @@ public sealed partial class DuckDbTelemetryStore
         BestLapMs: (uint)GetLong(r, 11),
         Strategy: Json<HubStrategyData>(r, 12) ?? new HubStrategyData([], [], default),
         Energy: Json<HubEnergyData>(r, 13) ?? new HubEnergyData(null, null, null, 0, 0),
-        SetupRuns: Json<List<SetupRun>>(r, 14) ?? []);
+        SetupRuns: Json<List<SetupRun>>(r, 14) ?? [])
+    {
+        WeekendId = GetLong(r, 15),
+    };
 
     private static T? Json<T>(DbDataReader r, int i) where T : class =>
         r.IsDBNull(i) ? null : JsonSerializer.Deserialize<T>(r.GetString(i), HubJson);

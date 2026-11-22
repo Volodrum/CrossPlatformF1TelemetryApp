@@ -205,12 +205,16 @@ public static class EnergyGuideBuilder
     /// <summary>The qualifying plan spends a full battery: the lap it is built on should start with one.</summary>
     private static GuideItem FullBattery(LapProfile? qualifying)
     {
-        var share = qualifying is null ? 0 : Math.Clamp(qualifying.StartStore / LapSimulator.Capacity, 0, 1);
+        // Full on the run to the line counts: what was spent before the line was spent on the lap's own start.
+        var atLine = qualifying is null ? 0 : Math.Clamp(qualifying.StartStore / LapSimulator.Capacity, 0, 1);
+        var share = qualifying is null ? 0 : Math.Clamp(Math.Max(qualifying.StartStore, qualifying.RunUpStore) / LapSimulator.Capacity, 0, 1);
         var state = share >= FullShare ? GuideState.Done : share >= 0.6 ? GuideState.Partial : GuideState.Missing;
         return new GuideItem(
             "Push lap from a full battery",
             state,
-            qualifying is null ? "no timed lap with power data" : Inv($"the fastest lap started with {share * 100:0} %"),
+            qualifying is null ? "no timed lap with power data"
+            : share > atLine + 0.02 ? Inv($"the battery was {share * 100:0} % on the run to the fastest lap, {atLine * 100:0} % at the line")
+            : Inv($"the fastest lap started with {share * 100:0} %"),
             state == GuideState.Done ? "" : "In qualifying, fill the battery on the out-lap (None, lift before the braking zones), then push a full lap.",
             "The qualifying plan spends a full battery. Built on a lap that started short, it has never seen the car with all its energy, so where to spend it is less sure.",
             GuideSession.Qualifying,

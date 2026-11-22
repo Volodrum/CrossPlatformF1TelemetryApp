@@ -21,6 +21,9 @@
           <Button Theme="{StaticResource ModeToggle}" Content="ENERGY" Classes.selected="{Binding IsEnergyPage}"
                   Command="{Binding SetPageCommand}" CommandParameter="{x:Static vm:HubPage.Energy}"
                   ToolTip.Tip="The track's ERS plan: a deploy mode per zone, for the race and for qualifying" />
+          <Button Theme="{StaticResource ModeToggle}" Content="DATA GUIDE" Classes.selected="{Binding IsGuidePage}"
+                  Command="{Binding SetPageCommand}" CommandParameter="{x:Static vm:HubPage.Guide}"
+                  ToolTip.Tip="What the strategy and energy plans know at this track, and every run still to drive to measure the rest" />
           <Button Theme="{StaticResource ModeToggle}" Content="SETUPS" Classes.selected="{Binding IsSetupsPage}"
                   Command="{Binding SetPageCommand}" CommandParameter="{x:Static vm:HubPage.Setups}"
                   ToolTip.Tip="Setup library: every setup you drove, at every track" />
@@ -93,10 +96,13 @@
                       ToolTip.Tip="{Binding DeleteTip}" />
             </WrapPanel>
 
-            <Grid DockPanel.Dock="Top" ColumnDefinitions="32,*,230,200" ColumnSpacing="12" Margin="12,4,12,8">
+            <Grid DockPanel.Dock="Top" ColumnDefinitions="32,*,210,230,200" ColumnSpacing="12" Margin="12,4,12,8">
               <TextBlock Grid.Column="1" Classes="label" Text="SESSION" />
-              <TextBlock Grid.Column="2" Classes="label" Text="IN THE HUB" />
-              <TextBlock Grid.Column="3" Classes="label" Text="RACE LENGTH" ToolTip.Tip="The race length each session's tyre wear and fuel count for" Background="Transparent" />
+              <TextBlock Grid.Column="2" Classes="label" Text="SESSION TYPE" Background="Transparent"
+                         ToolTip.Tip="What kind of session each one was, read from the game. Correct it here if the game sent none or the wrong one." />
+              <TextBlock Grid.Column="3" Classes="label" Text="IN THE HUB" />
+              <TextBlock Grid.Column="4" Classes="label" Text="FOR RACE LENGTH" Background="Transparent"
+                         ToolTip.Tip="The race length each session's tyre wear and fuel count for. A race reads it from the game; practice and qualifying take the race of their weekend." />
             </Grid>
 
             <Panel>
@@ -107,17 +113,20 @@
                   <ItemsControl.ItemTemplate>
                     <DataTemplate x:DataType="vm:HubSessionRowViewModel">
                       <Border BorderBrush="{StaticResource DividerBrush}" BorderThickness="0,0,0,1" Padding="12,8">
-                        <Grid ColumnDefinitions="32,*,230,200" ColumnSpacing="12">
+                        <Grid ColumnDefinitions="32,*,210,230,200" ColumnSpacing="12">
                           <CheckBox IsChecked="{Binding IsChecked}" VerticalAlignment="Center" />
                           <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
-                            <TextBlock Classes="h2" FontSize="15" Text="{Binding Title}" TextTrimming="CharacterEllipsis" />
+                            <TextBlock Classes="h2" FontSize="15" Text="{Binding When}" TextTrimming="CharacterEllipsis" />
                             <TextBlock Classes="mono" FontSize="13" Text="{Binding Detail}" Foreground="{StaticResource TextMidBrush}" TextTrimming="CharacterEllipsis" />
                           </StackPanel>
-                          <ContentControl Grid.Column="2" Content="{Binding Status}" HorizontalAlignment="Left" VerticalAlignment="Center"
+                          <ComboBox Grid.Column="2" ItemsSource="{x:Static vm:HubSessionRowViewModel.TypeOptions}" SelectedItem="{Binding Type}"
+                                    IsEnabled="{Binding CanChangeType}" HorizontalAlignment="Stretch" VerticalAlignment="Center"
+                                    ToolTip.Tip="{Binding TypeTip}" />
+                          <ContentControl Grid.Column="3" Content="{Binding Status}" HorizontalAlignment="Left" VerticalAlignment="Center"
                                           Background="Transparent" ToolTip.Tip="{Binding StatusTip}" />
-                          <ComboBox Grid.Column="3" ItemsSource="{x:Static vm:HubSessionRowViewModel.LengthOptions}" SelectedItem="{Binding Length}"
+                          <ComboBox Grid.Column="4" ItemsSource="{x:Static vm:HubSessionRowViewModel.LengthOptions}" SelectedItem="{Binding Length}"
                                     HorizontalAlignment="Stretch" VerticalAlignment="Center"
-                                    ToolTip.Tip="The race length this session's tyre wear and fuel count for. A race reads it from the game; practice and qualifying take their weekend's race." />
+                                    ToolTip.Tip="{Binding LengthTip}" />
                         </Grid>
                       </Border>
                     </DataTemplate>
@@ -269,6 +278,65 @@
 
           <!-- The energy data guide: what the car model and the plans rest on here, and the runs that measure the rest -->
           <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,12,0,0">
+            <TextBlock Classes="label strong" Text="ENERGY DATA GUIDE" FontSize="14" VerticalAlignment="Center" />
+            <controls:HelpTip Width="18" Height="18"
+                              Text="What the car model and the ERS plans rest on at this track, measured from every session here, and what to drive in practice and qualifying to measure the rest. Each card's tooltip says what is recorded, what to do and why it matters." />
+          </StackPanel>
+          <views:DataGuidePanel DataContext="{Binding EnergyGuide}" />
+        </StackPanel>
+      </ScrollViewer>
+
+      <!-- DATA GUIDE: both guides of the track, one score over them, and a checklist of what is left by session -->
+      <ScrollViewer Margin="0,16,0,0" IsVisible="{Binding IsGuidePage}">
+        <StackPanel Spacing="16" Margin="0,0,8,0">
+          <controls:PageHeader Eyebrow="TRACK HUB · DATA GUIDE" Title="{Binding Header}"
+                               Help="Everything the race plans and the ERS plans rest on at this track, measured from the sessions saved to the hub and every recording here not saved to it, and the runs still to drive to measure the rest. Save the sessions that filled it in: what they measured stays after their recordings are deleted." />
+
+          <TextBlock Classes="body" Text="Reading every session at this track…" IsVisible="{Binding GuideLoading}" />
+
+          <Border Classes="panel" Padding="16" IsVisible="{Binding !GuideLoading}">
+            <StackPanel Spacing="12">
+              <Grid ColumnDefinitions="Auto,*" ColumnSpacing="16">
+                <TextBlock Classes="label strong" FontSize="14" Text="{Binding GuideScore}" VerticalAlignment="Center" />
+                <ProgressBar Grid.Column="1" Classes="bar" Minimum="0" Maximum="1" Value="{Binding GuideProgress}" Foreground="{StaticResource FasterBrush}"
+                             MaxWidth="420" HorizontalAlignment="Left" MinWidth="240" VerticalAlignment="Center" />
+              </Grid>
+              <TextBlock Classes="body" Text="{Binding GuideSummary}" TextWrapping="Wrap" />
+
+              <!-- What is left: one line per item, by the session to drive it in -->
+              <ItemsControl ItemsSource="{Binding Todo}" IsVisible="{Binding HasTodo}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="vm:HubTodoRow">
+                    <Border BorderBrush="{StaticResource DividerBrush}" BorderThickness="0,1,0,0" Padding="0,10" Background="Transparent" ToolTip.Tip="{Binding Tip}">
+                      <Grid ColumnDefinitions="120,140,240,*,Auto" ColumnSpacing="14">
+                        <Border Classes="pill" BorderBrush="{StaticResource LineStrongBrush}" BorderThickness="1" HorizontalAlignment="Left" VerticalAlignment="Top">
+                          <TextBlock Text="{Binding Session}" FontFamily="{StaticResource DisplayFont}" FontSize="11" FontWeight="Bold" LetterSpacing="1.1"
+                                     Foreground="{StaticResource TextMidBrush}" />
+                        </Border>
+                        <TextBlock Grid.Column="1" Classes="label" Text="{Binding Guide}" VerticalAlignment="Top" Margin="0,3,0,0" />
+                        <TextBlock Grid.Column="2" Classes="h2" FontSize="14" Text="{Binding Row.Title}" TextWrapping="Wrap" VerticalAlignment="Top" />
+                        <TextBlock Grid.Column="3" Classes="body" FontSize="13" Text="{Binding Item.Do}" TextWrapping="Wrap" VerticalAlignment="Top" />
+                        <Border Grid.Column="4" Height="24" CornerRadius="5" BorderThickness="2" Padding="8,0" VerticalAlignment="Top"
+                                Background="{Binding Row.StateBackground}" BorderBrush="{Binding Row.StateBorder}">
+                          <TextBlock Text="{Binding Row.State}" FontFamily="{StaticResource DisplayFont}" FontSize="11" FontWeight="Bold" LetterSpacing="1.1"
+                                     Foreground="{Binding Row.StateForeground}" VerticalAlignment="Center" />
+                        </Border>
+                      </Grid>
+                    </Border>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+          </Border>
+
+          <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,8,0,0">
+            <TextBlock Classes="label strong" Text="RACE STRATEGY DATA GUIDE" FontSize="14" VerticalAlignment="Center" />
+            <controls:HelpTip Width="18" Height="18"
+                              Text="What the race plans rest on at this track: each compound's pace and degradation, the fuel effect, the tyre cliff and the pit stop. Each card's tooltip says what is recorded, what to do and why it matters." />
+          </StackPanel>
+          <views:DataGuidePanel DataContext="{Binding StrategyGuide}" />
+
+          <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,8,0,0">
             <TextBlock Classes="label strong" Text="ENERGY DATA GUIDE" FontSize="14" VerticalAlignment="Center" />
             <controls:HelpTip Width="18" Height="18"
                               Text="What the car model and the ERS plans rest on at this track, measured from every session here, and what to drive in practice and qualifying to measure the rest. Each card's tooltip says what is recorded, what to do and why it matters." />

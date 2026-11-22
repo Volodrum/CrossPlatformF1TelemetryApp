@@ -289,5 +289,18 @@
   "Sidepod": "Понтон",
   "Gearbox": "Коробка передач",
   "Engine": "Двигун",
-  "{0} ({1})": "{0} ({1})"
+  "{0} ({1})": "{0} ({1})",
+  "{0} clean laps, longest run {1}, but the laps got faster through the run, so it shows no tyre wear": "{0} {0|чисте коло|чисті кола|чистих кіл}, найдовший відрізок {1}, але кола ставали швидшими протягом заїзду, тож зносу шин не видно",
+  "Run the {0} again later in the session, once the track has rubbered in and you are up to speed: {1}+ laps at one steady pace.": "Проїдьте {0} ще раз пізніше в сесії, коли траса гумується, а ви вже в темпі: {1}+ кіл в одному рівному темпі.",
+  "no run of {0}+ clean laps yet{1}, typical F1 value used": "ще немає заїзду з {0}+ чистих кіл{1}, використано типове значення F1",
+  "no run of {0}+ clean laps yet, typical F1 value used": "ще немає заїзду з {0}+ чистих кіл, використано типове значення F1",
+  "one run of {0}+ laps on the {1} ({2} laps from {3} kg){4}, typical F1 value used": "один заїзд з {0}+ кіл на {1} ({2} {2|коло|кола|кіл} з {3} кг){4}, використано типове значення F1",
+  "one run of {0}+ laps on the {1} ({2} laps from {3} kg), typical F1 value used": "один заїзд з {0}+ кіл на {1} ({2} {2|коло|кола|кіл} з {3} кг), використано типове значення F1",
+  "({0} shorter runs on the {1} left out: a run of 1–2 laps after an out-lap starts on a full battery)": "({0} {0|коротший заїзд|коротші заїзди|коротших заїздів} на {1} не враховано: заїзд з 1–2 кіл після виїзного кола починається з повною батареєю)",
+  "({0} shorter run on the {1} left out: a run of 1–2 laps after an out-lap starts on a full battery)": "({0} коротший заїзд на {1} не враховано: заїзд з 1–2 кіл після виїзного кола починається з повною батареєю)",
+  "{0} runs on the {1} (from {2}), too close in fuel or too scattered to separate the fuel from the tyres, typical F1 value used": "{0} {0|заїзд|заїзди|заїздів} на {1} (з {2}), надто близькі за пальним або надто розкидані, щоб відділити пальне від шин; використано типове значення F1",
+  "In one session run the same compound twice at different fuel loads, {0}+ clean laps each: a long run on race fuel, then the same compound again on much less fuel (or the other way round).": "В одній сесії проїдьте ту саму суміш двічі з різним запасом пального, по {0}+ чистих кіл: довгий заїзд із гоночним пальним, потім та сама суміш із набагато меншим пальним (або навпаки).",
+  "In the same session run the {0} again for {1}+ clean laps, starting on a fuel load well away from {2} kg (10 kg or more lighter or heavier).": "У тій самій сесії проїдьте {0} ще раз, {1}+ чистих кіл, стартуючи із запасом пального, далеким від {2} кг (на 10 кг або більше легше чи важче).",
+  "Run the {0} again for {1}+ steady laps, clear of traffic, starting at least 10 kg of fuel away from the others.": "Проїдьте {0} ще раз, {1}+ рівних кіл без трафіку, стартуючи з пальним щонайменше на 10 кг іншим, ніж у попередніх заїздах.",
+  "{0} / 2 RUNS": "{0} / 2 ЗАЇЗДІВ"
 }

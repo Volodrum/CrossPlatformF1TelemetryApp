@@ -83,6 +83,30 @@ public sealed class TrackHubService(ITelemetryStore store, SessionAnalysisServic
     }
 
     /// <summary>
+    /// Corrects what kind of session this was (the game's own type unless it sent none, or the wrong one): its recording,
+    /// where there is one, and its hub copy, where it was saved. The analyses read it again (a race keeps lap 1 out of
+    /// its pace, practice counts for its weekend's race).
+    /// </summary>
+    public async Task SetSessionTypeAsync(TrackSession session, int sessionType)
+    {
+        if (session.Recording is { } recording)
+        {
+            store.UpdateRecording(recording.Id, sessionType: sessionType);
+            await store.FlushAsync();
+            analysis.Forget(recording.Id);
+            Forget(recording.Id);
+        }
+
+        if (session.Saved is { } saved)
+        {
+            await store.SetHubSessionTypeAsync(saved.Id, sessionType);
+        }
+
+        var (format, trackId) = session.Recording is { } r ? (r.Format, r.TrackId) : (session.Saved!.Format, session.Saved.TrackId);
+        Changed?.Invoke(format, trackId);
+    }
+
+    /// <summary>
     /// What the hub would keep of <paramref name="recording"/> as it is now; null when it has no laps. Not saved: see
     /// <see cref="SaveAsync"/>.
     /// </summary>
@@ -104,7 +128,10 @@ public sealed class TrackHubService(ITelemetryStore store, SessionAnalysisServic
         return new HubSession(0, recording.Format, recording.TrackId, recording.TrackName, recording.SessionUid, recording.Id, recording.SessionType,
             raceLength, recording.StartTime, DateTimeOffset.UtcNow, timed.Count,
             timed.Where(l => l.IsValid).Select(l => l.LapTimeMs).DefaultIfEmpty().Min(),
-            strategy, await EnergyAsync(recording, laps), runs);
+            strategy, await EnergyAsync(recording, laps), runs)
+        {
+            WeekendId = recording.WeekendId,
+        };
     }
 
     /// <summary>
@@ -212,7 +239,7 @@ public sealed class TrackHubService(ITelemetryStore store, SessionAnalysisServic
 
             if (lap.LapNumber == fastest?.LapNumber)
             {
-                fastestProfile = profile;
+                fastestProfile = profile.WithRunUp(await SessionLaps.RunUpStoreAsync(store, recording.Id, samples));
             }
         }
 

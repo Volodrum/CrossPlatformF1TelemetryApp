@@ -149,11 +149,18 @@ public static class DataGuideBuilder
             var state = laps < minLaps ? GuideState.Missing
                 : longest >= SteadyRunLaps && model!.DegradationMeasured ? GuideState.Done
                 : GuideState.Partial;
+
+            // A long run that measured nothing: its laps got faster as it went.
+            var improving = state == GuideState.Partial && longest >= SteadyRunLaps;
             items.Add(new GuideItem(
                 $"{compound} long run",
                 state,
-                laps == 0 ? "no clean laps here" : $"{laps} clean {Plural(laps, "lap")}, longest run {longest}",
-                state == GuideState.Done ? "" : $"Run {SteadyRunLaps}+ clean laps in a row on the {name}: one pace, no flashbacks, clear of traffic.",
+                laps == 0 ? "no clean laps here"
+                : improving ? $"{laps} clean {Plural(laps, "lap")}, longest run {longest}, but the laps got faster through the run, so it shows no tyre wear"
+                : $"{laps} clean {Plural(laps, "lap")}, longest run {longest}",
+                state == GuideState.Done ? ""
+                : improving ? $"Run the {name} again later in the session, once the track has rubbered in and you are up to speed: {SteadyRunLaps}+ laps at one steady pace."
+                : $"Run {SteadyRunLaps}+ clean laps in a row on the {name}: one pace, no flashbacks, clear of traffic.",
                 state == GuideState.Missing
                     ? $"With fewer than {minLaps} clean laps the {name} is left out of every plan."
                     : $"A run of {SteadyRunLaps}+ laps is what shows how fast the {name} loses time as it ages; shorter runs give a rough slope.",
@@ -182,16 +189,20 @@ public static class DataGuideBuilder
         }
 
         var measuredFuel = library.FuelEffect.Source == FuelEffectSource.Measured;
+        var (fuelHave, fuelDo, fuelProgress) = measuredFuel
+            ? (string.Create(CultureInfo.InvariantCulture, $"{library.FuelEffect.SecondsPerKg:0.000} s/kg, {library.FuelEffect.Basis}"), "", 1.0)
+            : FuelRunsSoFar(sessions);
         items.Add(new GuideItem(
             "Fuel effect",
-            measuredFuel ? GuideState.Done : GuideState.Missing,
-            string.Create(CultureInfo.InvariantCulture, $"{library.FuelEffect.SecondsPerKg:0.000} s/kg, {(measuredFuel ? library.FuelEffect.Basis : "typical F1 value")}"),
-            measuredFuel ? "" : "In one session run the same compound in two stints at different fuel loads, 3+ clean laps each (a long run on race fuel, then the same compound again on what is left).",
+            measuredFuel ? GuideState.Done : fuelProgress > 0 ? GuideState.Partial : GuideState.Missing,
+            fuelHave,
+            fuelDo,
             "Within one stint the tyres wear as the fuel burns off, so the two can't be told apart. The same compound at two fuel loads separates them; until then a typical figure is used.",
             GuideSession.Practice,
             Short: "Same tyre · two fuel loads",
             Kind: GuideKind.FuelLoads,
-            Progress: measuredFuel ? 1 : 0));
+            Progress: fuelProgress,
+            Count: measuredFuel ? "" : $"{Math.Min(2, (int)Math.Round(fuelProgress * 2))} / 2 RUNS"));
 
         var dryModels = library.Compounds.Where(c => c.IsDry && c.Laps >= minLaps).ToList();
         if (dryModels.Count > 0)
@@ -238,6 +249,45 @@ public static class DataGuideBuilder
             Progress: neutralised > 0 ? 1 : 0));
 
         return new DataGuide(items);
+    }
+
+    /// <summary>
+    /// What the sessions have towards the fuel effect when it isn't measured yet: the session and compound with the most
+    /// runs of <see cref="PaceModel.FuelRunLaps"/>+ clean laps, what to drive next, and how far along it is (one run of
+    /// the two is half).
+    /// </summary>
+    private static (string Have, string Do, double Progress) FuelRunsSoFar(IReadOnlyList<RaceInput> sessions)
+    {
+        var minimum = PaceModel.FuelRunLaps;
+        var best = sessions
+            .SelectMany(s => PaceModel.FuelRuns(s.Analysis.PaceLaps))
+            .OrderByDescending(c => c.Runs.Count).ThenByDescending(c => c.Runs.Sum(r => r.Laps)).ThenByDescending(c => c.ShortRuns)
+            .Select(c => ((string Compound, IReadOnlyList<(int Stint, int Laps, double StartKg)> Runs, int ShortRuns)?)c)
+            .FirstOrDefault();
+        var shortNote = best is { ShortRuns: > 0 } b
+            ? $" ({b.ShortRuns} shorter {Plural(b.ShortRuns, "run")} on the {b.Compound.ToLowerInvariant()} left out: a run of 1–2 laps after an out-lap starts on a full battery)"
+            : "";
+        switch (best)
+        {
+            case null or { Runs.Count: 0 }:
+                return ($"no run of {minimum}+ clean laps yet{shortNote}, typical F1 value used",
+                    $"In one session run the same compound twice at different fuel loads, {minimum}+ clean laps each: a long run on race fuel, then the same compound again on much less fuel (or the other way round).",
+                    0);
+
+            case { Runs.Count: 1 } one:
+                var run = one.Runs[0];
+                var name = one.Compound.ToLowerInvariant();
+                return (string.Create(CultureInfo.InvariantCulture, $"one run of {minimum}+ laps on the {name} ({run.Laps} laps from {run.StartKg:0} kg){shortNote}, typical F1 value used"),
+                    string.Create(CultureInfo.InvariantCulture,
+                        $"In the same session run the {name} again for {minimum}+ clean laps, starting on a fuel load well away from {run.StartKg:0} kg (10 kg or more lighter or heavier)."),
+                    0.5);
+
+            case { } many:
+                var loads = string.Join(" and ", many.Runs.Select(r => string.Create(CultureInfo.InvariantCulture, $"{r.StartKg:0} kg")));
+                return ($"{many.Runs.Count} runs on the {many.Compound.ToLowerInvariant()} (from {loads}), too close in fuel or too scattered to separate the fuel from the tyres, typical F1 value used",
+                    $"Run the {many.Compound.ToLowerInvariant()} again for {minimum}+ steady laps, clear of traffic, starting at least 10 kg of fuel away from the others.",
+                    0.75);
+        }
     }
 
     /// <summary>The most clean laps a compound has in one stint at the track.</summary>

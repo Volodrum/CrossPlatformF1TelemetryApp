@@ -14,7 +14,8 @@ public sealed record SessionInfo(
     string FormulaName,
     int TotalLaps,
     byte PlayerCarIndex,
-    int SessionLength = 0);
+    int SessionLength = 0,
+    long WeekendId = 0);
 
 /// <summary>Weather and track status (drives the track-conditions overlay).</summary>
 public sealed record TrackConditions(

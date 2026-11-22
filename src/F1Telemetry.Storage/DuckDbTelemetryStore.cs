@@ -102,8 +102,8 @@ public sealed partial class DuckDbTelemetryStore(string databasePath, ILogger<Du
     public void EndRecording(long recordingId) => Enqueue(new EndOp(recordingId, DateTime.UtcNow));
 
     public void UpdateRecording(long recordingId, string? sessionUid = null, int? trackId = null, string? trackName = null, int? sessionType = null,
-        DateTimeOffset? startTime = null, DateTimeOffset? endTime = null, GameFormat? format = null, int? sessionLength = null) =>
-        Enqueue(new UpdateOp(recordingId, sessionUid, trackId, trackName, sessionType, startTime?.UtcDateTime, endTime?.UtcDateTime, format, sessionLength));
+        DateTimeOffset? startTime = null, DateTimeOffset? endTime = null, GameFormat? format = null, int? sessionLength = null, long? weekendId = null) =>
+        Enqueue(new UpdateOp(recordingId, sessionUid, trackId, trackName, sessionType, startTime?.UtcDateTime, endTime?.UtcDateTime, format, sessionLength, weekendId));
 
     public void AppendSample(TelemetrySample sample) => Enqueue(new SampleOp(sample));
 
@@ -241,13 +241,13 @@ public sealed partial class DuckDbTelemetryStore(string databasePath, ILogger<Du
             {
                 case BeginOp b:
                     NonQuery("""
-                        INSERT INTO recordings (id, session_uid, description, track_id, track_name, session_type, game_format, start_time, session_length)
-                        VALUES ($id, $uid, $description, $trackId, $trackName, $sessionType, $format, $start, $length)
+                        INSERT INTO recordings (id, session_uid, description, track_id, track_name, session_type, game_format, start_time, session_length, weekend_id)
+                        VALUES ($id, $uid, $description, $trackId, $trackName, $sessionType, $format, $start, $length, $weekend)
                         """,
                         ("id", b.Id), ("uid", b.Recording.SessionUid), ("description", b.Recording.Description),
                         ("trackId", b.Recording.TrackId), ("trackName", b.Recording.TrackName),
                         ("sessionType", b.Recording.SessionType), ("format", (int)b.Recording.Format), ("start", b.StartUtc),
-                        ("length", b.Recording.SessionLength));
+                        ("length", b.Recording.SessionLength), ("weekend", b.Recording.WeekendId));
                     break;
 
                 case EndOp e:
@@ -427,6 +427,12 @@ public sealed partial class DuckDbTelemetryStore(string databasePath, ILogger<Du
             args.Add(("length", u.SessionLength));
         }
 
+        if (u.WeekendId is not null)
+        {
+            sets.Add("weekend_id = $weekend");
+            args.Add(("weekend", u.WeekendId));
+        }
+
         if (sets.Count > 0)
         {
             NonQuery($"UPDATE recordings SET {string.Join(", ", sets)} WHERE id = $id", [.. args]);
@@ -466,13 +472,13 @@ public sealed partial class DuckDbTelemetryStore(string databasePath, ILogger<Du
 
     public Task<IReadOnlyList<RecordingInfo>> GetRecordingsAsync(CancellationToken cancellationToken = default) =>
         QueryAsync("""
-            SELECT id, session_uid, description, track_id, track_name, session_type, game_format, start_time, end_time, session_length
+            SELECT id, session_uid, description, track_id, track_name, session_type, game_format, start_time, end_time, session_length, weekend_id
             FROM recordings ORDER BY start_time DESC
             """, ReadRecording, cancellationToken);
 
     public async Task<RecordingInfo?> GetRecordingAsync(long recordingId, CancellationToken cancellationToken = default) =>
         (await QueryAsync("""
-            SELECT id, session_uid, description, track_id, track_name, session_type, game_format, start_time, end_time, session_length
+            SELECT id, session_uid, description, track_id, track_name, session_type, game_format, start_time, end_time, session_length, weekend_id
             FROM recordings WHERE id = $id
             """, ReadRecording, cancellationToken, ("id", recordingId))).FirstOrDefault();
 
@@ -516,11 +522,16 @@ public sealed partial class DuckDbTelemetryStore(string databasePath, ILogger<Du
         QueryAsync($"SELECT {string.Join(", ", EnergyColumns.Select(c => c.Name))} FROM telemetry WHERE recording_id = $id ORDER BY session_time",
             r => TelemetryColumns.ReadRow(r, EnergyColumns), cancellationToken, ("id", recordingId));
 
+    // The overtake override counts only in a recording whose flag tells "in use" from "available": the F1 25 2026 pack
+    // sends m_overtakeActive equal to m_overtakeAvailable in practice (on for most of the lap with nobody ahead), and the
+    // MGU-K power there tapers off at speed as it does without the override.
     public Task<IReadOnlyList<ModelSample>> GetModelSamplesAsync(GameFormat format, int trackId, CancellationToken cancellationToken = default) =>
         QueryAsync("""
             SELECT t.recording_id, t.lap_number, t.session_time, t.lap_distance, t.speed, t.throttle, t.brake, t.steer, t.ers_store_energy,
                    t.ers_deploy_mode, t.ers_harvested_mguk, t.ers_deployed, t.engine_power_ice, t.engine_power_mguk, t.g_force_lon,
-                   t.fuel_in_tank, CASE WHEN r.game_format = 2026 THEN t.active_aero_mode ELSE t.drs END, coalesce(t.overtake_active, 0),
+                   t.fuel_in_tank, CASE WHEN r.game_format = 2026 THEN t.active_aero_mode ELSE t.drs END,
+                   CASE WHEN bool_or(coalesce(t.overtake_available, 0) = 1 AND coalesce(t.overtake_active, 0) = 0) OVER (PARTITION BY t.recording_id)
+                        THEN coalesce(t.overtake_active, 0) ELSE 0 END,
                    t.g_force_lat, t.ers_harvest_limit
             FROM telemetry t JOIN recordings r ON r.id = t.recording_id
             WHERE r.game_format = $format AND r.track_id = $track AND t.lap_number >= 1
@@ -627,6 +638,7 @@ public sealed partial class DuckDbTelemetryStore(string databasePath, ILogger<Du
         EndTime: r.IsDBNull(8) ? null : new DateTimeOffset(DateTime.SpecifyKind(r.GetDateTime(8), DateTimeKind.Utc)))
     {
         SessionLength = r.IsDBNull(9) ? 0 : r.GetInt32(9),
+        WeekendId = r.FieldCount > 10 ? GetLong(r, 10) : 0,
     };
 
     private static long GetLong(DbDataReader r, int i) => r.IsDBNull(i) ? 0 : r.GetInt64(i);
@@ -676,7 +688,7 @@ public sealed partial class DuckDbTelemetryStore(string databasePath, ILogger<Du
     private sealed record BeginOp(long Id, NewRecording Recording, DateTime StartUtc) : WriteOp;
     private sealed record EndOp(long Id, DateTime EndUtc) : WriteOp;
     private sealed record UpdateOp(long Id, string? SessionUid, int? TrackId, string? TrackName, int? SessionType, DateTime? StartUtc, DateTime? EndUtc, GameFormat? Format,
-        int? SessionLength) : WriteOp;
+        int? SessionLength, long? WeekendId) : WriteOp;
     private sealed record SampleOp(TelemetrySample Sample) : WriteOp;
     private sealed record LapOp(long RecordingId, LapRecord Lap) : WriteOp;
     private sealed record RestartLapOp(long RecordingId, int LapNumber, double SessionTime) : WriteOp;

@@ -113,6 +113,14 @@ public static class CompoundLibraryBuilder
     /// </summary>
     public const double MaxPlausibleDegradation = 1.0;
 
+    /// <summary>
+    /// Laps getting faster than this through a run (s/lap, fuel taken out) measure the track rubbering in or the driver
+    /// finding pace, not the tyres: no slope is taken from them. Within it, the slope counts as no degradation.
+    /// </summary>
+    public const double MaxImprovementPerLap = 0.05;
+
+    private static bool Plausible(double slope) => slope is >= -MaxImprovementPerLap and <= MaxPlausibleDegradation;
+
     /// <summary>A cliff slope is never taken above this, s/lap past the cliff.</summary>
     public const double MaxCliffSecondsPerLap = 2.0;
 
@@ -171,14 +179,14 @@ public static class CompoundLibraryBuilder
         var degradationAt = new Dictionary<(string, int), double>();
         foreach (var compound in compounds)
         {
-            if (PooledSlope(straight.Where(l => l.Compound == compound)) is { } slope && slope <= MaxPlausibleDegradation)
+            if (PooledSlope(straight.Where(l => l.Compound == compound)) is { } slope && Plausible(slope))
             {
                 degradation[compound] = Math.Max(0, slope);
             }
 
             foreach (var length in straight.Where(l => l.Compound == compound && Protocol.Lookups.RaceLengths.IsKnown(l.Length)).Select(l => l.Length).Distinct())
             {
-                if (PooledSlope(straight.Where(l => l.Compound == compound && l.Length == length)) is { } at && at <= MaxPlausibleDegradation)
+                if (PooledSlope(straight.Where(l => l.Compound == compound && l.Length == length)) is { } at && Plausible(at))
                 {
                     degradationAt[(compound, length)] = Math.Max(0, at);
                 }

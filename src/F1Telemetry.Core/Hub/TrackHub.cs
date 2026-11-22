@@ -47,6 +47,9 @@ public sealed record HubSession(
     IReadOnlyList<SetupRun> SetupRuns)
 {
     /// <summary>Whether this is the saved copy of <paramref name="recording"/>.</summary>
+    /// <summary>The game's weekend link identifier of the session (see <see cref="RecordingInfo.WeekendId"/>); 0 when not known.</summary>
+    public long WeekendId { get; init; }
+
     public bool IsOf(RecordingInfo recording) => RecordingId == recording.Id && SessionUid == recording.SessionUid;
 
     /// <summary>
@@ -57,6 +60,7 @@ public sealed record HubSession(
         new(-Id, SessionUid, $"Saved in the hub {SavedAt.LocalDateTime:d MMM yyyy}", TrackId, TrackName, SessionType, Format, StartTime, StartTime)
         {
             SessionLength = RaceLength,
+            WeekendId = WeekendId,
         };
 }
 
@@ -90,10 +94,13 @@ public static class TrackHub
     public static readonly TimeSpan WeekendWindow = TimeSpan.FromHours(12);
 
     /// <summary>
-    /// The race length a recording counts for: a race's own; for practice and qualifying, that of the nearest race at the
-    /// same track and format within <see cref="WeekendWindow"/> (the weekend it belongs to), since the game scales wear
-    /// to the race. 0 when not known.
+    /// The race length a recording counts for: a race's own; for practice and qualifying (which the game sends no race
+    /// length in: <c>m_sessionLength</c> is 0 there), that of the race of the same weekend, since the game scales wear to
+    /// the race. The weekend is the game's weekend link identifier when both sessions have one (it is kept across saves,
+    /// so a weekend driven over several days still matches); otherwise the nearest race at the same track and format
+    /// within <see cref="WeekendWindow"/>. 0 when not known.
     /// </summary>
+    /// <param name="atTrack">Recordings and hub sessions (<see cref="HubSession.AsRecording"/>) to look for the race in.</param>
     public static int RaceLengthOf(RecordingInfo recording, IEnumerable<RecordingInfo> atTrack)
     {
         if (SessionTypes.IsRace(recording.SessionType))
@@ -101,11 +108,16 @@ public static class TrackHub
             return RaceLengths.IsKnown(recording.SessionLength) ? recording.SessionLength : RaceLengths.Unknown;
         }
 
-        var race = atTrack
+        var races = atTrack
             .Where(r => r.Id != recording.Id && r.Format == recording.Format && r.TrackId == recording.TrackId
                         && SessionTypes.IsRace(r.SessionType) && RaceLengths.IsKnown(r.SessionLength))
             .Select(r => (Race: r, Gap: (r.StartTime - recording.StartTime).Duration()))
-            .Where(r => r.Gap <= WeekendWindow)
+            .ToList();
+        var sameWeekend = recording.WeekendId != 0
+            ? races.Where(r => r.Race.WeekendId == recording.WeekendId).OrderBy(r => r.Gap).Select(r => r.Race).FirstOrDefault()
+            : null;
+        var race = sameWeekend ?? races
+            .Where(r => r.Gap <= WeekendWindow && (recording.WeekendId == 0 || r.Race.WeekendId == 0))
             .OrderBy(r => r.Gap)
             .Select(r => r.Race)
             .FirstOrDefault();

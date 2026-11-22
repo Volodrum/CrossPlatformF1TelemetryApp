@@ -4,6 +4,7 @@ using F1Telemetry.Core.Engine;
 using F1Telemetry.Core.Hub;
 using F1Telemetry.Core.Models;
 using F1Telemetry.Protocol;
+using F1Telemetry.Protocol.Lookups;
 
 namespace F1Telemetry.Core.Recording;
 
@@ -26,7 +27,7 @@ public sealed class SessionAnalysisService(ITelemetryStore store, StrategyOption
     private readonly ConcurrentDictionary<long, (RecordingInfo Recording, RaceInput? Race)> _finished = new();
 
     // Hub sessions analysed again, by hub id: a session only changes when it is saved again.
-    private readonly ConcurrentDictionary<long, (DateTimeOffset SavedAt, int RaceLength, RaceInput? Race)> _restored = new();
+    private readonly ConcurrentDictionary<long, (DateTimeOffset SavedAt, int RaceLength, int SessionType, RaceInput? Race)> _restored = new();
 
     public async Task<IReadOnlyList<LapRecord>> GetClassifiedLapsAsync(RecordingInfo recording, CancellationToken ct = default)
     {
@@ -112,15 +113,31 @@ public sealed class SessionAnalysisService(ITelemetryStore store, StrategyOption
     {
         var recordings = (await store.GetRecordingsAsync(ct)).Where(r => r.TrackId == trackId && r.Format == format).ToList();
         var saved = await store.GetHubSessionsAsync(format, trackId, ct);
+
+        // A race kept only in the hub still tells its weekend's practice and qualifying what race they were for.
+        var known = recordings.Concat(saved.Where(h => !recordings.Any(h.IsOf)).Select(h => h.AsRecording())).ToList();
         var sessions = new List<TrackSession>();
         foreach (var recording in recordings)
         {
             var copy = saved.FirstOrDefault(h => h.IsOf(recording));
-            sessions.Add(new TrackSession(recording, copy, copy?.RaceLength ?? TrackHub.RaceLengthOf(recording, recordings)));
+            sessions.Add(new TrackSession(recording, copy, Length(copy, recording)));
         }
 
-        sessions.AddRange(saved.Where(h => !recordings.Any(h.IsOf)).Select(h => new TrackSession(null, h, h.RaceLength)));
+        sessions.AddRange(saved.Where(h => !recordings.Any(h.IsOf)).Select(h => new TrackSession(null, h, Length(h, null))));
         return [.. sessions.OrderBy(s => s.StartTime)];
+
+        // A saved session counts for the length it was saved with. One saved before its race was known (practice saved
+        // before the race was run) takes its weekend's race once there is one.
+        int Length(HubSession? copy, RecordingInfo? recording)
+        {
+            if (copy is not null && (RaceLengths.IsKnown(copy.RaceLength) || SessionTypes.IsRace(copy.SessionType)))
+            {
+                return copy.RaceLength;
+            }
+
+            var info = copy?.AsRecording() is { } r ? r with { SessionLength = 0 } : recording!;
+            return TrackHub.RaceLengthOf(info, known);
+        }
     }
 
     /// <summary>
@@ -140,7 +157,8 @@ public sealed class SessionAnalysisService(ITelemetryStore store, StrategyOption
     /// <summary>The laps and analysis a hub session kept, analysed again as its recording was; null when it kept no laps.</summary>
     public RaceInput? Restore(HubSession saved)
     {
-        if (_restored.TryGetValue(saved.Id, out var kept) && kept.SavedAt == saved.SavedAt && kept.RaceLength == saved.RaceLength)
+        if (_restored.TryGetValue(saved.Id, out var kept) && kept.SavedAt == saved.SavedAt && kept.RaceLength == saved.RaceLength
+            && kept.SessionType == saved.SessionType)
         {
             return kept.Race;
         }
@@ -148,7 +166,7 @@ public sealed class SessionAnalysisService(ITelemetryStore store, StrategyOption
         var data = saved.Strategy;
         var analysis = data.Laps.Count == 0 ? null : StintAnalyzer.Analyze(data.Laps, data.Aggregates, data.LatestWear, saved.SessionType, options);
         var race = analysis is null ? null : new RaceInput(saved.AsRecording(), data.Laps, data.Aggregates, analysis) { RaceLength = saved.RaceLength };
-        _restored[saved.Id] = (saved.SavedAt, saved.RaceLength, race);
+        _restored[saved.Id] = (saved.SavedAt, saved.RaceLength, saved.SessionType, race);
         return race;
     }
 

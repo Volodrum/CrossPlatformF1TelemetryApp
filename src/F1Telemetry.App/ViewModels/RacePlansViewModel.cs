@@ -217,6 +217,9 @@ public sealed partial class RacePlansViewModel(TelemetryRuntime runtime, Setting
 
     public ObservableCollection<GuideRowViewModel> Guide { get; } = [];
 
+    /// <summary>The data guide last built (for the hub's guide page); null before one is.</summary>
+    public DataGuide? GuideData { get; private set; }
+
     /// <summary>The next run to do, shown large and moving; null when everything is measured.</summary>
     [ObservableProperty] public partial GuideRowViewModel? NextGuide { get; set; }
 
@@ -321,6 +324,7 @@ public sealed partial class RacePlansViewModel(TelemetryRuntime runtime, Setting
         PlanChart = null;
         PlanCharts.Clear();
         _shownPlans = null;
+        GuideData = null;
         Guide.Clear();
         PracticeGuide.Clear();
         RaceGuide.Clear();
@@ -460,6 +464,7 @@ public sealed partial class RacePlansViewModel(TelemetryRuntime runtime, Setting
     /// <summary>The data guide: the checklist, its score, the next run, and the cards by session.</summary>
     private void LoadGuide(DataGuide guide, string trackName)
     {
+        GuideData = guide;
         Guide.Clear();
         foreach (var item in guide.Items)
         {

@@ -213,6 +213,85 @@ public sealed class TrackHubTests : IAsyncLifetime
     }
 
     [Fact]
+    public void The_games_weekend_id_links_practice_to_its_race_on_another_day()
+    {
+        var start = new DateTimeOffset(2026, 11, 1, 12, 0, 0, TimeSpan.Zero);
+        RecordingInfo Recording(long id, int type, double hours, long weekend, int length = 0) =>
+            new(id, $"{id}", "", Monza, "Monza", type, Format, start.AddHours(hours), start.AddHours(hours + 1)) { SessionLength = length, WeekendId = weekend };
+
+        var practice = Recording(1, 1, 0, weekend: 77);
+        var raceTwoDaysLater = Recording(2, 15, 48, weekend: 77, RaceLengths.Long);       // same career weekend, saved and resumed
+        var otherWeekendSameDay = Recording(3, 15, 2, weekend: 78, RaceLengths.VeryShort); // a different weekend, close in time
+        IReadOnlyList<RecordingInfo> all = [practice, raceTwoDaysLater, otherWeekendSameDay];
+
+        Assert.Equal(RaceLengths.Long, TrackHub.RaceLengthOf(practice, all));
+        Assert.Equal(RaceLengths.Unknown, TrackHub.RaceLengthOf(Recording(4, 1, 1, weekend: 79), all)); // its race isn't recorded
+
+        // Without a weekend id (older recordings) the nearest race within the window still counts.
+        Assert.Equal(RaceLengths.VeryShort, TrackHub.RaceLengthOf(Recording(5, 1, 1, weekend: 0), all));
+    }
+
+    [Fact]
+    public async Task The_overtake_flag_counts_only_where_the_game_tells_in_use_from_available()
+    {
+        // Practice in the 2026 pack: m_overtakeActive is on whenever overtake is available (most of the lap). A race
+        // where it was available but not used tells the two apart, so there the flag means the override.
+        await using var store = await OpenAsync("override.duckdb");
+        long Record(string uid, Func<int, (int Available, int Active)> flags)
+        {
+            var id = store.BeginRecording(new NewRecording(uid, "", Monza, "Monza", 1, Format));
+            for (var i = 0; i < 40; i++)
+            {
+                var (available, active) = flags(i);
+                store.AppendSample(new TelemetrySample
+                {
+                    RecordingId = id, LapNumber = 1, SessionTime = i * 0.1, LapDistance = i * 10, Speed = 250, Throttle = 1,
+                    EnginePowerIce = 400_000, OvertakeAvailable = available, OvertakeActive = active,
+                });
+            }
+
+            return id;
+        }
+
+        var mirrored = Record("1", i => i < 30 ? (1, 1) : (0, 0));
+        var used = Record("2", i => i < 10 ? (1, 0) : i < 20 ? (1, 1) : (0, 0));
+        await store.FlushAsync(Ct);
+
+        var samples = await store.GetModelSamplesAsync(Format, Monza, Ct);
+        Assert.DoesNotContain(samples, s => s.RecordingId == mirrored && s.Override);
+        Assert.Equal(10, samples.Count(s => s.RecordingId == used && s.Override));
+    }
+
+    [Fact]
+    public void A_battery_filled_on_the_out_lap_counts_although_the_run_to_the_line_spent_some()
+    {
+        var atLine = Profile(70); // the helper's laps start at half a battery
+        var guide = EnergyGuideBuilder.Build(ErsModelStats.Merge([]).Build(Format, Monza), null, atLine.WithRunUp(LapSimulator.Capacity));
+        var item = guide.Items.Single(i => i.Title == "Push lap from a full battery");
+
+        Assert.Equal(GuideState.Done, item.State);
+        Assert.Equal("the battery was 100 % on the run to the fastest lap, 50 % at the line", item.Have);
+        Assert.Equal(LapSimulator.Capacity, LapProfile.FromData(atLine.WithRunUp(LapSimulator.Capacity).ToData())!.RunUpStore); // kept in the hub
+        Assert.Equal(GuideState.Missing, EnergyGuideBuilder.Build(ErsModelStats.Merge([]).Build(Format, Monza), null, atLine).Items
+            .Single(i => i.Title == "Push lap from a full battery").State);
+    }
+
+    [Theory]
+    [InlineData(GameFormat.F1_25)]
+    [InlineData(GameFormat.F1_26)]
+    public void Session_packet_carries_the_weekend_link_id(GameFormat format)
+    {
+        var writer = new PacketWriter(FormatLayout.For(format));
+        var packet = writer.Create(PacketId.Session, 1, 0, 0, 0);
+        writer.WriteSession(packet, new SessionData(0, 30, 20, 25, 5793, 1, 11, 0, 3600, 3600, 80, false, 0, false, [], 0, 0, 0, 0, 0, 2, 1, 0, 1900, 3800,
+            null, 0, WeekendLinkId: 4_279_507_901));
+
+        var parsed = Assert.IsType<SessionPacket>(PacketParser.Parse(packet).Packet).Data;
+        Assert.Equal(4_279_507_901u, parsed.WeekendLinkId);
+        Assert.Equal((0, 2), ((int)parsed.SessionLength, (int)parsed.NumSafetyCarPeriods));
+    }
+
+    [Fact]
     public void Wear_and_fuel_come_from_the_race_length_planned_for_and_pace_is_shared()
     {
         // The same medium tyre wears four times as fast in the medium-length race as in the full-length one.

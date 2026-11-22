@@ -58,6 +58,18 @@ public sealed partial class LocalizationTests
     });
 
     [Fact]
+    public void The_fuel_guide_with_its_note_on_short_runs_is_translated() => InUkrainian(() =>
+    {
+        var text = Loc.T("one run of 3+ laps on the soft (15 laps from 25 kg) (2 shorter runs on the soft left out: a run of 1–2 laps after an out-lap starts on a full battery), typical F1 value used");
+        Assert.StartsWith("один заїзд з 3+ кіл на ", text);
+        Assert.Contains("(15 кіл з 25 кг)", text);
+        Assert.Contains("коротші заїзди", text);
+        Assert.EndsWith("використано типове значення F1", text);
+        Assert.Equal("1 / 2 ЗАЇЗДІВ", Loc.T("1 / 2 RUNS"));
+        Assert.Equal("ТИП СЕСІЇ", Loc.T("SESSION TYPE"));
+    });
+
+    [Fact]
     public void Capitals_find_their_key_in_any_case() => InUkrainian(() =>
     {
         Assert.Equal("ПЛАН ГОНКИ", Loc.T("RACE PLAN"));

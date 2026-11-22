@@ -72,7 +72,8 @@ public sealed record PlanInputs(ErsCarModel Model, LapProfile Race, int RaceLaps
             }
         }
 
-        var qualifying = LapProfile.From(fastestSamples, format, fastestLap.LapTimeMs / 1000.0);
+        var qualifying = LapProfile.From(fastestSamples, format, fastestLap.LapTimeMs / 1000.0)
+            ?.WithRunUp(await SessionLaps.RunUpStoreAsync(runtime.Store, fastest.Recording.Id, fastestSamples));
         var race = await Task.Run(() => LapProfile.Average([.. profiles.Select(p => p.Profile)]));
         if (race is null || qualifying is null)
         {
