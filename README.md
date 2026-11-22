@@ -78,6 +78,30 @@ Both formats also record ICE and MGU-K power (`engine_power_ice`, `engine_power_
 
 Packets whose length doesn't match their format are rejected and counted, never misread. The toolbar's status line shows the count.
 
+### Official UDP specification
+
+EA publishes the packet layouts, field meanings and lookup tables on its forum. Check them first whenever a question is about what the game sends:
+
+- [EA SPORTS F1 25 and F1 25: 2026 Season Pack UDP specification](https://forums.ea.com/blog/f1-games-game-info-hub-en/ea-sports%e2%84%a2-f1%c2%ae25-2026-season-pack-udp-specification/12187347): the forum post. Its attachments are the actual spec:
+  - *Data Output from F1 25 2026 Season Pack (Season 8).pdf*: the full document, including the appendices (session types, game mode ids, rulesets, team, driver and track ids, button flags).
+  - *2026 Season Pack Telemetry Output Structures.txt*: the C structs of every packet in format `2026`, with comments.
+  - *F1 25 Telemetry Output Structures.txt* and *Data Output from F1 25 v3.pdf*: the same for format `2025`.
+- [Discussion thread](https://forums.ea.com/discussions/f1-25-general-discussion-en/discussion-f1%C2%AE25-2026-season-pack-udp-specification/13424444): questions, answers and bug reports about the spec.
+
+The forum refuses automated fetches (HTTP 403). Open the post in a browser and download the attachments from there.
+
+What real game data showed that the spec doesn't say (checked against a 2026 Season Pack practice capture):
+
+| Field | Spec | What the game sends |
+|---|---|---|
+| `m_sessionType` | 0 unknown, 1–3 P1–P3, 4 short practice, 5–9 qualifying, 10–14 sprint shootout, 15–17 race, 18 time trial | As documented. |
+| `m_sessionLength` | 0 = none, 2 = very short … 7 = full | **0 in practice** (and qualifying). Only a race carries its race length, so the app takes the weekend's race length from the race (see *Track hub*). |
+| `m_weekendLinkIdentifier` | Identifier for the weekend, persists across saves | Set in Grand Prix mode. The app stores it as `weekend_id` and uses it to tie practice and qualifying to their race. |
+| `m_weekendStructure[12]` | Session types of the weekend | For example `1, 2, 3, 8, 15` (P1, P2, P3, short qualifying, race). |
+| Tyre stint `m_endLap` (session history) | Lap the stint ended on | **A lap early in practice**, and a garage refuel on the same set starts a new stint. The app corrects it from the garage visits it sees (`m_driverStatus` = 0, in garage). |
+| `m_overtakeActive` (CarTelemetry2) | 0 = not active, 1 = active | **Equal to `m_overtakeAvailable`** in practice, on for most of the lap with nobody ahead, while MGU-K power still tapers with speed as it does without the override. The ERS model trusts the flag only in recordings where it sometimes differs from availability. |
+| `m_ersDeployMode` | 0 none, 1 medium, 2 hotlap, 3 boost | As documented. |
+
 ## Download
 
 The [Releases](https://github.com/Volodrum/CrossPlatformF1TelemetryApp/releases) page has an installer for each OS, built with [Velopack](https://velopack.io). They are self-contained (no .NET install needed) and **update themselves**: at startup an installed copy looks for a newer release, downloads it in the background and shows **UPDATE x.y.z · RESTART** in the toolbar. Restarting applies it (so does the next start). Settings → *Updates* shows the version, checks on demand and turns the startup check off.
@@ -379,7 +403,9 @@ Recordings are large, and the plans used to need every one of them: the compound
 - **SESSIONS** lists, per track and game format, every recording and every session saved to the hub. Tick sessions and **SAVE TO THE HUB…**: a preview shows the plans' figures before and after (each compound's pace, degradation and wear, the pit loss, fuel, the best plan, the car model and the ERS plan laps), and nothing is saved until you confirm. Saving a recording again updates it. **DELETE SAVED RECORDINGS** then deletes the ticked recordings that are saved as they are (samples and raw captures); **REMOVE FROM THE HUB** takes sessions back out.
 - What a session keeps is small: its classified laps with per-lap fuel and wear (the stint analysis runs on them again, so the strategy is fitted exactly as from the recording), its part of the ERS car model as sums that add up across sessions (`ErsModelStats`: deploy-band output counts, the straight-line fit's normal equations, the position map, traction cells, energy along the lap), its typical laps averaged and its fastest lap as lap profiles, and its setup runs.
 - The plans everywhere (the STRATEGY and ENERGY tabs, the ERS plan overlay, and the hub's own **STRATEGY** and **ENERGY** pages) use the hub's sessions as saved plus every recording not saved to it.
-- **Race length.** The game scales tyre wear and fuel burn to the race length (very short to full), which the app now reads from the session packet. Each session counts for a race length: a race its own, a practice or qualifying the race recorded at the track within 12 hours of it; you can change it per session. RACE PLANS has a **RACE LENGTH** picker: wear, degradation, cliff and fuel come from the sessions run at that length (from the other lengths for a compound never run there, marked ESTIMATED), while base paces and pit losses are shared by every length.
+- **SESSION TYPE** is filled in from the game (`m_sessionType`) and can be corrected per session if the game sent none or the wrong one. The change goes to the recording and its hub copy.
+- **DATA GUIDE** shows the track's race strategy and energy data guides together, with one score over both and a checklist of every run still to drive, grouped by the session to drive it in.
+- **Race length.** The game scales tyre wear and fuel burn to the race length (very short to full), which the app reads from the session packet. Practice and qualifying send none (`m_sessionLength` is 0 there), so each session counts for a race length: a race its own; a practice or qualifying the race of the same weekend. The weekend is matched by the game's weekend link id, else by a race at the track within 12 hours. A race kept only in the hub still counts. You can change the race length per session. RACE PLANS has a **RACE LENGTH** picker: wear, degradation, cliff and fuel come from the sessions run at that length (from the other lengths for a compound never run there, marked ESTIMATED), while base paces and pit losses are shared by every length.
 
 ![Track hub](docs/screenshots/24-hub-sessions.png)
 
