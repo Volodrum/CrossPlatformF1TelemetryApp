@@ -18,6 +18,7 @@ public enum HubPage
 {
     Sessions,
     Strategy,
+    Fuel,
     Energy,
     Guide,
     Setups,
@@ -200,6 +201,7 @@ public sealed partial class HubViewModel : ObservableObject
         _log = log;
         Setups = setups;
         Plans = new RacePlansViewModel(runtime, settings);
+        Fuel = new FuelViewModel(runtime);
         EnergyPlan = new EnergyPlanViewModel(planLog);
         runtime.Hub.Changed += (format, trackId) =>
         {
@@ -216,6 +218,9 @@ public sealed partial class HubViewModel : ObservableObject
 
     /// <summary>The track's race plans from the hub and its unsaved recordings.</summary>
     public RacePlansViewModel Plans { get; }
+
+    /// <summary>The track's fuel by kind of lap, and the race and qualifying fuel, from the hub and its unsaved recordings.</summary>
+    public FuelViewModel Fuel { get; }
 
     /// <summary>The track's ERS plan from the hub and its unsaved recordings.</summary>
     public EnergyPlanViewModel EnergyPlan { get; }
@@ -270,6 +275,7 @@ public sealed partial class HubViewModel : ObservableObject
     public bool HasSessions => Sessions.Count > 0;
     public bool IsSessionsPage => Page == HubPage.Sessions;
     public bool IsStrategyPage => Page == HubPage.Strategy;
+    public bool IsFuelPage => Page == HubPage.Fuel;
     public bool IsEnergyPage => Page == HubPage.Energy;
     public bool IsGuidePage => Page == HubPage.Guide;
     public bool IsSetupsPage => Page == HubPage.Setups;
@@ -303,6 +309,7 @@ public sealed partial class HubViewModel : ObservableObject
     {
         OnPropertyChanged(nameof(IsSessionsPage));
         OnPropertyChanged(nameof(IsStrategyPage));
+        OnPropertyChanged(nameof(IsFuelPage));
         OnPropertyChanged(nameof(IsEnergyPage));
         OnPropertyChanged(nameof(IsGuidePage));
         OnPropertyChanged(nameof(IsSetupsPage));
@@ -499,6 +506,10 @@ public sealed partial class HubViewModel : ObservableObject
                     await Plans.LoadTrackAsync(track.Format, track.TrackId, track.Name);
                     break;
 
+                case HubPage.Fuel:
+                    await Fuel.LoadTrackAsync(track.Format, track.TrackId);
+                    break;
+
                 case HubPage.Energy:
                     EnergyPlan.Clear(loading: true);
                     Outline = _runtime.Tracks.ForTrackId(track.TrackId);
@@ -660,7 +671,7 @@ public sealed partial class HubViewModel : ObservableObject
 
     private async Task<List<HubCompareRow>> CompareStrategyAsync(IReadOnlyList<TrackSession> before, IReadOnlyList<TrackSession> after, int length)
     {
-        async Task<CompoundLibrary> Library(IReadOnlyList<TrackSession> sessions)
+        async Task<(CompoundLibrary, FuelModel)> Library(IReadOnlyList<TrackSession> sessions)
         {
             var races = new List<RaceInput>();
             foreach (var session in sessions)
@@ -671,10 +682,10 @@ public sealed partial class HubViewModel : ObservableObject
                 }
             }
 
-            return _runtime.Analysis.BuildTrackKnowledge(races, null, length).Library;
+            return (_runtime.Analysis.BuildTrackKnowledge(races, null, length).Library, _runtime.Analysis.BuildFuelModel(races, length));
         }
 
-        var (a, b) = (await Library(before), await Library(after));
+        var ((a, fuelA), (b, fuelB)) = (await Library(before), await Library(after));
         var raceLaps = b.RaceLaps ?? a.RaceLaps ?? Plans.RaceLaps;
         var rows = new List<HubCompareRow>
         {
@@ -692,11 +703,13 @@ public sealed partial class HubViewModel : ObservableObject
         }
 
         rows.Add(new("STRATEGY", "PIT STOP", Pit(a), Pit(b)));
-        rows.Add(new("STRATEGY", "FUEL", a.FuelPerLap > 0 ? Inv($"{a.FuelPerLap:0.00} kg/lap") : "—", b.FuelPerLap > 0 ? Inv($"{b.FuelPerLap:0.00} kg/lap") : "—"));
+        rows.Add(new("FUEL", "RACE PACE", Burn(fuelA.RaceBurn), Burn(fuelB.RaceBurn)));
+        rows.Add(new("FUEL", "QUALIFYING PUSH LAP", Burn(fuelA.Push), Burn(fuelB.Push)));
         rows.Add(new("STRATEGY", $"BEST PLAN · {raceLaps} LAPS", BestPlan(a, raceLaps), BestPlan(b, raceLaps)));
         return rows;
 
         static string Pace(CompoundModel? c) => c is null ? "—" : TimeFormat.Lap(c.BaseLapSeconds * 1000);
+        static string Burn(FuelBurn? f) => f is { KgPerLap: > 0 } ? Inv($"{f.KgPerLap:0.00} kg/lap") : "—";
         static string Pit(CompoundLibrary l) => l.Sessions == 0 ? "—" : Inv($"{l.PitLossSeconds:0.0} s{(l.PitLossStops == 0 ? " (default)" : "")}");
         static string Format(CompoundModel? c, Func<CompoundModel, string> text) => c is null ? "—" : text(c);
     }

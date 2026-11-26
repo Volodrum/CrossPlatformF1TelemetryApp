@@ -1,0 +1,208 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:F1Telemetry.App.ViewModels"
+             xmlns:controls="using:F1Telemetry.App.Controls"
+             x:Class="F1Telemetry.App.Views.FuelPanel"
+             x:DataType="vm:FuelViewModel">
+  <!-- The hub's fuel page: burn by kind of lap (each run read as a race, race sim, qualifying run or quali sim), and the race and qualifying fuel -->
+  <StackPanel Spacing="12">
+    <TextBlock Classes="body" Text="{Binding Empty}" TextWrapping="Wrap" IsVisible="{Binding !HasModel}" />
+    <TextBlock Classes="muted" Text="Reading every session at this track…" IsVisible="{Binding IsBusy}" />
+
+    <!-- Burn by kind of lap -->
+    <Border Classes="panel" Padding="18" IsVisible="{Binding HasModel}">
+      <StackPanel Spacing="12">
+        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
+          <StackPanel Spacing="4">
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <TextBlock Classes="label strong" Text="FUEL BURN BY KIND OF LAP" VerticalAlignment="Center" />
+              <controls:HelpTip Width="18" Height="18"
+                                Text="Every run at this track (one set of tyres on one fill of fuel, from the sessions saved to the hub and every recording not saved) is read as what it was driven as: a race, a qualifying run, or in practice a race simulation (5 laps or more at a steady pace, or 3 or more on a heavy tank) or a qualifying simulation (a short run on a light tank, or as fast as the session's best). Inside a run, the laps before the first timed lap are out-laps, those after the last are in-laps, and timed laps more than 5 % off the run's best are cool-down laps. A lap's burn is the fuel at its start less at its end; each card is the median, with the middle half of the laps as its range. The race fuel uses race-pace laps only and the qualifying fuel push laps only, so one doesn't skew the other." />
+            </StackPanel>
+            <TextBlock Classes="body" FontSize="13" Text="{Binding Summary}" TextWrapping="Wrap" />
+            <TextBlock Classes="body" FontSize="13" Text="{Binding Insight}" TextWrapping="Wrap" Foreground="{StaticResource TextHiBrush}" IsVisible="{Binding HasInsight}" />
+          </StackPanel>
+          <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="12" VerticalAlignment="Top" IsVisible="{Binding HasRaceLengths}"
+                      ToolTip.Tip="The game scales fuel burn to the race length: the burns come from the sessions run at the length picked (a practice counts for its weekend's race), and from the other lengths for a kind of lap never driven at it. ANY LENGTH pools every session.">
+            <TextBlock Classes="label strong" Text="RACE LENGTH" VerticalAlignment="Center" />
+            <ComboBox ItemsSource="{Binding RaceLengthOptions}" SelectedItem="{Binding SelectedRaceLength}" MinWidth="160" VerticalAlignment="Center" />
+          </StackPanel>
+        </Grid>
+
+        <ItemsControl ItemsSource="{Binding Cards}">
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate>
+              <WrapPanel ItemSpacing="10" LineSpacing="10" />
+            </ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:FuelBurnCardViewModel">
+              <Border Background="{StaticResource CardBrush}" CornerRadius="8" Padding="14,12" Width="232" ToolTip.Tip="{Binding Tip}">
+                <StackPanel Spacing="4">
+                  <TextBlock Classes="label strong" Text="{Binding Title}" TextWrapping="Wrap" />
+                  <TextBlock Classes="label" Text="{Binding Subtitle}" TextWrapping="Wrap" />
+                  <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,4,0,0">
+                    <TextBlock Classes="data-m" Text="{Binding Value}" Foreground="{Binding ValueBrush}" />
+                    <TextBlock Classes="label" Text="KG/LAP" VerticalAlignment="Bottom" Margin="0,0,0,5" IsVisible="{Binding HasBurn}" />
+                  </StackPanel>
+                  <TextBlock Classes="mono" FontSize="12" Text="{Binding Range}" Foreground="{StaticResource TextMidBrush}" />
+                  <TextBlock Classes="muted" FontSize="12" Text="{Binding Detail}" />
+                  <WrapPanel ItemSpacing="6" LineSpacing="4" Margin="0,4,0,0">
+                    <Border Classes="pill" BorderBrush="{StaticResource FasterBrush}" BorderThickness="1" IsVisible="{Binding IsUsed}">
+                      <TextBlock Text="{Binding UsedFor}" FontFamily="{StaticResource DisplayFont}" FontSize="11" FontWeight="Bold" LetterSpacing="1.1" Foreground="{StaticResource FasterBrush}" />
+                    </Border>
+                    <Border Classes="pill" BorderBrush="{StaticResource SlowerBrush}" BorderThickness="1" IsVisible="{Binding FromOtherLengths}"
+                            ToolTip.Tip="No session at the race length picked had this kind of lap: taken from the other lengths.">
+                      <TextBlock Text="OTHER LENGTHS" FontFamily="{StaticResource DisplayFont}" FontSize="11" FontWeight="Bold" LetterSpacing="1.1" Foreground="{StaticResource SlowerBrush}" />
+                    </Border>
+                  </WrapPanel>
+                </StackPanel>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </StackPanel>
+    </Border>
+
+    <!-- Race and qualifying fuel side by side -->
+    <Grid ColumnDefinitions="*,*" ColumnSpacing="12" IsVisible="{Binding HasModel}">
+      <Border Classes="panel" Padding="18">
+        <StackPanel Spacing="12">
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+            <StackPanel Spacing="2">
+              <TextBlock Classes="label strong" Text="RACE FUEL" />
+              <TextBlock Classes="label" Text="START WITH" Margin="0,6,0,0" />
+              <TextBlock Classes="data-l" Text="{Binding RaceStart}" />
+            </StackPanel>
+            <StackPanel Grid.Column="1" Spacing="8" VerticalAlignment="Top">
+              <StackPanel Orientation="Horizontal" Spacing="10" HorizontalAlignment="Right">
+                <TextBlock Classes="label strong" Text="RACE LAPS" VerticalAlignment="Center" />
+                <NumericUpDown Value="{Binding RaceLaps}" Minimum="1" Maximum="100" Increment="1" FormatString="0" Width="150" />
+              </StackPanel>
+              <StackPanel Orientation="Horizontal" Spacing="10" HorizontalAlignment="Right"
+                          ToolTip.Tip="Laps of fuel carried on top of what the race needs, for a safety car you don't get, a fight, or a lap more than planned.">
+                <TextBlock Classes="label strong" Text="MARGIN · LAPS" VerticalAlignment="Center" />
+                <NumericUpDown Value="{Binding MarginLaps}" Minimum="0" Maximum="5" Increment="0.5" FormatString="0.0" Width="150" />
+              </StackPanel>
+              <ToggleSwitch IsChecked="{Binding FormationLap}" OnContent="FORMATION LAP" OffContent="FORMATION LAP" HorizontalAlignment="Right"
+                            ToolTip.Tip="Count the formation lap's fuel: switch off when the race starts without one." />
+            </StackPanel>
+          </Grid>
+          <TextBlock Classes="body" FontSize="13" Text="{Binding RaceEmpty}" TextWrapping="Wrap" Foreground="{StaticResource SlowerBrush}" IsVisible="{Binding !HasRacePlan}" />
+          <TextBlock Classes="body" FontSize="13" Text="{Binding RaceBasis}" TextWrapping="Wrap" IsVisible="{Binding HasRacePlan}" />
+          <ItemsControl ItemsSource="{Binding RaceLines}" IsVisible="{Binding HasRacePlan}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:FuelLineViewModel">
+                <Border BorderBrush="{StaticResource DividerBrush}" BorderThickness="0,1,0,0" Padding="0,7" Background="Transparent" ToolTip.Tip="{Binding Note}">
+                  <Grid ColumnDefinitions="190,*,Auto,90" ColumnSpacing="10">
+                    <TextBlock Classes="label strong" Text="{Binding Label}" VerticalAlignment="Center" />
+                    <TextBlock Grid.Column="1" Classes="mono" FontSize="13" Text="{Binding Detail}" Foreground="{StaticResource TextMidBrush}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                    <Border Grid.Column="2" Classes="pill" BorderBrush="{StaticResource SlowerBrush}" BorderThickness="1" IsVisible="{Binding Assumed}" VerticalAlignment="Center">
+                      <TextBlock Text="ASSUMED" FontFamily="{StaticResource DisplayFont}" FontSize="11" FontWeight="Bold" LetterSpacing="1.1" Foreground="{StaticResource SlowerBrush}" />
+                    </Border>
+                    <TextBlock Grid.Column="3" Classes="mono" FontWeight="Bold" Text="{Binding Kg}" Foreground="{Binding KgBrush}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                  </Grid>
+                </Border>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+
+          <!-- Lighter starts: what saving them takes and what the lighter car gains -->
+          <StackPanel Spacing="4" IsVisible="{Binding HasLighter}">
+            <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,6,0,2">
+              <TextBlock Classes="label strong" Text="START LIGHTER AND SAVE" VerticalAlignment="Center" />
+              <controls:HelpTip Width="18" Height="18"
+                                Text="Starting with less than the race needs and saving the rest by lifting and coasting. Starting lighter by some fuel and saving it evenly, the car is that much lighter at the start and level at the flag: half of it on average, every lap. The gain leaves out what the lifting itself costs, so it pays only when the saving is small." />
+            </StackPanel>
+            <ItemsControl ItemsSource="{Binding Lighter}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:FuelLineViewModel">
+                  <Border BorderBrush="{StaticResource DividerBrush}" BorderThickness="0,1,0,0" Padding="0,7" Background="Transparent" ToolTip.Tip="{Binding Note}">
+                    <Grid ColumnDefinitions="190,*,90" ColumnSpacing="10">
+                      <TextBlock Classes="label strong" Text="{Binding Label}" VerticalAlignment="Center" />
+                      <TextBlock Grid.Column="1" Classes="mono" FontSize="13" Text="{Binding Detail}" Foreground="{StaticResource TextMidBrush}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                      <TextBlock Grid.Column="2" Classes="mono" FontWeight="Bold" Text="{Binding Kg}" Foreground="{Binding KgBrush}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                    </Grid>
+                  </Border>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+        </StackPanel>
+      </Border>
+
+      <Border Grid.Column="1" Classes="panel" Padding="18">
+        <StackPanel Spacing="12">
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+            <StackPanel Spacing="2">
+              <TextBlock Classes="label strong" Text="QUALIFYING FUEL" />
+              <TextBlock Classes="label" Text="FUEL FOR THE RUN" Margin="0,6,0,0" />
+              <TextBlock Classes="data-l" Text="{Binding QualiTotal}" />
+            </StackPanel>
+            <StackPanel Grid.Column="1" Spacing="8" VerticalAlignment="Top">
+              <StackPanel Orientation="Horizontal" Spacing="10" HorizontalAlignment="Right">
+                <TextBlock Classes="label strong" Text="PUSH LAPS" VerticalAlignment="Center" />
+                <NumericUpDown Value="{Binding PushLaps}" Minimum="1" Maximum="4" Increment="1" FormatString="0" Width="150" />
+              </StackPanel>
+              <ToggleSwitch IsChecked="{Binding QualiInLap}" OnContent="IN-LAP" OffContent="IN-LAP" HorizontalAlignment="Right"
+                            ToolTip.Tip="Count the fuel to drive back to the pits after the run." />
+            </StackPanel>
+          </Grid>
+          <TextBlock Classes="body" FontSize="13" Text="{Binding QualiBasis}" TextWrapping="Wrap" />
+          <ItemsControl ItemsSource="{Binding QualiLines}" IsVisible="{Binding HasQualiPlan}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:FuelLineViewModel">
+                <Border BorderBrush="{StaticResource DividerBrush}" BorderThickness="0,1,0,0" Padding="0,7">
+                  <Grid ColumnDefinitions="190,*,Auto,90" ColumnSpacing="10">
+                    <TextBlock Classes="label strong" Text="{Binding Label}" VerticalAlignment="Center" />
+                    <TextBlock Grid.Column="1" Classes="mono" FontSize="13" Text="{Binding Detail}" Foreground="{StaticResource TextMidBrush}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                    <Border Grid.Column="2" Classes="pill" BorderBrush="{StaticResource SlowerBrush}" BorderThickness="1" IsVisible="{Binding Assumed}" VerticalAlignment="Center">
+                      <TextBlock Text="ASSUMED" FontFamily="{StaticResource DisplayFont}" FontSize="11" FontWeight="Bold" LetterSpacing="1.1" Foreground="{StaticResource SlowerBrush}" />
+                    </Border>
+                    <TextBlock Grid.Column="3" Classes="mono" FontWeight="Bold" Text="{Binding Kg}" Foreground="{Binding KgBrush}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                  </Grid>
+                </Border>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
+      </Border>
+    </Grid>
+
+    <!-- Every run and what it was read as -->
+    <Border Classes="panel" Padding="18" IsVisible="{Binding HasModel}">
+      <StackPanel Spacing="6">
+        <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,0,0,6">
+          <TextBlock Classes="label strong" Text="RUNS AT THIS TRACK" VerticalAlignment="Center" />
+          <controls:HelpTip Width="18" Height="18"
+                            Text="Each run (one set of tyres on one fill of fuel) and what it was read as. Hover a run for why. OTHER runs are shown but feed no calculation." />
+        </StackPanel>
+        <Grid ColumnDefinitions="*,90,44,130,*,90,90" ColumnSpacing="12" Margin="0,0,0,2">
+          <TextBlock Classes="label" Text="SESSION" />
+          <TextBlock Grid.Column="1" Classes="label" Text="LAPS" />
+          <TextBlock Grid.Column="3" Classes="label" Text="READ AS" />
+          <TextBlock Grid.Column="4" Classes="label" Text="LAPS BY KIND" />
+          <TextBlock Grid.Column="5" Classes="label" Text="START · KG" HorizontalAlignment="Right" />
+          <TextBlock Grid.Column="6" Classes="label" Text="KG/LAP" HorizontalAlignment="Right" />
+        </Grid>
+        <ItemsControl ItemsSource="{Binding Runs}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:FuelRunRowViewModel">
+              <Border BorderBrush="{StaticResource DividerBrush}" BorderThickness="0,1,0,0" Padding="0,6" Background="Transparent" ToolTip.Tip="{Binding Why}">
+                <Grid ColumnDefinitions="*,90,44,130,*,90,90" ColumnSpacing="12">
+                  <TextBlock Classes="body" FontSize="13" Text="{Binding Session}" Foreground="{Binding Foreground}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                  <TextBlock Grid.Column="1" Classes="mono" FontSize="13" Text="{Binding LapRange}" VerticalAlignment="Center" />
+                  <controls:CompoundBadge Grid.Column="2" Compound="{Binding Compound}" Width="24" Height="24" HorizontalAlignment="Left" VerticalAlignment="Center" />
+                  <ContentControl Grid.Column="3" Content="{Binding Kind}" HorizontalAlignment="Left" VerticalAlignment="Center" />
+                  <TextBlock Grid.Column="4" Classes="mono" FontSize="12" Text="{Binding Laps}" Foreground="{StaticResource TextMidBrush}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                  <TextBlock Grid.Column="5" Classes="mono" FontSize="13" Text="{Binding StartFuel}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                  <TextBlock Grid.Column="6" Classes="mono" FontSize="13" FontWeight="Bold" Text="{Binding Burn}" Foreground="{Binding Foreground}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                </Grid>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </StackPanel>
+    </Border>
+  </StackPanel>
+</UserControl>

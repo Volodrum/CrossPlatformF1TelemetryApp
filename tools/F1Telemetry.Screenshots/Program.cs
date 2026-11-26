@@ -330,6 +330,17 @@ Capture(window, "29-hub-recordings-deleted");
 vm.Hub.Page = HubPage.Strategy;
 Pump(minMs: 2000);
 Capture(window, "27-hub-strategy");
+vm.Hub.Page = HubPage.Fuel;
+Pump(minMs: 2000);
+Capture(window, "27b-hub-fuel");
+if (window.GetVisualDescendants().OfType<HubView>().FirstOrDefault()?.GetVisualDescendants().OfType<ScrollViewer>()
+        .FirstOrDefault(s => s.IsEffectivelyVisible) is { } fuelScroll)
+{
+    fuelScroll.Offset = fuelScroll.Offset.WithY(10_000); // the race and qualifying fuel, and the runs
+    Capture(window, "27c-hub-fuel-runs");
+    fuelScroll.Offset = default;
+}
+
 vm.Hub.Page = HubPage.Energy;
 Pump(minMs: 4000); // the plan is computed in the background
 Capture(window, "28-hub-energy");

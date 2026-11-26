@@ -230,6 +230,9 @@ public sealed class SessionAnalysisService(ITelemetryStore store, StrategyOption
         return new TrackKnowledge(library, DataGuideBuilder.Build(library, sessions, options));
     }
 
+    /// <summary>The fuel these sessions burn, by what each run was driven as (see <see cref="FuelModelBuilder"/>).</summary>
+    public FuelModel BuildFuelModel(IReadOnlyList<RaceInput> sessions, int raceLength = 0) => FuelModelBuilder.Build(sessions, raceLength, options);
+
     public async Task<RaceComparisonResult?> CompareAsync(RecordingInfo a, RecordingInfo b, CancellationToken ct = default)
     {
         var raceA = await LoadRaceAsync(a, ct);

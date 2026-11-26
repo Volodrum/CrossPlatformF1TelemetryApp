@@ -18,6 +18,9 @@
           <Button Theme="{StaticResource ModeToggle}" Content="STRATEGY" Classes.selected="{Binding IsStrategyPage}"
                   Command="{Binding SetPageCommand}" CommandParameter="{x:Static vm:HubPage.Strategy}"
                   ToolTip.Tip="The track's compounds and race plans, by race length" />
+          <Button Theme="{StaticResource ModeToggle}" Content="FUEL" Classes.selected="{Binding IsFuelPage}"
+                  Command="{Binding SetPageCommand}" CommandParameter="{x:Static vm:HubPage.Fuel}"
+                  ToolTip.Tip="Fuel burn by kind of lap (race, race sim, qualifying, quali sim), and the fuel for the race and for a qualifying run" />
           <Button Theme="{StaticResource ModeToggle}" Content="ENERGY" Classes.selected="{Binding IsEnergyPage}"
                   Command="{Binding SetPageCommand}" CommandParameter="{x:Static vm:HubPage.Energy}"
                   ToolTip.Tip="The track's ERS plan: a deploy mode per zone, for the race and for qualifying" />
@@ -145,6 +148,15 @@
           <controls:PageHeader Eyebrow="TRACK HUB · RACE PLANS" Title="{Binding Header}"
                                Help="The track's compound library and race plans from the sessions saved to the hub and every recording here not saved to it. Pick the race length to plan for: wear, degradation, cliff and fuel come from the sessions run at it." />
           <views:RacePlansPanel DataContext="{Binding Plans}" />
+        </StackPanel>
+      </ScrollViewer>
+
+      <!-- FUEL -->
+      <ScrollViewer Margin="0,16,0,0" IsVisible="{Binding IsFuelPage}">
+        <StackPanel Spacing="12" Margin="0,0,8,0">
+          <controls:PageHeader Eyebrow="TRACK HUB · FUEL" Title="{Binding Header}"
+                               Help="What each kind of lap burns at this track, from the sessions saved to the hub and every recording here not saved to it. Each run is read as a race, a qualifying run, or in practice a race simulation or a qualifying simulation, so the race fuel comes from laps at race pace and the qualifying fuel from push laps. Pick the race length: the game scales fuel burn to it." />
+          <views:FuelPanel DataContext="{Binding Fuel}" />
         </StackPanel>
       </ScrollViewer>
 

@@ -59,7 +59,10 @@ public sealed record CompoundModel(
 
 /// <param name="PitLossSeconds">What a stop costs at the track: median of the recorded races' stops (not those under a safety car), or the default.</param>
 /// <param name="PitLossStops">Stops behind <paramref name="PitLossSeconds"/>; 0 = the default.</param>
-/// <param name="FuelPerLap">Median fuel burn per clean lap, kg.</param>
+/// <param name="FuelPerLap">
+/// Fuel burn per lap at race pace, kg (see <see cref="FuelModel.RaceBurn"/>); the median of every clean lap when no race
+/// or race simulation was driven.
+/// </param>
 /// <param name="RaceLaps">Longest race recorded at the track; null when there is none.</param>
 public sealed record CompoundLibrary(
     IReadOnlyList<CompoundModel> Compounds,
@@ -276,6 +279,9 @@ public static class CompoundLibraryBuilder
             sessions.Where(include).SelectMany(r => r.Analysis.Stints).Select(st => st.AverageFuelPerLap).Where(f => f > 0).ToList();
         var fuel = Fuel(AtTarget) is { Count: > 0 } atTarget ? atTarget : Fuel(_ => true);
 
+        // The burn at race pace (races, else practice race simulations): light qualifying runs pushed flat out burn more.
+        var raceBurn = FuelModelBuilder.Build(sessions, target, options).RaceBurn?.KgPerLap;
+
         // The race distance to suggest: the longest race at the length planned for (at any length when pooled).
         var raceLaps = sessions.Where(r => SessionTypes.IsRace(r.Recording.SessionType) && r.Laps.Count > 0 && (target == 0 || AtTarget(r)))
             .Select(r => r.Laps[^1].LapNumber).DefaultIfEmpty().Max();
@@ -285,7 +291,7 @@ public static class CompoundLibraryBuilder
             fuelEffect,
             stops.Count > 0 ? PaceModel.Median(stops) : options.DefaultPitLossSeconds,
             stops.Count,
-            fuel.Count > 0 ? PaceModel.Median(fuel) : 0,
+            raceBurn ?? (fuel.Count > 0 ? PaceModel.Median(fuel) : 0),
             sessions.Count(r => r.Analysis.PaceLaps.Count > 0),
             raceLaps > 0 ? raceLaps : null)
         {
