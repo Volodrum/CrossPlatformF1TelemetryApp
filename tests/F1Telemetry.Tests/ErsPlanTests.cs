@@ -36,16 +36,19 @@ public class ErsPlanTests
         return Math.Sqrt(CornerSpeed * CornerSpeed + 2 * Braking * (next - d));
     }
 
-    /// <summary>One lap, Medium on the straights, from <paramref name="store"/> J; harvests 400 kW under braking.</summary>
-    internal static List<TelemetrySample> DriveLap(double store, double harvestLimit = 0)
+    /// <summary>
+    /// One lap, Medium on the straights, from <paramref name="store"/> J; harvests 400 kW under braking. The line is
+    /// <paramref name="line"/> m round from the first corner: driven from that corner, timed from the line.
+    /// </summary>
+    internal static List<TelemetrySample> DriveLap(double store, double harvestLimit = 0, double line = 0)
     {
         var samples = new List<TelemetrySample>();
         double t = 0, d = 0, v = CornerSpeed, harvested = 0, deployed = 0;
         const double dt = 0.02;
-        while (d < Length)
+        while (d < Length + line)
         {
-            var corner = InCorner(d);
-            var braking = !corner && v >= Envelope(d) - 0.01;
+            var corner = InCorner(d % Length);
+            var braking = !corner && v >= Envelope(d % Length) - 0.01;
             var full = !corner && !braking;
             var mguk = full && store > 0 ? Math.Min(120_000, store / dt) : 0;
             double a;
@@ -67,30 +70,33 @@ public class ErsPlanTests
                 deployed += mguk * dt;
             }
 
-            samples.Add(new TelemetrySample
+            if (d >= line)
             {
-                LapNumber = 2, SessionTime = t, LapDistance = d, Speed = (int)Math.Round(v * 3.6), Throttle = full ? 1 : corner ? 0.5 : 0,
-                Brake = braking ? 1 : 0, ErsDeployMode = DeployModes.Medium, ErsStoreEnergy = store, ErsHarvestedMguk = harvested, ErsDeployed = deployed,
-                EnginePowerIce = full ? Ice : 100_000, EnginePowerMguk = mguk, GForceLon = a / 9.81, FuelInTank = Fuel, ErsHarvestLimit = harvestLimit,
-            });
+                samples.Add(new TelemetrySample
+                {
+                    LapNumber = 2, SessionTime = t, LapDistance = d - line, Speed = (int)Math.Round(v * 3.6), Throttle = full ? 1 : corner ? 0.5 : 0,
+                    Brake = braking ? 1 : 0, ErsDeployMode = DeployModes.Medium, ErsStoreEnergy = store, ErsHarvestedMguk = harvested, ErsDeployed = deployed,
+                    EnginePowerIce = full ? Ice : 100_000, EnginePowerMguk = mguk, GForceLon = a / 9.81, FuelInTank = Fuel, ErsHarvestLimit = harvestLimit,
+                });
+            }
 
             var next = Math.Max(1, v + a * dt);
             if (!corner)
             {
-                next = Math.Min(next, Envelope(d + v * dt));
+                next = Math.Min(next, Envelope((d + v * dt) % Length));
             }
 
             d += (v + next) / 2 * dt;
-            v = corner && !InCorner(d) ? v : next;
+            v = corner && !InCorner(d % Length) ? v : next;
             t += dt;
         }
 
         return samples;
     }
 
-    private static LapSimulator Simulator(double startStore, double reserve = 0)
+    private static LapSimulator Simulator(double startStore, double reserve = 0, double line = 0)
     {
-        var samples = DriveLap(startStore);
+        var samples = DriveLap(startStore, line: line);
         var lap = LapProfile.From(samples, GameFormat.F1_26)!;
         return LapSimulator.Create(lap, Model, reserve)!;
     }
@@ -302,5 +308,101 @@ public class ErsPlanTests
 
         var last = ErsCoach.Advise(plan, 2900, 2_000_000, DeployModes.None, 150);
         Assert.Equal((DeployModes.Overtake, "400 M"), (last.NextMode, last.NextAt)); // the first zone of the next lap
+    }
+
+    // The line 1000 m round from the first corner: halfway down the first straight, so each lap starts and ends flat out.
+    private const double LineOnStraight = 1000;
+
+    /// <summary>
+    /// Where the line is on a straight, a race lap runs from the first corner exit after it to the same point a lap
+    /// later: its last zone goes from the last corner across the line, and it repeats with the charge it started with.
+    /// </summary>
+    [Fact]
+    public void A_race_lap_runs_its_last_zone_across_a_line_on_a_straight()
+    {
+        var simulator = Simulator(2_000_000, reserve: 300_000, line: LineOnStraight);
+        Assert.True(simulator.Lap.LineOnStraight);
+        var planner = new ErsPlanner(simulator, PlanKind.Race);
+        Assert.True(planner.CrossesLine);
+
+        var race = planner.Plan(PlanKind.Race);
+        var plan = race.Plan;
+        Assert.False(plan.StartsAtLine);
+        Assert.True(plan.CrossesLine);
+        var across = plan.Zones[^1];
+        Assert.True(across.CrossesLine);
+        Assert.True(across.From < simulator.Lap.Length && across.To > simulator.Lap.Length);
+        Assert.True(across.Contains(across.From) && across.Contains(across.EndOnLap - 1) && !across.Contains(plan.Zones[0].From));
+        Assert.Equal(2, plan.Zones.Count); // the two straights, the first one split by the line
+        Assert.True(plan.EndStore >= plan.StartStore - ErsOptimizer.Quantum, $"{plan.StartStore / 1e6:0.00} → {plan.EndStore / 1e6:0.00} MJ");
+        Assert.Equal(plan.Stores[^1], plan.LineStore);
+        Assert.All(plan.Stores, s => Assert.True(s >= 300_000 - ErsOptimizer.Quantum, $"below the reserve: {s / 1e6:0.00} MJ"));
+        Assert.True(race.RecoverCost > 0); // the battery is at the reserve at the line here: nothing more to spend, so no attack gain
+
+        // A qualifying lap still ends at the line, and a lap planned from the line starts with its own zone there.
+        Assert.False(new ErsPlanner(simulator, PlanKind.Qualifying).CrossesLine);
+        Assert.All(ErsOptimizer.Plan(simulator, PlanKind.Qualifying).Plan.Zones, z => Assert.False(z.CrossesLine));
+        var fromLine = planner.PlanFrom(PlanKind.Race, plan.LineStore, plan.StartStore);
+        Assert.True(fromLine.StartsAtLine);
+        Assert.Equal(3, fromLine.Zones.Count);
+        Assert.Equal(0, fromLine.Zones[0].From);
+        Assert.True(fromLine.Zones[^1].CrossesLine);
+    }
+
+    /// <summary>
+    /// What a zone out of the last corner deploys keeps paying past the line: the car is faster all the way down the
+    /// straight, not just to the line, so deploying there gains more than the stretch to the line alone shows.
+    /// </summary>
+    [Fact]
+    public void The_speed_out_of_the_last_corner_carries_across_the_line()
+    {
+        var simulator = Simulator(2_000_000, line: LineOnStraight);
+        var stages = ErsOptimizer.RaceStages(simulator.Lap);
+        var (first, across) = (stages[0], stages[^1]);
+        var count = simulator.Lap.Segments.Count;
+        Assert.Equal(count + first.To, across.To);
+        var (overtake, none) = (new DeployOption(DeployModes.Overtake, DeployModes.Overtake), new DeployOption(DeployModes.None, DeployModes.None));
+
+        double Seconds(DeployOption option) => simulator.Run(across.From, across.DeployEnd, across.To, option, 4_000_000).Seconds;
+        double ToLine(DeployOption option) => simulator.Run(across.From, count, count, option, 4_000_000).Seconds;
+        var gain = Seconds(none) - Seconds(overtake);
+        var toLine = ToLine(none) - ToLine(overtake);
+
+        Assert.True(toLine > 0);
+        Assert.True(gain > toLine + 0.02, $"across the line {gain:0.000} s, to the line {toLine:0.000} s");
+    }
+
+    /// <summary>The game counts the harvest limit per lap: a lap that reached it before the line harvests again after it.</summary>
+    [Fact]
+    public void The_harvest_limit_starts_again_at_the_line()
+    {
+        var lap = LapProfile.From(DriveLap(2_000_000, harvestLimit: 6_000_000, line: LineOnStraight), GameFormat.F1_26)!;
+        var simulator = LapSimulator.Create(lap, Model)!;
+        var across = ErsOptimizer.RaceStages(lap)[^1];
+        var none = new DeployOption(DeployModes.None, DeployModes.None);
+
+        var capped = simulator.Run(across.From, across.DeployEnd, across.To, none, 1_000_000, harvested: 6_000_000);
+
+        Assert.Equal(6_000_000, capped.LineHarvested);
+        Assert.True(capped.ExitHarvested > 100_000, $"harvested {capped.ExitHarvested / 1e6:0.00} MJ after the line"); // braking for the first corner
+    }
+
+    /// <summary>In a zone across the line the coach reads the switch point on from the zone's start, past the line.</summary>
+    [Fact]
+    public void The_coach_reads_a_zone_across_the_line()
+    {
+        var modes = new int[120];
+        var stores = new double[120];
+        var plan = new LapPlan(PlanKind.Race, 2_000_000, 2_000_000, 80, [
+            new ZonePlan(1, 750, 1900, new DeployOption(DeployModes.Overtake, DeployModes.None), 0, 0, 0, 0) { LapLength = 3000 },
+            new ZonePlan(2, 2300, 3300, new DeployOption(DeployModes.Overtake, DeployModes.None, UntilFraction: 0.5), 0, 0, 0, 0) { LapLength = 3000 },
+        ], modes, stores);
+
+        var before = ErsCoach.Advise(plan, 2500, 2_000_000, DeployModes.Overtake, 250);
+        Assert.Equal((2, DeployModes.Overtake, DeployModes.None, "300 M"), (before.Zone!.Number, before.NowMode, before.NextMode, before.NextAt)); // switch at 2800 m
+
+        var after = ErsCoach.Advise(plan, 100, 2_000_000, DeployModes.None, 300);
+        Assert.Equal((2, DeployModes.None), (after.Zone!.Number, after.NowMode)); // 400 m into the zone, past its switch
+        Assert.Equal(DeployModes.Overtake, after.NextMode); // the next zone
     }
 }

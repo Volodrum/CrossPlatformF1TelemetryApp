@@ -15,7 +15,9 @@ namespace F1Telemetry.App.Services;
 /// a car model learned from too little). Until then the overlay waits, and the plan is re-learned after every lap while
 /// it rests on the session being driven. Every lap at the line it plans from the battery the car actually has, and
 /// entering every deploy zone it re-plans the rest of the lap from the battery and harvest the car has there: a lap
-/// that went off plan gets the best plan from where it is, never a mode the battery can't pay for.
+/// that went off plan gets the best plan from where it is, never a mode the battery can't pay for. Where the line is on
+/// a straight, a race lap's plan runs on to the first corner exit of the next lap (see <see cref="ErsPlanner.CrossesLine"/>):
+/// the zone out of the last corner keeps the charge the straight past the line pays off.
 /// Qualifying sessions and time trial plan qualifying laps, everything else race laps; <see cref="NextMode"/> steps
 /// through race (normal, attack, recover) and qualifying. UI thread.
 /// </summary>
@@ -198,8 +200,8 @@ public sealed class ErsPlanService
 
             var (race, qualifying, steady) = await Task.Run(() =>
             {
-                var race = new ErsPlanner(raceLap);
-                return (race, new ErsPlanner(qualifyingLap), race.Plan(PlanKind.Race).Plan.StartStore);
+                var race = new ErsPlanner(raceLap, PlanKind.Race);
+                return (race, new ErsPlanner(qualifyingLap, PlanKind.Qualifying), race.Plan(PlanKind.Race).Plan.StartStore);
             });
             if (version != _version)
             {
@@ -351,7 +353,7 @@ public sealed class ErsPlanService
             return;
         }
 
-        var zone = plan.Zones.FirstOrDefault(z => sample.LapDistance >= z.From && sample.LapDistance < z.To);
+        var zone = plan.Zones.FirstOrDefault(z => z.Contains(sample.LapDistance));
         if (zone is null || zone.Number <= _zone || zone.From < ReplanFrom)
         {
             return;

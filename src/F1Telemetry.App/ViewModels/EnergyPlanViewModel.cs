@@ -15,13 +15,13 @@ namespace F1Telemetry.App.ViewModels;
 public sealed record ZoneRowViewModel(ZonePlan Zone, IReadOnlyList<ModeShare> Driven, EnergyUnit Unit)
 {
     public string Number => $"Z{Zone.Number}";
-    public string Range => $"{(Zone.From / 1000).ToString("0.00", CultureInfo.InvariantCulture)}–{(Zone.To / 1000).ToString("0.00", CultureInfo.InvariantCulture)} km";
+    public string Range => $"{(Zone.From / 1000).ToString("0.00", CultureInfo.InvariantCulture)}–{(Zone.EndOnLap / 1000).ToString("0.00", CultureInfo.InvariantCulture)} km";
 
     public IReadOnlyList<ModeShare> Plan => Zone.Choice.First == Zone.Choice.Then
         ? [Share(Zone.Choice.First, "")]
         : [Share(Zone.Choice.First, ""), Share(Zone.Choice.Then, "")];
 
-    public string Description => Zone.Choice.Describe();
+    public string Description => Zone.CrossesLine ? $"{Zone.Choice.Describe()}, across the line" : Zone.Choice.Describe();
     public string Battery => $"{EnergyText.Format(Zone.EntryStore, Unit)} → {EnergyText.Format(Zone.ExitStore, Unit)}";
     public string Gain => Math.Abs(Zone.Gain) < 0.0005 ? "0.000" : (Zone.Gain > 0 ? "−" : "+") + Math.Abs(Zone.Gain).ToString("0.000", CultureInfo.InvariantCulture);
     public IBrush GainBrush => Zone.Gain >= 0.0005 ? Palette.Faster : Zone.Gain <= -0.0005 ? Palette.Slower : Palette.TextMid;
@@ -224,10 +224,14 @@ public sealed partial class EnergyPlanViewModel(ILogger<EnergyPlanViewModel> log
         MapLine = Line(lap, plan, Outline);
         MapTitle = $"{(plan.Kind == PlanKind.Race ? "RACE" : "QUALIFYING")} PLAN · {Predicted}";
         Gain = (result.Gain >= 0 ? "−" : "+") + Math.Abs(result.Gain).ToString("0.000", CultureInfo.InvariantCulture) + " s";
-        Battery = $"{EnergyText.Format(plan.StartStore, unit)} → {EnergyText.Format(plan.EndStore, unit)}";
+        Battery = plan.StartsAtLine
+            ? $"{EnergyText.Format(plan.StartStore, unit)} → {EnergyText.Format(plan.EndStore, unit)}"
+            : EnergyText.Format(plan.LineStore, unit);
         BatteryNote = plan.Kind == PlanKind.Qualifying
             ? "Charge the battery full on the out-lap; the lap may end empty."
-            : $"Cross the line with {E(plan.StartStore)} every lap. The plan never takes the battery below {E(LapSimulator.RaceReserve)}: room for a lap not driven exactly to plan.";
+            : plan.CrossesLine
+                ? $"Cross the line with {E(plan.LineStore)} every lap. The last zone runs on across the line: the speed built out of the last corner carries down the straight, so the plan counts it on the next lap, with what is left in the battery there. The plan never takes the battery below {E(LapSimulator.RaceReserve)}: room for a lap not driven exactly to plan."
+                : $"Cross the line with {E(plan.StartStore)} every lap. The plan never takes the battery below {E(LapSimulator.RaceReserve)}: room for a lap not driven exactly to plan.";
         Energy = $"{EnergyText.Format(plan.Harvested, unit)} / {EnergyText.Format(plan.Deployed, unit)}";
         EnergyNote = plan.Kind == PlanKind.Qualifying
             ? $"Deploys {E(plan.Deployed)}: the full battery plus what the lap harvests."
@@ -255,7 +259,7 @@ public sealed partial class EnergyPlanViewModel(ILogger<EnergyPlanViewModel> log
 
         foreach (var zone in plan.Zones)
         {
-            var segments = lap.Segments.Where(s => s.From >= zone.From && s.From < zone.To && s.FullThrottle).ToList();
+            var segments = lap.Segments.Where(s => zone.Contains(s.From) && s.FullThrottle).ToList();
             var driven = segments.GroupBy(s => s.Mode).OrderBy(g => g.Key)
                 .Select(g => ZoneRowViewModel.Share(g.Key, $"{g.Count() * 100 / Math.Max(1, segments.Count)}%"))
                 .ToList();
@@ -288,7 +292,7 @@ public sealed partial class EnergyPlanViewModel(ILogger<EnergyPlanViewModel> log
             // Boundary i starts segment i (the last one ends the last segment): its mode, and the battery there
             // (Stores[k] is the battery at the end of segment k).
             var segment = Math.Clamp(i, 0, plan.Modes.Length - 1);
-            var store = i == 0 || plan.Stores.Length == 0 ? plan.StartStore : plan.Stores[Math.Min(i - 1, plan.Stores.Length - 1)];
+            var store = i == 0 || plan.Stores.Length == 0 ? plan.LineStore : plan.Stores[Math.Min(i - 1, plan.Stores.Length - 1)];
             points.Add(new TelemetrySample
             {
                 LapNumber = 1, LapDistance = i * LapProfile.Step, WorldPosX = x[i], WorldPosZ = z[i],

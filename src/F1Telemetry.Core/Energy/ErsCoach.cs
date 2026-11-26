@@ -33,7 +33,8 @@ public static class ErsCoach
         var d = Math.Clamp(lapDistance, 0, Math.Max(0, length - 1));
         var segment = Math.Clamp((int)(d / LapProfile.Step), 0, plan.Stores.Length - 1);
         var target = plan.Stores[segment];
-        var zone = plan.Zones.FirstOrDefault(z => d >= z.From && d < z.To);
+        // A zone across the line covers the start of the lap too; a plan from the line has its own zone there first.
+        var zone = plan.Zones.FirstOrDefault(z => z.Contains(d));
 
         int? now = null;
         int? next = null;
@@ -55,11 +56,12 @@ public static class ErsCoach
                 }
                 else if (choice.UntilFraction is { } fraction)
                 {
-                    var at = zone.From + fraction * (zone.To - zone.From);
-                    switched = d >= at;
+                    var at = zone.From + fraction * zone.Length;
+                    var along = zone.Along(d);
+                    switched = along >= at;
                     if (!switched)
                     {
-                        (next, nextAt, nextIn) = (choice.Then, Metres(at - d), at - d);
+                        (next, nextAt, nextIn) = (choice.Then, Metres(at - along), at - along);
                     }
                 }
             }

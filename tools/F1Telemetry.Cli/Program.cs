@@ -331,11 +331,11 @@ static async Task<int> ErsCheck(Args cli, CancellationToken ct)
         var watch = Stopwatch.StartNew();
         var result = F1Telemetry.Core.Energy.ErsOptimizer.Plan(raceLap, F1Telemetry.Core.Energy.PlanKind.Race);
         var plan = result.Plan;
-        Console.WriteLine($"Race plan on the typical lap ({watch.Elapsed.TotalSeconds:0.00} s): gain {result.Gain:+0.000;-0.000} s, battery {plan.StartStore / 1e6:0.00} → {plan.EndStore / 1e6:0.00} MJ, "
+        Console.WriteLine($"Race plan on the typical lap ({watch.Elapsed.TotalSeconds:0.00} s): gain {result.Gain:+0.000;-0.000} s, battery {plan.StartStore / 1e6:0.00} → {plan.EndStore / 1e6:0.00} MJ{(plan.StartsAtLine ? "" : $" from the first corner exit, {plan.LineStore / 1e6:0.00} MJ at the line")}, "
                           + $"harvest {plan.Harvested / 1e6:0.00} / deploy {plan.Deployed / 1e6:0.00} MJ, model check {result.Check.Error:+0.000;-0.000} s");
         foreach (var zone in plan.Zones)
         {
-            Console.WriteLine($"  Z{zone.Number,-2} {zone.From,5:0}–{zone.To,5:0} m  {zone.Choice.Describe(),-40} {zone.EntryStore / 1e6:0.00} → {zone.ExitStore / 1e6:0.00} MJ  {zone.Gain:+0.000;-0.000} s");
+            Console.WriteLine($"  Z{zone.Number,-2} {zone.From,5:0}–{zone.EndOnLap,5:0} m  {zone.Choice.Describe() + (zone.CrossesLine ? " (across the line)" : ""),-58} {zone.EntryStore / 1e6:0.00} → {zone.ExitStore / 1e6:0.00} MJ  {zone.Gain:+0.000;-0.000} s");
         }
     }
 

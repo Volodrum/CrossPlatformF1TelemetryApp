@@ -91,6 +91,8 @@
   "LOW CONFIDENCE": "НИЗЬКА ДОСТОВІРНІСТЬ",
   "Charge the battery full on the out-lap; the lap may end empty.": "Зарядіть батарею повністю на колі виїзду; коло може закінчитися з порожньою.",
   "Cross the line with {0} every lap. The plan never takes the battery below {1}: room for a lap not driven exactly to plan.": "Перетинайте лінію з {0} щокола. План ніколи не опускає батарею нижче {1}: запас на коло, проїхане не точно за планом.",
+  "Cross the line with {0} every lap. The last zone runs on across the line: the speed built out of the last corner carries down the straight, so the plan counts it on the next lap, with what is left in the battery there. The plan never takes the battery below {1}: room for a lap not driven exactly to plan.": "Перетинайте лінію з {0} щокола. Остання зона триває за лінією: швидкість, набрана на виході з останнього повороту, зберігається на прямій, тож план зараховує її наступному колу разом із тим, що лишилося в батареї. План ніколи не опускає батарею нижче {1}: запас на коло, проїхане не точно за планом.",
+  "{0}, across the line": "{0}, через лінію",
   "Deploys {0}: the full battery plus what the lap harvests.": "Віддає {0}: повна батарея плюс те, що коло рекуперує.",
   "Harvest {0} and deploy {1} on every lap: the same energy each lap, so every race lap runs this plan.": "Рекуперуйте {0} і віддавайте {1} щокола: та сама енергія кожного кола, тож кожне коло гонки йде за цим планом.",
   "Qualifying spends everything: there is nothing to save for.": "Кваліфікація витрачає все: заощаджувати нема на що.",

@@ -292,22 +292,41 @@ public sealed class LapProfile
             : new LapProfile(data.LapNumber, Math.Max(1, data.LapCount), data.Segments, data.Speed, data.Level, data.Braking, data.MassKg,
                 data.ActualSeconds, data.HarvestLimit, data.LineX, data.LineZ) { RunUpStore = data.RunUpStore };
 
-    /// <summary>Highest speed at each boundary that still makes the next braking zone, braking at <paramref name="braking"/> m/s².</summary>
+    /// <summary>Whether the line is on a flat-out stretch: the lap starts and ends flat out, so speed carries across it.</summary>
+    public bool LineOnStraight => Segments.Count > 0 && Segments[0].FullThrottle && Segments[^1].FullThrottle;
+
+    /// <summary>
+    /// Highest speed at each boundary that still makes the next braking zone, braking at <paramref name="braking"/> m/s².
+    /// Where the line is on a straight the lap wraps into the next one: the end of the lap is capped by the next lap's
+    /// first braking zone, not by the speed the reference crossed the line at.
+    /// </summary>
     private static double[] BrakingEnvelope(IReadOnlyList<PlanSegment> segments, double[] speed, double braking)
     {
         var count = segments.Count;
-        var envelope = new double[count + 1];
-        for (var i = 0; i <= count; i++)
+        var envelope = Pass(speed[count]);
+        if (count > 0 && segments[0].FullThrottle && segments[^1].FullThrottle)
         {
-            envelope[i] = i < count && segments[i].FullThrottle ? double.PositiveInfinity : speed[i];
-        }
-
-        for (var i = count - 1; i >= 0; i--)
-        {
-            envelope[i] = Math.Max(speed[i], Math.Min(envelope[i], Math.Sqrt(envelope[i + 1] * envelope[i + 1] + 2 * braking * Step)));
+            envelope = Pass(Math.Max(speed[count], envelope[0]));
         }
 
         return envelope;
+
+        double[] Pass(double atLine)
+        {
+            var envelope = new double[count + 1];
+            for (var i = 0; i < count; i++)
+            {
+                envelope[i] = segments[i].FullThrottle ? double.PositiveInfinity : speed[i];
+            }
+
+            envelope[count] = atLine;
+            for (var i = count - 1; i >= 0; i--)
+            {
+                envelope[i] = Math.Max(speed[i], Math.Min(envelope[i], Math.Sqrt(envelope[i + 1] * envelope[i + 1] + 2 * braking * Step)));
+            }
+
+            return envelope;
+        }
     }
 }
 
@@ -490,20 +509,33 @@ public sealed class LapSimulator
     /// <paramref name="harvested"/> J harvested on the lap so far, the flat-out ones within
     /// [<paramref name="from"/>, <paramref name="deployEnd"/>) with <paramref name="option"/>. Fills
     /// <paramref name="modes"/> and <paramref name="stores"/> per segment when given.
+    /// <para>A stretch may run on past the line into the next lap (<paramref name="to"/> beyond the last segment, see
+    /// <see cref="LapProfile.LineOnStraight"/>): the speed carries across it, and the lap's harvest counts from nothing
+    /// again there. Segments past the line are recorded at their index on the lap unless <paramref name="recordPastLine"/>
+    /// is false (a plan that started at the line has its own record of them).</para>
     /// </summary>
-    public StretchResult Run(int from, int deployEnd, int to, DeployOption option, double store, int[]? modes = null, double[]? stores = null, double harvested = 0)
+    public StretchResult Run(int from, int deployEnd, int to, DeployOption option, double store, int[]? modes = null, double[]? stores = null, double harvested = 0,
+        bool recordPastLine = true)
     {
         var segments = Lap.Segments;
+        var count = segments.Count;
         double time = 0, deployed = 0;
         var v = Lap.Speed[from];
         var switched = false;
         var reserve = option.IsAsDriven ? 0 : Reserve; // the reference as driven, and its modes, are what happened
         var limit = Lap.HarvestLimit > 0 ? Lap.HarvestLimit : double.PositiveInfinity;
         var zoneLength = Math.Max(1, deployEnd - from);
-        for (var i = from; i < to; i++)
+        double lineHarvested = 0;
+        for (var at = from; at < to; at++)
         {
+            if (at == count)
+            {
+                (lineHarvested, harvested) = (harvested, 0); // the game counts the harvest limit per lap
+            }
+
+            var i = at % count;
             var segment = segments[i];
-            if (i >= deployEnd || !segment.FullThrottle)
+            if (at >= deployEnd || !segment.FullThrottle)
             {
                 // Not flat out: the reference speed, time and part-throttle deployment.
                 Take(option == DeployOption.AsDriven ? segment.Harvest : Lift(i));
@@ -512,7 +544,7 @@ public sealed class LapSimulator
                 deployed += paid;
                 time += segment.ReferenceSeconds;
                 v = Lap.Speed[i + 1];
-                Record(i, segment.Mode, store);
+                Record(at, i, segment.Mode, store);
                 continue;
             }
 
@@ -525,7 +557,7 @@ public sealed class LapSimulator
             else
             {
                 switched |= option.UntilKmh is { } limitKmh && kmh >= limitKmh;
-                switched |= option.UntilFraction is { } fraction && (i - from) >= fraction * zoneLength;
+                switched |= option.UntilFraction is { } fraction && (at - from) >= fraction * zoneLength;
                 mode = switched ? option.Then : option.First;
             }
 
@@ -578,10 +610,10 @@ public sealed class LapSimulator
             deployed += energy;
             time += dt;
             v = next;
-            Record(i, mode, store);
+            Record(at, i, mode, store);
         }
 
-        return new StretchResult(time, store, deployed, harvested);
+        return new StretchResult(time, store, deployed, harvested, lineHarvested);
 
         // Harvest stops at the lap's harvest limit and at a full battery.
         void Take(double joules)
@@ -591,8 +623,13 @@ public sealed class LapSimulator
             harvested += taken;
         }
 
-        void Record(int index, int mode, double level)
+        void Record(int at, int index, int mode, double level)
         {
+            if (at >= count && !recordPastLine)
+            {
+                return;
+            }
+
             if (modes is not null)
             {
                 modes[index] = mode;
@@ -608,4 +645,5 @@ public sealed class LapSimulator
 
 /// <param name="ExitStore">Battery at the end of the stretch, J.</param>
 /// <param name="ExitHarvested">What the lap has harvested at the end of the stretch, J.</param>
-public readonly record struct StretchResult(double Seconds, double ExitStore, double Deployed, double ExitHarvested = 0);
+/// <param name="LineHarvested">For a stretch across the line, what the lap had harvested when it crossed it, J.</param>
+public readonly record struct StretchResult(double Seconds, double ExitStore, double Deployed, double ExitHarvested = 0, double LineHarvested = 0);

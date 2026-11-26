@@ -14,7 +14,11 @@ public enum PlanKind
     Race,
 }
 
-/// <summary>A deploy zone of a plan: the flat-out stretch from <see cref="From"/> to <see cref="To"/> m.</summary>
+/// <summary>
+/// A deploy zone of a plan: the flat-out stretch from <see cref="From"/> to <see cref="To"/> m. A zone that runs on across
+/// the line (the last corner onto a main straight the line is on) has <see cref="To"/> past <see cref="LapLength"/>: the
+/// next lap's metres counted on from this lap's.
+/// </summary>
 /// <param name="Seconds">Simulated time from the zone's start to the next zone's, with the plan.</param>
 /// <param name="DrivenSeconds">The same with the modes of the reference lap.</param>
 /// <param name="Deployed">Energy the MGU-K deploys from the zone's start to the next zone's, with the plan, J.</param>
@@ -23,18 +27,57 @@ public sealed record ZonePlan(int Number, double From, double To, DeployOption C
 {
     /// <summary>Seconds the plan gains here over the reference lap's modes (negative = loses, to save energy).</summary>
     public double Gain => DrivenSeconds - Seconds;
+
+    /// <summary>The length of the lap the plan is on, m (0 when not known: the zone never crosses the line).</summary>
+    public double LapLength { get; init; }
+
+    /// <summary>The zone runs on across the line into the next lap.</summary>
+    public bool CrossesLine => LapLength > 0 && To > LapLength;
+
+    /// <summary>Where the zone ends on the lap it ends on, m.</summary>
+    public double EndOnLap => CrossesLine ? To - LapLength : To;
+
+    public double Length => To - From;
+
+    /// <summary>Whether lap distance <paramref name="d"/> is in the zone (on either side of the line for one that crosses it).</summary>
+    public bool Contains(double d) => (d >= From && d < To) || (CrossesLine && d + LapLength >= From && d + LapLength < To);
+
+    /// <summary>Lap distance <paramref name="d"/> counted on from the zone's start lap: past the line it adds a lap.</summary>
+    public double Along(double d) => CrossesLine && d < From ? d + LapLength : d;
 }
 
 /// <summary>
 /// A deploy plan for a lap: a <see cref="DeployOption"/> per zone, with the simulated lap time and the battery level
 /// and mode of every segment.
+/// <para>A race plan where the line is on a straight runs from the first corner exit after the line to the same point a
+/// lap later (<see cref="StartsAtLine"/> false): its last zone runs from the last corner across the line, so the speed
+/// it builds before the line carries down the straight beyond it. <see cref="StartStore"/> and <see cref="EndStore"/>
+/// are then the battery at that corner exit, and <see cref="LineStore"/> what it crosses the line with.</para>
 /// </summary>
 /// <param name="Deployed">Energy the MGU-K deploys over the lap, J.</param>
 public sealed record LapPlan(PlanKind Kind, double StartStore, double EndStore, double Seconds, IReadOnlyList<ZonePlan> Zones, int[] Modes, double[] Stores,
     double Deployed = 0)
 {
+    private readonly double? _lineStore;
+
     /// <summary>Energy that goes into the battery over the lap, J (harvest that doesn't fit in a full battery is lost).</summary>
     public double Harvested => EndStore - StartStore + Deployed;
+
+    /// <summary>The plan starts at the line (false: at the first corner exit after it, see the remarks).</summary>
+    public bool StartsAtLine { get; init; } = true;
+
+    /// <summary>The battery the plan crosses the line with, J.</summary>
+    public double LineStore
+    {
+        get => _lineStore ?? StartStore;
+        init => _lineStore = value;
+    }
+
+    /// <summary>What the lap has harvested where the plan ends, J (it counts from the line).</summary>
+    public double EndHarvested { get; init; }
+
+    /// <summary>A zone runs on across the line.</summary>
+    public bool CrossesLine => Zones.Any(z => z.CrossesLine);
 }
 
 /// <summary>
@@ -122,10 +165,12 @@ public static class ErsOptimizer
     /// <summary>
     /// The fastest plan of <paramref name="kind"/> for the simulator's lap. Qualifying starts at
     /// <paramref name="qualifyingStart"/> J (a full battery after a charging out-lap) and may end empty. A race picks
-    /// the starting level that gives the fastest lap ending at least as charged as it began.
+    /// the starting level that gives the fastest lap ending at least as charged as it began; where the line is on a
+    /// straight that lap runs from the first corner exit to the same point a lap later, so the speed built out of the
+    /// last corner carries across the line (see <see cref="ErsPlanner.CrossesLine"/>).
     /// </summary>
     public static PlanResult Plan(LapSimulator simulator, PlanKind kind, double qualifyingStart = Capacity) =>
-        new ErsPlanner(simulator).Plan(kind, qualifyingStart);
+        new ErsPlanner(simulator, kind).Plan(kind, qualifyingStart);
 
     internal static int State(double joules) => Math.Clamp((int)Math.Round(joules / Quantum), 0, States - 1);
 
@@ -133,6 +178,30 @@ public static class ErsOptimizer
     internal static int HarvestStates(LapProfile lap) => lap.HarvestLimit > 0 ? (int)Math.Ceiling(lap.HarvestLimit / HarvestQuantum) + 1 : 1;
 
     internal static int HarvestState(double joules, int states) => states == 1 ? 0 : Math.Clamp((int)Math.Round(joules / HarvestQuantum), 0, states - 1);
+
+    /// <summary>
+    /// The stages a race is planned over. Where the line is on a straight (<see cref="LapProfile.LineOnStraight"/>) the
+    /// last flat-out run and the first are one: from the last corner, across the line, to the next lap's first corner
+    /// exit. The stages are then the stretch from the line to that corner exit (planning from the line), every stage of
+    /// the lap after it, and the one across the line, which ends past the last segment (see <see cref="LapSimulator.Run"/>).
+    /// A race lap repeats from the second stage on (<see cref="ErsPlanner"/>). Otherwise the stages of the lap.
+    /// </summary>
+    internal static List<Stage> RaceStages(LapProfile lap)
+    {
+        var stages = Stages(lap);
+        var count = lap.Segments.Count;
+        if (!lap.LineOnStraight || stages.Count < 3 || stages[0].From != 0 || stages[^1].DeployEnd != count)
+        {
+            return stages;
+        }
+
+        var (first, last) = (stages[0], stages[^1]);
+        stages[^1] = new Stage(last.From, count + first.DeployEnd, count + first.To);
+        return stages;
+    }
+
+    /// <summary>The stages cross the line (see <see cref="RaceStages"/>).</summary>
+    internal static bool CrossesLine(List<Stage> stages, LapProfile lap) => stages.Count > 0 && stages[^1].To > lap.Segments.Count;
 
     internal static List<Stage> Stages(LapProfile lap)
     {
@@ -184,28 +253,31 @@ public static class ErsOptimizer
     {
         var levels = HarvestStates(simulator.Lap);
         var limit = simulator.Lap.HarvestLimit;
+        var count = simulator.Lap.Segments.Count;
         var cells = new Cell[stages.Count, options.Count, States * levels];
-        Parallel.For(0, stages.Count, k =>
+        Parallel.For(0, stages.Count * options.Count, job =>
         {
+            var (k, o) = (job / options.Count, job % options.Count);
             var stage = stages[k];
-            for (var o = 0; o < options.Count; o++)
+            if (!stage.HasZone && o > 0)
             {
-                if (!stage.HasZone && o > 0)
-                {
-                    continue; // nothing to deploy: every option is the same
-                }
+                return; // nothing to deploy: every option is the same
+            }
 
-                for (var s = 0; s < States; s++)
+            // Across the line the harvest counter starts again: only what is harvested before it can meet the limit, and
+            // the lap after the line counts from nothing whatever came before.
+            var crosses = stage.To > count;
+            for (var s = 0; s < States; s++)
+            {
+                var free = simulator.Run(stage.From, stage.DeployEnd, stage.To, options[o], s * Quantum);
+                for (var h = 0; h < levels; h++)
                 {
-                    var free = simulator.Run(stage.From, stage.DeployEnd, stage.To, options[o], s * Quantum);
-                    for (var h = 0; h < levels; h++)
-                    {
-                        var harvested = h * HarvestQuantum;
-                        var result = levels == 1 || harvested + free.ExitHarvested <= limit
-                            ? free with { ExitHarvested = harvested + free.ExitHarvested }
-                            : simulator.Run(stage.From, stage.DeployEnd, stage.To, options[o], s * Quantum, harvested: harvested);
-                        cells[k, o, s * levels + h] = new Cell((float)result.Seconds, (short)State(result.ExitStore), (short)HarvestState(result.ExitHarvested, levels));
-                    }
+                    var harvested = h * HarvestQuantum;
+                    var result = levels == 1 ? free
+                        : crosses && harvested + free.LineHarvested <= limit ? free
+                        : !crosses && harvested + free.ExitHarvested <= limit ? free with { ExitHarvested = harvested + free.ExitHarvested }
+                        : simulator.Run(stage.From, stage.DeployEnd, stage.To, options[o], s * Quantum, harvested: harvested);
+                    cells[k, o, s * levels + h] = new Cell((float)result.Seconds, (short)State(result.ExitStore), (short)HarvestState(result.ExitHarvested, levels));
                 }
             }
         });
@@ -261,13 +333,17 @@ public static class ErsOptimizer
     /// <summary>
     /// Follows the policy from stage <paramref name="from"/> with <paramref name="store"/> J in the battery and
     /// <paramref name="harvested"/> J harvested on the lap, re-simulating each stage from the exact levels. Stages
-    /// before <paramref name="from"/> keep what <paramref name="before"/> planned for them.
+    /// before <paramref name="from"/> keep what <paramref name="before"/> planned for them. A plan that
+    /// <paramref name="startsAtLine"/> (or continues one that did) keeps its own record of the segments a stage across the
+    /// line runs on into; one that starts after the line (a race lap from its first corner exit) records them from that
+    /// stage.
     /// </summary>
     internal static LapPlan Build(LapSimulator simulator, List<Stage> stages, IReadOnlyList<DeployOption> options, Policy policy, double store, PlanKind kind,
-        int from = 0, double harvested = 0, LapPlan? before = null)
+        int from = 0, double harvested = 0, LapPlan? before = null, bool startsAtLine = true)
     {
         var lap = simulator.Lap;
         var count = lap.Segments.Count;
+        startsAtLine = before?.StartsAtLine ?? startsAtLine;
         var modes = before?.Modes.ToArray() ?? new int[count];
         var stores = before?.Stores.ToArray() ?? new double[count];
         var cut = stages[from].From * LapProfile.Step;
@@ -285,7 +361,7 @@ public static class ErsOptimizer
                 ? options[policy.ChoiceAt(k, State(store), HarvestState(harvested, policy.HarvestLevels))]
                 : new DeployOption(DeployModes.None, DeployModes.None);
             var entry = store;
-            var result = simulator.Run(stage.From, stage.DeployEnd, stage.To, option, store, modes, stores, harvested);
+            var result = simulator.Run(stage.From, stage.DeployEnd, stage.To, option, store, modes, stores, harvested, recordPastLine: !startsAtLine);
             var reference = simulator.Run(stage.From, stage.DeployEnd, stage.To, DeployOption.AsDriven, driven, harvested: drivenHarvested);
             (driven, drivenHarvested) = (reference.ExitStore, reference.ExitHarvested);
             (store, harvested) = (result.ExitStore, result.ExitHarvested);
@@ -294,11 +370,16 @@ public static class ErsOptimizer
             if (stage.HasZone)
             {
                 zones.Add(new ZonePlan(zones.Count + 1, stage.From * LapProfile.Step, stage.DeployEnd * LapProfile.Step, option, entry, store,
-                    result.Seconds, reference.Seconds, result.Deployed));
+                    result.Seconds, reference.Seconds, result.Deployed) { LapLength = lap.Length });
             }
         }
 
-        return new LapPlan(kind, start, store, seconds, zones, modes, stores, deployed);
+        return new LapPlan(kind, start, store, seconds, zones, modes, stores, deployed)
+        {
+            StartsAtLine = startsAtLine,
+            LineStore = startsAtLine || count == 0 ? start : stores[count - 1],
+            EndHarvested = harvested,
+        };
     }
 
     /// <summary>The reference lap with its own modes, from its own starting level.</summary>
@@ -346,31 +427,86 @@ public sealed class ErsPlanner
     // Policies kept for re-planning during the lap, by the level they end at.
     private const int CachedPolicies = 8;
 
+    // A race lap that crosses the line is planned again from the harvest it ends with, at most this many times.
+    private const int HarvestRounds = 3;
+
     private readonly List<ErsOptimizer.Stage> _stages;
+    private readonly List<ErsOptimizer.Stage> _lineStages;
     private readonly IReadOnlyList<DeployOption> _options;
     private readonly ErsOptimizer.Table _table;
     private readonly ConcurrentDictionary<int, ErsOptimizer.Policy> _policies = new();
 
-    public ErsPlanner(LapSimulator simulator)
+    /// <summary>
+    /// A planner for <paramref name="kind"/> laps. A race planner where the line is on a straight plans across it (see
+    /// <see cref="ErsOptimizer.RaceStages"/>, <see cref="CrossesLine"/>); a qualifying lap ends at the line.
+    /// </summary>
+    public ErsPlanner(LapSimulator simulator, PlanKind kind = PlanKind.Race)
     {
         Simulator = simulator;
-        _stages = ErsOptimizer.Stages(simulator.Lap);
+        _lineStages = ErsOptimizer.Stages(simulator.Lap);
+        _stages = kind == PlanKind.Race ? ErsOptimizer.RaceStages(simulator.Lap) : _lineStages;
+        CrossesLine = ErsOptimizer.CrossesLine(_stages, simulator.Lap);
         _options = ErsOptimizer.Options(simulator.Model.Deploy);
         _table = ErsOptimizer.Precompute(simulator, _stages, _options);
     }
 
     public LapSimulator Simulator { get; }
 
+    /// <summary>
+    /// The race lap runs from the last corner across the line: a lap plan starts with the stretch from the line to the
+    /// first corner exit and ends a lap later at that corner exit, and the lap that repeats (<see cref="Plan"/>) runs
+    /// from that corner exit to the same point a lap later.
+    /// </summary>
+    public bool CrossesLine { get; }
+
+    // The stage a race lap repeats from: the first corner exit after the line when the plan crosses it.
+    private int RepeatFrom => CrossesLine ? 1 : 0;
+
     /// <inheritdoc cref="ErsOptimizer.Plan"/>
     public PlanResult Plan(PlanKind kind, double qualifyingStart = LapSimulator.Capacity)
     {
-        var check = ErsOptimizer.Check(Simulator, _stages);
+        var check = ErsOptimizer.Check(Simulator, _lineStages);
         if (kind == PlanKind.Qualifying)
         {
             return new PlanResult(PlanFrom(kind, qualifyingStart, 0), check, null, null);
         }
 
-        // Every starting level, each with the end held at or above it; keep the fastest. Coarse first, then around the best.
+        // Across the line the repeating lap starts with what the lap has harvested since the line: the reference's first,
+        // then what the plan itself ends with, until the two agree.
+        var harvested = CrossesLine ? Simulator.Lap.Harvested[_stages[RepeatFrom].From] : 0;
+        var (best, policy) = SteadyLevel(harvested);
+        var race = Build(policy, best * ErsOptimizer.Quantum, kind, RepeatFrom, harvested);
+        for (var round = 1; round < HarvestRounds && CrossesLine
+             && ErsOptimizer.HarvestState(race.EndHarvested, _table.HarvestLevels) != ErsOptimizer.HarvestState(harvested, _table.HarvestLevels); round++)
+        {
+            harvested = race.EndHarvested;
+            (best, policy) = SteadyLevel(harvested);
+            race = Build(policy, best * ErsOptimizer.Quantum, kind, RepeatFrom, harvested);
+        }
+
+        var h = ErsOptimizer.HarvestState(harvested, _table.HarvestLevels);
+        var oneMj = (int)Math.Round(ErsOptimizer.OneMj / ErsOptimizer.Quantum);
+        LapPlan? attack = null, recover = null;
+        if (best - oneMj >= 0)
+        {
+            attack = Build(Solve(best - oneMj), best * ErsOptimizer.Quantum, kind, RepeatFrom, harvested);
+        }
+
+        if (best + oneMj < ErsOptimizer.States && Solve(best + oneMj) is var up && !double.IsInfinity(up.At(RepeatFrom, best, h)))
+        {
+            recover = Build(up, best * ErsOptimizer.Quantum, kind, RepeatFrom, harvested);
+        }
+
+        return new PlanResult(race, check, attack, recover);
+    }
+
+    /// <summary>
+    /// The battery level a race lap repeats at: every starting level, each with the end held at or above it, and the
+    /// fastest kept. Coarse first, then around the best.
+    /// </summary>
+    private (int Level, ErsOptimizer.Policy Policy) SteadyLevel(double harvested)
+    {
+        var h = ErsOptimizer.HarvestState(harvested, _table.HarvestLevels);
         var floor = ErsOptimizer.State(Simulator.Reserve);
         var best = floor;
         var bestTime = double.PositiveInfinity;
@@ -378,9 +514,9 @@ public sealed class ErsPlanner
         void Try(int s)
         {
             var policy = Solve(s);
-            if (policy.At(0, s, 0) < bestTime - 1e-9)
+            if (bestPolicy is null || policy.At(RepeatFrom, s, h) < bestTime - 1e-9)
             {
-                (best, bestTime, bestPolicy) = (s, policy.At(0, s, 0), policy);
+                (best, bestTime, bestPolicy) = (s, policy.At(RepeatFrom, s, h), policy);
             }
         }
 
@@ -398,25 +534,13 @@ public sealed class ErsPlanner
             }
         }
 
-        var race = Build(bestPolicy!, best * ErsOptimizer.Quantum, kind);
-        var oneMj = (int)Math.Round(ErsOptimizer.OneMj / ErsOptimizer.Quantum);
-        LapPlan? attack = null, recover = null;
-        if (best - oneMj >= 0)
-        {
-            attack = Build(Solve(best - oneMj), best * ErsOptimizer.Quantum, kind);
-        }
-
-        if (best + oneMj < ErsOptimizer.States && Solve(best + oneMj) is var up && !double.IsInfinity(up.At(0, best, 0)))
-        {
-            recover = Build(up, best * ErsOptimizer.Quantum, kind);
-        }
-
-        return new PlanResult(race, check, attack, recover);
+        return (best, bestPolicy!);
     }
 
     /// <summary>
-    /// The fastest lap from <paramref name="start"/> J that ends at or above <paramref name="minEnd"/> J, or as close
-    /// below it as the lap allows (a battery too low to recover fully in one lap).
+    /// The fastest lap from the line with <paramref name="start"/> J that ends at or above <paramref name="minEnd"/> J,
+    /// or as close below it as the lap allows (a battery too low to recover fully in one lap). A race lap that
+    /// <see cref="CrossesLine"/> ends at the first corner exit of the next lap, where the repeating lap starts.
     /// </summary>
     public LapPlan PlanFrom(PlanKind kind, double start, double minEnd) => From(0, start, 0, minEnd, kind, null);
 
@@ -473,6 +597,7 @@ public sealed class ErsPlanner
 
     private ErsOptimizer.Policy Solve(int minEnd) => ErsOptimizer.Solve(_table, _stages, _options.Count, minEnd);
 
+    // A plan from stage 0 starts at the line; one from a later stage with nothing before it is a repeating race lap.
     private LapPlan Build(ErsOptimizer.Policy policy, double store, PlanKind kind, int from = 0, double harvested = 0, LapPlan? before = null) =>
-        ErsOptimizer.Build(Simulator, _stages, _options, policy, store, kind, from, harvested, before);
+        ErsOptimizer.Build(Simulator, _stages, _options, policy, store, kind, from, harvested, before, startsAtLine: from == 0);
 }
